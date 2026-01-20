@@ -70,9 +70,108 @@ class Board:
         return cls(pieces=pieces, board_type=BoardType.STANDARD, width=8, height=8)
 
     @classmethod
-    def create_empty(
-        cls, board_type: BoardType = BoardType.STANDARD
-    ) -> "Board":
+    def create_4player(cls) -> "Board":
+        """Create a 12x12 4-player board with initial piece positions.
+
+        Board layout:
+                 0 1 2   3 4 5 6 7 8   9 10 11
+               ┌───────┬─────────────┬─────────┐
+            0  │  XXX  │ R N B Q K B N R │  XXX  │  Player 4 (North)
+            1  │  XXX  │ P P P P P P P P │  XXX  │
+               ├───────┼─────────────────┼───────┤
+            2  │ R P   │                 │   P R │
+            3  │ N P   │                 │   P N │
+            4  │ B P   │                 │   P B │  P3        P1
+            5  │ K P   │     8x8 core    │   P Q │  (West)    (East)
+            6  │ Q P   │                 │   P K │
+            7  │ B P   │                 │   P B │
+            8  │ N P   │                 │   P N │
+            9  │ R P   │                 │   P R │
+               ├───────┼─────────────────┼───────┤
+           10  │  XXX  │ P P P P P P P P │  XXX  │
+           11  │  XXX  │ R N B K Q B N R │  XXX  │  Player 2 (South)
+               └───────┴─────────────────┴───────┘
+
+        XXX = Invalid squares (corners cut off)
+        """
+        pieces: list[Piece] = []
+
+        # Back row piece order for horizontal players (North/South)
+        # Standard: R N B Q K B N R
+        horizontal_back_row = [
+            PieceType.ROOK,
+            PieceType.KNIGHT,
+            PieceType.BISHOP,
+            PieceType.QUEEN,
+            PieceType.KING,
+            PieceType.BISHOP,
+            PieceType.KNIGHT,
+            PieceType.ROOK,
+        ]
+
+        # Back row piece order for vertical players (East/West)
+        # Arranged so King is toward center, Queen toward edges
+        vertical_back_row = [
+            PieceType.ROOK,
+            PieceType.KNIGHT,
+            PieceType.BISHOP,
+            PieceType.KING,
+            PieceType.QUEEN,
+            PieceType.BISHOP,
+            PieceType.KNIGHT,
+            PieceType.ROOK,
+        ]
+
+        # Player 4 (North) - row 0 back row, row 1 pawns, cols 2-9
+        for i, piece_type in enumerate(horizontal_back_row):
+            pieces.append(Piece.create(piece_type, player=4, row=0, col=2 + i))
+        for col in range(2, 10):
+            pieces.append(Piece.create(PieceType.PAWN, player=4, row=1, col=col))
+
+        # Player 2 (South) - row 11 back row, row 10 pawns, cols 2-9
+        # Mirror the back row for symmetry (K Q swapped)
+        south_back_row = [
+            PieceType.ROOK,
+            PieceType.KNIGHT,
+            PieceType.BISHOP,
+            PieceType.KING,
+            PieceType.QUEEN,
+            PieceType.BISHOP,
+            PieceType.KNIGHT,
+            PieceType.ROOK,
+        ]
+        for i, piece_type in enumerate(south_back_row):
+            pieces.append(Piece.create(piece_type, player=2, row=11, col=2 + i))
+        for col in range(2, 10):
+            pieces.append(Piece.create(PieceType.PAWN, player=2, row=10, col=col))
+
+        # Player 3 (West) - col 0 back row, col 1 pawns, rows 2-9
+        for i, piece_type in enumerate(vertical_back_row):
+            pieces.append(Piece.create(piece_type, player=3, row=2 + i, col=0))
+        for row in range(2, 10):
+            pieces.append(Piece.create(PieceType.PAWN, player=3, row=row, col=1))
+
+        # Player 1 (East) - col 11 back row, col 10 pawns, rows 2-9
+        # Mirror the vertical back row for symmetry
+        east_back_row = [
+            PieceType.ROOK,
+            PieceType.KNIGHT,
+            PieceType.BISHOP,
+            PieceType.QUEEN,
+            PieceType.KING,
+            PieceType.BISHOP,
+            PieceType.KNIGHT,
+            PieceType.ROOK,
+        ]
+        for i, piece_type in enumerate(east_back_row):
+            pieces.append(Piece.create(piece_type, player=1, row=2 + i, col=11))
+        for row in range(2, 10):
+            pieces.append(Piece.create(PieceType.PAWN, player=1, row=row, col=10))
+
+        return cls(pieces=pieces, board_type=BoardType.FOUR_PLAYER, width=12, height=12)
+
+    @classmethod
+    def create_empty(cls, board_type: BoardType = BoardType.STANDARD) -> "Board":
         """Create an empty board (useful for tests and campaign levels)."""
         if board_type == BoardType.STANDARD:
             return cls(pieces=[], board_type=board_type, width=8, height=8)
@@ -110,9 +209,7 @@ class Board:
 
     def get_pieces_for_player(self, player: int) -> list[Piece]:
         """Get all uncaptured pieces for a player."""
-        return [
-            p for p in self.pieces if p.player == player and not p.captured
-        ]
+        return [p for p in self.pieces if p.player == player and not p.captured]
 
     def get_active_pieces(self) -> list[Piece]:
         """Get all uncaptured pieces."""

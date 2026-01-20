@@ -5,8 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from kfchess.game.board import Board, BoardType
-from kfchess.game.moves import Move, Cooldown
+from kfchess.game.board import Board
+from kfchess.game.moves import Cooldown, Move
 
 
 class Speed(Enum):

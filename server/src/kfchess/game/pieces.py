@@ -1,6 +1,6 @@
 """Piece definitions for Kung Fu Chess."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -41,9 +41,7 @@ class Piece:
     moved: bool = False
 
     @classmethod
-    def create(
-        cls, piece_type: PieceType, player: int, row: int, col: int
-    ) -> "Piece":
+    def create(cls, piece_type: PieceType, player: int, row: int, col: int) -> "Piece":
         """Create a new piece with auto-generated ID."""
         piece_id = f"{piece_type.value}:{player}:{row}:{col}"
         return cls(

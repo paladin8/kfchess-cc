@@ -2,12 +2,51 @@
 
 from dataclasses import dataclass
 
+from kfchess.game.board import Board, BoardType
 from kfchess.game.pieces import Piece, PieceType
-from kfchess.game.board import Board
-
 
 # Path type: can be int or float (floats used for knight midpoint)
 PathPoint = tuple[float, float]
+
+
+@dataclass(frozen=True)
+class PlayerOrientation:
+    """Defines movement directions for a player position in 4-player mode.
+
+    Attributes:
+        forward: (row_delta, col_delta) for "forward" pawn movement
+        pawn_home_axis: The row or column index where pawns start (second row from edge)
+        back_row_axis: The row or column index for back row pieces
+        promotion_axis: The row or column index that triggers pawn promotion
+        axis: "row" or "col" - which axis pawns move along
+    """
+
+    forward: tuple[int, int]
+    pawn_home_axis: int
+    back_row_axis: int
+    promotion_axis: int
+    axis: str  # "row" or "col"
+
+
+# Player orientations for 4-player mode (12x12 board)
+# Player 1 (East): pieces on cols 10-11, moves left (toward col 2)
+# Player 2 (South): pieces on rows 10-11, moves up (toward row 2)
+# Player 3 (West): pieces on cols 0-1, moves right (toward col 9)
+# Player 4 (North): pieces on rows 0-1, moves down (toward row 9)
+FOUR_PLAYER_ORIENTATIONS: dict[int, PlayerOrientation] = {
+    1: PlayerOrientation(
+        forward=(0, -1), pawn_home_axis=10, back_row_axis=11, promotion_axis=2, axis="col"
+    ),
+    2: PlayerOrientation(
+        forward=(-1, 0), pawn_home_axis=10, back_row_axis=11, promotion_axis=2, axis="row"
+    ),
+    3: PlayerOrientation(
+        forward=(0, 1), pawn_home_axis=1, back_row_axis=0, promotion_axis=9, axis="col"
+    ),
+    4: PlayerOrientation(
+        forward=(1, 0), pawn_home_axis=1, back_row_axis=0, promotion_axis=9, axis="row"
+    ),
+}
 
 
 @dataclass
@@ -124,7 +163,9 @@ def _compute_piece_path(
     """Compute path based on piece type."""
     match piece.type:
         case PieceType.PAWN:
-            return _compute_pawn_path(piece, board, from_row, from_col, to_row, to_col, active_moves)
+            return _compute_pawn_path(
+                piece, board, from_row, from_col, to_row, to_col, active_moves
+            )
         case PieceType.KNIGHT:
             return _compute_knight_path(from_row, from_col, to_row, to_col)
         case PieceType.BISHOP:
@@ -153,7 +194,29 @@ def _compute_pawn_path(
     Pawns can:
     - Move forward 1 square (or 2 from starting position)
     - Capture diagonally (only if stationary opponent piece at destination)
+
+    In 4-player mode, "forward" depends on the player's orientation.
     """
+    if board.board_type == BoardType.STANDARD:
+        return _compute_pawn_path_standard(
+            piece, board, from_row, from_col, to_row, to_col, active_moves
+        )
+    else:
+        return _compute_pawn_path_4player(
+            piece, board, from_row, from_col, to_row, to_col, active_moves
+        )
+
+
+def _compute_pawn_path_standard(
+    piece: Piece,
+    board: Board,
+    from_row: int,
+    from_col: int,
+    to_row: int,
+    to_col: int,
+    active_moves: list[Move],
+) -> list[PathPoint] | None:
+    """Compute pawn path for standard 2-player board."""
     direction = -1 if piece.player == 1 else 1  # Player 1 moves up (decreasing row)
     start_row = 6 if piece.player == 1 else 1  # Starting row for each player
 
@@ -198,9 +261,116 @@ def _compute_pawn_path(
     return None
 
 
+def _compute_pawn_path_4player(
+    piece: Piece,
+    board: Board,
+    from_row: int,
+    from_col: int,
+    to_row: int,
+    to_col: int,
+    active_moves: list[Move],
+) -> list[PathPoint] | None:
+    """Compute pawn path for 4-player board.
+
+    In 4-player mode, pawns move along different axes depending on player position:
+    - Player 1 (East): moves along columns (left, toward col 2)
+    - Player 2 (South): moves along rows (up, toward row 2)
+    - Player 3 (West): moves along columns (right, toward col 9)
+    - Player 4 (North): moves along rows (down, toward row 9)
+    """
+    orient = FOUR_PLAYER_ORIENTATIONS.get(piece.player)
+    if orient is None:
+        return None
+
+    row_diff = to_row - from_row
+    col_diff = to_col - from_col
+    fwd_row, fwd_col = orient.forward
+
+    # Determine if pawn is at its starting position
+    if orient.axis == "col":
+        # Pawn moves horizontally (players 1 and 3)
+        is_at_start = from_col == orient.pawn_home_axis
+        forward_diff = col_diff
+        lateral_diff = row_diff
+        forward_dir = fwd_col
+    else:
+        # Pawn moves vertically (players 2 and 4)
+        is_at_start = from_row == orient.pawn_home_axis
+        forward_diff = row_diff
+        lateral_diff = col_diff
+        forward_dir = fwd_row
+
+    # Forward movement (no lateral movement)
+    if lateral_diff == 0:
+        # Single square forward
+        if forward_diff == forward_dir:
+            target = board.get_piece_at(to_row, to_col)
+            if target is not None:
+                return None
+            return [(float(from_row), float(from_col)), (float(to_row), float(to_col))]
+
+        # Double square forward from starting position
+        if forward_diff == 2 * forward_dir and is_at_start:
+            mid_row = from_row + fwd_row
+            mid_col = from_col + fwd_col
+            if board.get_piece_at(mid_row, mid_col) is not None:
+                return None
+            if board.get_piece_at(to_row, to_col) is not None:
+                return None
+            return [
+                (float(from_row), float(from_col)),
+                (float(mid_row), float(mid_col)),
+                (float(to_row), float(to_col)),
+            ]
+
+    # Diagonal capture - one forward, one lateral
+    if forward_diff == forward_dir and abs(lateral_diff) == 1:
+        target = board.get_piece_at(to_row, to_col)
+        if target is None or target.player == piece.player:
+            return None
+        if _is_piece_moving(target.id, active_moves):
+            return None
+        return [(float(from_row), float(from_col)), (float(to_row), float(to_col))]
+
+    return None
+
+
 def _is_piece_moving(piece_id: str, active_moves: list[Move]) -> bool:
     """Check if a piece is currently moving."""
     return any(m.piece_id == piece_id for m in active_moves)
+
+
+def should_promote_pawn(piece: Piece, board: Board, end_row: int, end_col: int) -> bool:
+    """Check if a pawn should be promoted after reaching a position.
+
+    Args:
+        piece: The pawn piece
+        board: The board
+        end_row: Row the pawn ended at
+        end_col: Column the pawn ended at
+
+    Returns:
+        True if the pawn should be promoted
+    """
+    if piece.type != PieceType.PAWN:
+        return False
+
+    if board.board_type == BoardType.STANDARD:
+        # Standard 2-player: promote at opposite back row
+        promotion_row = 0 if piece.player == 1 else 7
+        return end_row == promotion_row
+    else:
+        # 4-player: check against player's promotion axis
+        orient = FOUR_PLAYER_ORIENTATIONS.get(piece.player)
+        if orient is None:
+            return False
+
+        if orient.axis == "col":
+            # Horizontal movement (players 1 and 3) - check column
+            return end_col == orient.promotion_axis
+        else:
+            # Vertical movement (players 2 and 4) - check row
+            return end_row == orient.promotion_axis
 
 
 def _compute_knight_path(
@@ -431,6 +601,26 @@ def check_castling(
     if piece.moved:
         return None
 
+    if board.board_type == BoardType.STANDARD:
+        return _check_castling_standard(
+            piece, board, to_row, to_col, active_moves, cooldowns, current_tick
+        )
+    else:
+        return _check_castling_4player(
+            piece, board, to_row, to_col, active_moves, cooldowns, current_tick
+        )
+
+
+def _check_castling_standard(
+    piece: Piece,
+    board: Board,
+    to_row: int,
+    to_col: int,
+    active_moves: list[Move],
+    cooldowns: list[Cooldown] | None,
+    current_tick: int,
+) -> tuple[Move, Move] | None:
+    """Check castling for standard 2-player board (horizontal castling)."""
     from_row, from_col = piece.grid_position
 
     # King must stay on same row
@@ -494,6 +684,187 @@ def check_castling(
     ]
 
     # Both moves start at tick 0 - the actual start tick will be set by the engine
+    king_move = Move(piece_id=piece.id, path=king_path, start_tick=0)
+    rook_move = Move(piece_id=rook.id, path=rook_path, start_tick=0)
+    king_move.extra_move = rook_move
+
+    return (king_move, rook_move)
+
+
+def _check_castling_4player(
+    piece: Piece,
+    board: Board,
+    to_row: int,
+    to_col: int,
+    active_moves: list[Move],
+    cooldowns: list[Cooldown] | None,
+    current_tick: int,
+) -> tuple[Move, Move] | None:
+    """Check castling for 4-player board.
+
+    For horizontal players (2, 4): castling is horizontal (same as standard)
+    For vertical players (1, 3): castling is vertical
+    """
+    from_row, from_col = piece.grid_position
+    orient = FOUR_PLAYER_ORIENTATIONS.get(piece.player)
+    if orient is None:
+        return None
+
+    if orient.axis == "row":
+        # Horizontal players (2, 4) - castling is horizontal
+        return _check_castling_horizontal(
+            piece, board, from_row, from_col, to_row, to_col, active_moves, cooldowns, current_tick
+        )
+    else:
+        # Vertical players (1, 3) - castling is vertical
+        return _check_castling_vertical(
+            piece, board, from_row, from_col, to_row, to_col, active_moves, cooldowns, current_tick
+        )
+
+
+def _check_castling_horizontal(
+    piece: Piece,
+    board: Board,
+    from_row: int,
+    from_col: int,
+    to_row: int,
+    to_col: int,
+    active_moves: list[Move],
+    cooldowns: list[Cooldown] | None,
+    current_tick: int,
+) -> tuple[Move, Move] | None:
+    """Check horizontal castling (for players 2 and 4 in 4-player mode)."""
+    # King must stay on same row
+    if to_row != from_row:
+        return None
+
+    col_diff = to_col - from_col
+    if abs(col_diff) != 2:
+        return None
+
+    # Determine rook column based on player and direction
+    # Player 2 (South, row 11): rooks at cols 2 and 9
+    # Player 4 (North, row 0): rooks at cols 2 and 9
+    if col_diff > 0:  # Moving right
+        rook_col = 9
+        new_rook_col = to_col - 1
+    else:  # Moving left
+        rook_col = 2
+        new_rook_col = to_col + 1
+
+    rook = board.get_piece_at(from_row, rook_col)
+    if rook is None or rook.type != PieceType.ROOK or rook.player != piece.player:
+        return None
+
+    if rook.moved:
+        return None
+
+    if _is_piece_moving(rook.id, active_moves):
+        return None
+
+    if cooldowns is not None:
+        for cd in cooldowns:
+            if cd.piece_id == rook.id and cd.is_active(current_tick):
+                return None
+
+    # Check path is clear
+    start_col = min(from_col, rook_col) + 1
+    end_col = max(from_col, rook_col)
+    for col in range(start_col, end_col):
+        if board.get_piece_at(from_row, col) is not None:
+            return None
+
+    for move in active_moves:
+        move_end_row, move_end_col = move.end_position
+        if int(move_end_row) == from_row and start_col <= int(move_end_col) < end_col:
+            return None
+
+    # Create moves
+    king_path: list[PathPoint] = [(float(from_row), float(from_col))]
+    king_step = 1 if col_diff > 0 else -1
+    for _ in range(2):
+        king_path.append((float(from_row), king_path[-1][1] + king_step))
+
+    rook_path: list[PathPoint] = [
+        (float(from_row), float(rook_col)),
+        (float(from_row), float(new_rook_col)),
+    ]
+
+    king_move = Move(piece_id=piece.id, path=king_path, start_tick=0)
+    rook_move = Move(piece_id=rook.id, path=rook_path, start_tick=0)
+    king_move.extra_move = rook_move
+
+    return (king_move, rook_move)
+
+
+def _check_castling_vertical(
+    piece: Piece,
+    board: Board,
+    from_row: int,
+    from_col: int,
+    to_row: int,
+    to_col: int,
+    active_moves: list[Move],
+    cooldowns: list[Cooldown] | None,
+    current_tick: int,
+) -> tuple[Move, Move] | None:
+    """Check vertical castling (for players 1 and 3 in 4-player mode)."""
+    # King must stay on same column
+    if to_col != from_col:
+        return None
+
+    row_diff = to_row - from_row
+    if abs(row_diff) != 2:
+        return None
+
+    # Determine rook row based on player and direction
+    # Player 1 (East, col 11): rooks at rows 2 and 9
+    # Player 3 (West, col 0): rooks at rows 2 and 9
+    if row_diff > 0:  # Moving down
+        rook_row = 9
+        new_rook_row = to_row - 1
+    else:  # Moving up
+        rook_row = 2
+        new_rook_row = to_row + 1
+
+    rook = board.get_piece_at(rook_row, from_col)
+    if rook is None or rook.type != PieceType.ROOK or rook.player != piece.player:
+        return None
+
+    if rook.moved:
+        return None
+
+    if _is_piece_moving(rook.id, active_moves):
+        return None
+
+    if cooldowns is not None:
+        for cd in cooldowns:
+            if cd.piece_id == rook.id and cd.is_active(current_tick):
+                return None
+
+    # Check path is clear
+    start_row = min(from_row, rook_row) + 1
+    end_row = max(from_row, rook_row)
+    for row in range(start_row, end_row):
+        if board.get_piece_at(row, from_col) is not None:
+            return None
+
+    for move in active_moves:
+        move_end_row, move_end_col = move.end_position
+        if int(move_end_col) == from_col and start_row <= int(move_end_row) < end_row:
+            return None
+
+    # Create moves
+    king_path: list[PathPoint] = [(float(from_row), float(from_col))]
+    king_step = 1 if row_diff > 0 else -1
+    for _ in range(2):
+        king_path.append((king_path[-1][0] + king_step, float(from_col)))
+
+    rook_path: list[PathPoint] = [
+        (float(rook_row), float(from_col)),
+        (float(new_rook_row), float(from_col)),
+    ]
+
     king_move = Move(piece_id=piece.id, path=king_path, start_tick=0)
     rook_move = Move(piece_id=rook.id, path=rook_path, start_tick=0)
     king_move.extra_move = rook_move

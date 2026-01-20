@@ -12,9 +12,8 @@ Special rules:
 import math
 from dataclasses import dataclass
 
+from kfchess.game.moves import Cooldown, Move
 from kfchess.game.pieces import Piece, PieceType
-from kfchess.game.moves import Move
-
 
 # Capture distance threshold (in board squares)
 # Two pieces within this distance will result in a capture
@@ -238,9 +237,7 @@ def detect_collisions(
                     continue  # Knight can't capture yet
 
             # Collision detected! Determine winner
-            winner, loser = _determine_capture_winner(
-                piece_a, piece_b, move_by_piece
-            )
+            winner, loser = _determine_capture_winner(piece_a, piece_b, move_by_piece)
 
             collision_pos = ((pos_a[0] + pos_b[0]) / 2, (pos_a[1] + pos_b[1]) / 2)
 
@@ -387,11 +384,10 @@ def is_piece_moving(piece_id: str, active_moves: list[Move]) -> bool:
 
 def is_piece_on_cooldown(
     piece_id: str,
-    cooldowns: list["Cooldown"],
+    cooldowns: list[Cooldown],
     current_tick: int,
 ) -> bool:
     """Check if a piece is on cooldown."""
-    from kfchess.game.moves import Cooldown
 
     for cd in cooldowns:
         if cd.piece_id == piece_id and cd.is_active(current_tick):

@@ -5,28 +5,31 @@ for performance. Use GameState.copy() if you need to preserve state
 (e.g., for AI lookahead).
 """
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import Enum
 
 from kfchess.game.board import Board, BoardType
-from kfchess.game.pieces import Piece, PieceType
-from kfchess.game.moves import Move, Cooldown, compute_move_path, check_castling
 from kfchess.game.collision import (
     detect_collisions,
     get_interpolated_position,
     is_piece_moving,
     is_piece_on_cooldown,
-    Capture,
 )
+from kfchess.game.moves import (
+    Cooldown,
+    Move,
+    check_castling,
+    compute_move_path,
+    should_promote_pawn,
+)
+from kfchess.game.pieces import PieceType
 from kfchess.game.state import (
     GameState,
     GameStatus,
-    Speed,
-    SpeedConfig,
-    SPEED_CONFIGS,
     ReplayMove,
+    Speed,
 )
 
 
@@ -89,10 +92,13 @@ class GameEngine:
             game_id = str(uuid.uuid4())[:8].upper()
 
         if board_type == BoardType.STANDARD:
+            if len(players) != 2:
+                raise ValueError("Standard board requires exactly 2 players")
             board = Board.create_standard()
         else:
-            # TODO: Implement 4-player board creation
-            board = Board.create_standard()
+            if len(players) < 2 or len(players) > 4:
+                raise ValueError("4-player board requires 2-4 players")
+            board = Board.create_4player()
 
         return GameState(
             game_id=game_id,
@@ -162,7 +168,7 @@ class GameEngine:
 
         if all_ready and len(state.players) >= 2:
             state.status = GameStatus.PLAYING
-            state.started_at = datetime.now(timezone.utc)
+            state.started_at = datetime.now(UTC)
             state.current_tick = 0
             state.last_move_tick = 0
             state.last_capture_tick = 0
@@ -222,8 +228,13 @@ class GameEngine:
 
         # Check for castling
         castling = check_castling(
-            piece, state.board, to_row, to_col, state.active_moves,
-            cooldowns=state.cooldowns, current_tick=state.current_tick
+            piece,
+            state.board,
+            to_row,
+            to_col,
+            state.active_moves,
+            cooldowns=state.cooldowns,
+            current_tick=state.current_tick,
         )
         if castling is not None:
             king_move, rook_move = castling
@@ -233,9 +244,7 @@ class GameEngine:
             return king_move
 
         # Compute the move path
-        path = compute_move_path(
-            piece, state.board, to_row, to_col, state.active_moves
-        )
+        path = compute_move_path(piece, state.board, to_row, to_col, state.active_moves)
         if path is None:
             return None
 
@@ -437,36 +446,30 @@ class GameEngine:
                 )
 
                 # 3. Check for pawn promotion
-                if piece.type == PieceType.PAWN:
-                    promotion_row = 0 if piece.player == 1 else 7
-                    if end_row == promotion_row:
-                        piece.type = PieceType.QUEEN
-                        events.append(
-                            GameEvent(
-                                type=GameEventType.PROMOTION,
-                                tick=state.current_tick,
-                                data={
-                                    "piece_id": piece.id,
-                                    "new_type": "Q",
-                                },
-                            )
+                if should_promote_pawn(piece, state.board, int(end_row), int(end_col)):
+                    piece.type = PieceType.QUEEN
+                    events.append(
+                        GameEvent(
+                            type=GameEventType.PROMOTION,
+                            tick=state.current_tick,
+                            data={
+                                "piece_id": piece.id,
+                                "new_type": "Q",
+                            },
                         )
+                    )
 
             # Remove completed move from active moves
-            state.active_moves = [
-                m for m in state.active_moves if m.piece_id != move.piece_id
-            ]
+            state.active_moves = [m for m in state.active_moves if m.piece_id != move.piece_id]
 
         # 4. Remove expired cooldowns
-        state.cooldowns = [
-            c for c in state.cooldowns if c.is_active(state.current_tick)
-        ]
+        state.cooldowns = [c for c in state.cooldowns if c.is_active(state.current_tick)]
 
         # 5. Check win/draw conditions
         winner = GameEngine.check_winner(state)
         if winner is not None:
             state.status = GameStatus.FINISHED
-            state.finished_at = datetime.now(timezone.utc)
+            state.finished_at = datetime.now(UTC)
             state.winner = winner
 
             if winner == 0:
@@ -558,9 +561,7 @@ class GameEngine:
             # Try all possible destinations
             for to_row in range(state.board.height):
                 for to_col in range(state.board.width):
-                    move = GameEngine.validate_move(
-                        state, player, piece.id, to_row, to_col
-                    )
+                    move = GameEngine.validate_move(state, player, piece.id, to_row, to_col)
                     if move is not None:
                         legal_moves.append((piece.id, to_row, to_col))
 
