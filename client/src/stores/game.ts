@@ -32,6 +32,7 @@ export interface Piece {
   captured: boolean;
   moving: boolean;
   onCooldown: boolean;
+  moved: boolean; // Whether the piece has moved (for castling)
 }
 
 export interface ActiveMove {
@@ -46,13 +47,9 @@ export interface Cooldown {
   remainingTicks: number;
 }
 
-export interface LegalMove {
-  pieceId: string;
-  targets: [number, number][];
-}
-
 export type GameStatus = 'waiting' | 'playing' | 'finished';
 export type BoardType = 'standard' | 'four_player';
+export type GameSpeed = 'standard' | 'lightning';
 
 interface GameState {
   // Connection state
@@ -61,10 +58,12 @@ interface GameState {
   playerNumber: number; // 0 = spectator, 1-4 = player
   connectionState: ConnectionState;
   boardType: BoardType;
+  speed: GameSpeed;
 
   // Game state (from server)
   status: GameStatus;
   currentTick: number;
+  lastTickTime: number; // timestamp when currentTick was last updated
   winner: number | null;
   winReason: string | null;
   pieces: Piece[];
@@ -73,7 +72,6 @@ interface GameState {
 
   // UI state
   selectedPieceId: string | null;
-  legalMoves: LegalMove[];
   lastError: string | null;
 
   // Internal
@@ -92,7 +90,6 @@ interface GameActions {
   // Gameplay
   selectPiece: (pieceId: string | null) => void;
   makeMove: (toRow: number, toCol: number) => void;
-  fetchLegalMoves: () => Promise<void>;
 
   // Internal updates
   updateFromStateMessage: (msg: StateUpdateMessage) => void;
@@ -116,15 +113,16 @@ const initialState: GameState = {
   playerNumber: 0,
   connectionState: 'disconnected',
   boardType: 'standard',
+  speed: 'standard',
   status: 'waiting',
   currentTick: 0,
+  lastTickTime: 0,
   winner: null,
   winReason: null,
   pieces: [],
   activeMoves: [],
   cooldowns: [],
   selectedPieceId: null,
-  legalMoves: [],
   lastError: null,
   wsClient: null,
 };
@@ -143,6 +141,7 @@ function convertApiPiece(p: ApiPiece): Piece {
     captured: p.captured,
     moving: p.moving,
     onCooldown: p.on_cooldown,
+    moved: p.moved ?? false,
   };
 }
 
@@ -162,28 +161,63 @@ function convertApiCooldown(c: ApiCooldown): Cooldown {
   };
 }
 
-function mergePieceUpdates(existing: Piece[], updates: WsPieceState[]): Piece[] {
-  // Create a map of updates by ID
+function mergePieceUpdates(
+  existing: Piece[],
+  updates: WsPieceState[],
+  activeMoveIds: Set<string>
+): Piece[] {
+  // Create maps for efficient lookup
+  const existingMap = new Map(existing.map((p) => [p.id, p]));
   const updateMap = new Map(updates.map((u) => [u.id, u]));
 
-  // Update existing pieces
-  return existing.map((piece) => {
-    const update = updateMap.get(piece.id);
-    if (!update) {
-      return piece;
-    }
+  // Start with updated existing pieces
+  const result: Piece[] = [];
 
-    return {
-      ...piece,
-      row: update.row,
-      col: update.col,
-      captured: update.captured,
-      type: update.type ?? piece.type,
-      player: update.player ?? piece.player,
-      moving: update.moving ?? piece.moving,
-      onCooldown: update.on_cooldown ?? piece.onCooldown,
-    };
-  });
+  // Update existing pieces
+  for (const piece of existing) {
+    const update = updateMap.get(piece.id);
+    if (update) {
+      // Mark piece as moved if it's in an active move or was already moved
+      const hasMoved = piece.moved || activeMoveIds.has(piece.id) || (update.moved ?? false);
+      result.push({
+        ...piece,
+        row: update.row,
+        col: update.col,
+        captured: update.captured,
+        type: update.type ?? piece.type,
+        player: update.player ?? piece.player,
+        moving: update.moving ?? piece.moving,
+        onCooldown: update.on_cooldown ?? piece.onCooldown,
+        moved: hasMoved,
+      });
+    } else {
+      // Keep pieces that aren't in the update, but check if they're moving
+      const hasMoved = piece.moved || activeMoveIds.has(piece.id);
+      result.push({ ...piece, moved: hasMoved });
+    }
+  }
+
+  // Add new pieces from updates that don't exist in existing
+  for (const update of updates) {
+    if (!existingMap.has(update.id)) {
+      // Only add if we have required fields (type and player)
+      if (update.type && update.player !== undefined) {
+        result.push({
+          id: update.id,
+          type: update.type as PieceType,
+          player: update.player,
+          row: update.row,
+          col: update.col,
+          captured: update.captured,
+          moving: update.moving ?? false,
+          onCooldown: update.on_cooldown ?? false,
+          moved: update.moved ?? activeMoveIds.has(update.id),
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 // ============================================
@@ -202,6 +236,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         playerKey: response.player_key,
         playerNumber: response.player_number,
         boardType: response.board_type,
+        speed: options.speed,
         status: 'waiting',
         lastError: null,
       });
@@ -238,10 +273,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   connect: () => {
-    const { gameId, playerKey, wsClient } = get();
+    const { gameId, playerKey, wsClient, connectionState } = get();
 
     if (!gameId) {
       console.warn('Cannot connect: no gameId');
+      return;
+    }
+
+    // If already connected or connecting, don't create a new connection
+    if (wsClient && (connectionState === 'connected' || connectionState === 'connecting')) {
       return;
     }
 
@@ -292,7 +332,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
         cooldowns: gameState.cooldowns.map(convertApiCooldown),
         // Clear any stale UI state
         selectedPieceId: null,
-        legalMoves: [],
       });
     } catch (error) {
       console.error('Failed to resync state:', error);
@@ -310,7 +349,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { pieces, playerNumber, status } = get();
 
     if (!pieceId) {
-      set({ selectedPieceId: null, legalMoves: [] });
+      set({ selectedPieceId: null });
       return;
     }
 
@@ -330,10 +369,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
+    // Just set selection - legal moves are computed dynamically in GameBoard
     set({ selectedPieceId: pieceId });
-
-    // Fetch legal moves for this piece
-    get().fetchLegalMoves();
   },
 
   makeMove: (toRow, toCol) => {
@@ -349,30 +386,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Selection will be cleared in updateFromStateMessage when piece starts moving
   },
 
-  fetchLegalMoves: async () => {
-    const { gameId, playerKey } = get();
-
-    if (!gameId || !playerKey) {
-      return;
-    }
-
-    try {
-      const response = await api.getLegalMoves(gameId, playerKey);
-      const moves: LegalMove[] = response.moves.map((m) => ({
-        pieceId: m.piece_id,
-        targets: m.targets,
-      }));
-      set({ legalMoves: moves });
-    } catch (error) {
-      console.error('Failed to fetch legal moves:', error);
-    }
-  },
-
   updateFromStateMessage: (msg) => {
     const { pieces: existingPieces, selectedPieceId } = get();
 
+    // Get IDs of pieces in active moves (they have moved)
+    const activeMoveIds = new Set(msg.active_moves.map((m) => m.piece_id));
+
     // Merge piece updates
-    const updatedPieces = mergePieceUpdates(existingPieces, msg.pieces);
+    const updatedPieces = mergePieceUpdates(existingPieces, msg.pieces, activeMoveIds);
 
     // Convert active moves and cooldowns
     const activeMoves: ActiveMove[] = msg.active_moves.map((m) => ({
@@ -389,22 +410,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Clear selection if the selected piece started moving
     let newSelectedPieceId = selectedPieceId;
-    let newLegalMoves = get().legalMoves;
     if (selectedPieceId) {
       const pieceIsMoving = activeMoves.some((m) => m.pieceId === selectedPieceId);
       if (pieceIsMoving) {
         newSelectedPieceId = null;
-        newLegalMoves = [];
       }
     }
 
     set({
       currentTick: msg.tick,
+      lastTickTime: performance.now(),
       pieces: updatedPieces,
       activeMoves,
       cooldowns,
       selectedPieceId: newSelectedPieceId,
-      legalMoves: newLegalMoves,
     });
   },
 
@@ -412,6 +431,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({
       status: 'playing',
       currentTick: msg.tick,
+      lastTickTime: performance.now(),
     });
   },
 
@@ -451,12 +471,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
 export const selectPiece = (pieceId: string) => (state: GameStore) =>
   state.pieces.find((p) => p.id === pieceId);
-
-export const selectSelectedPieceMoves = (state: GameStore) => {
-  if (!state.selectedPieceId) return [];
-  const move = state.legalMoves.find((m) => m.pieceId === state.selectedPieceId);
-  return move?.targets ?? [];
-};
 
 export const selectIsMyPiece = (pieceId: string) => (state: GameStore) => {
   const piece = state.pieces.find((p) => p.id === pieceId);

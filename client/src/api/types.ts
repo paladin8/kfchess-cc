@@ -12,6 +12,7 @@ export interface ApiPiece {
   captured: boolean;
   moving: boolean;
   on_cooldown: boolean;
+  moved?: boolean; // Whether piece has moved (for castling) - tracked client-side if not sent
 }
 
 // Active move representation

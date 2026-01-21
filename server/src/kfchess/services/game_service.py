@@ -5,6 +5,7 @@ For MVP, games are stored in-memory only.
 """
 
 import asyncio
+import logging
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -15,6 +16,8 @@ from kfchess.ai.dummy import DummyAI
 from kfchess.game.board import BoardType
 from kfchess.game.engine import GameEngine, GameEvent
 from kfchess.game.state import GameState, GameStatus, Speed
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,6 +91,8 @@ class GameService:
         Returns:
             Tuple of (game_id, player_key, player_number)
         """
+        logger.debug(f"GameService.create_game: speed={speed}, board_type={board_type}, opponent={opponent}")
+
         game_id = _generate_game_id()
 
         # Ensure unique game ID
@@ -100,6 +105,7 @@ class GameService:
 
         # Normalize opponent name (strip "bot:" prefix if present)
         bot_name = opponent.removeprefix("bot:")
+        logger.debug(f"Bot name: {bot_name}")
 
         # Set up players based on board type
         if board_type == BoardType.STANDARD:
@@ -115,6 +121,8 @@ class GameService:
             }
             bot_players = [2, 3, 4]
 
+        logger.debug(f"Creating game state with players: {players}")
+
         # Create the game state
         state = GameEngine.create_game(
             speed=speed,
@@ -122,11 +130,13 @@ class GameService:
             board_type=board_type,
             game_id=game_id,
         )
+        logger.debug(f"Game state created: {state.game_id}")
 
         # Set up AI instances
         ai_players: dict[int, AIPlayer] = {}
         for bot_player in bot_players:
             ai_players[bot_player] = self._create_ai(bot_name)
+        logger.debug(f"AI players created: {list(ai_players.keys())}")
 
         # Create managed game
         managed_game = ManagedGame(
@@ -136,6 +146,7 @@ class GameService:
         )
 
         self.games[game_id] = managed_game
+        logger.info(f"Game {game_id} created successfully")
 
         return game_id, player_key, human_player
 

@@ -1,5 +1,6 @@
 """Game API endpoints."""
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -13,6 +14,8 @@ from kfchess.game.collision import (
 )
 from kfchess.game.state import Speed
 from kfchess.services.game_service import get_game_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -70,27 +73,36 @@ class ReadyResponse(BaseModel):
 @router.post("", response_model=CreateGameResponse)
 async def create_game(request: CreateGameRequest) -> CreateGameResponse:
     """Create a new game against AI."""
+    logger.info(f"Creating game: speed={request.speed}, board_type={request.board_type}, opponent={request.opponent}")
+
     # Validate speed
     try:
         speed = Speed(request.speed)
     except ValueError as err:
+        logger.warning(f"Invalid speed: {request.speed}")
         raise HTTPException(status_code=400, detail=f"Invalid speed: {request.speed}") from err
 
     # Validate board type
     try:
         board_type = BoardType(request.board_type)
     except ValueError as err:
+        logger.warning(f"Invalid board_type: {request.board_type}")
         raise HTTPException(
             status_code=400, detail=f"Invalid board type: {request.board_type}"
         ) from err
 
     # Create the game
-    service = get_game_service()
-    game_id, player_key, player_number = service.create_game(
-        speed=speed,
-        board_type=board_type,
-        opponent=request.opponent,
-    )
+    try:
+        service = get_game_service()
+        game_id, player_key, player_number = service.create_game(
+            speed=speed,
+            board_type=board_type,
+            opponent=request.opponent,
+        )
+        logger.info(f"Game created: game_id={game_id}, player_number={player_number}")
+    except Exception as err:
+        logger.exception(f"Failed to create game: {err}")
+        raise HTTPException(status_code=500, detail=f"Failed to create game: {err}") from err
 
     return CreateGameResponse(
         game_id=game_id,

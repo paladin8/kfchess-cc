@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+import logging
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -11,12 +13,41 @@ from kfchess.settings import get_settings
 from kfchess.ws.handler import handle_websocket
 
 
+def setup_logging() -> None:
+    """Configure logging for the application."""
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    # Set specific loggers
+    logging.getLogger("kfchess").setLevel(logging.DEBUG)
+    logging.getLogger("uvicorn").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
+
+# Set up logging on import
+setup_logging()
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
     # Startup
     settings = get_settings()
-    print(f"Starting Kung Fu Chess server (dev_mode={settings.dev_mode})")
+    logger.info(f"Starting Kung Fu Chess server (dev_mode={settings.dev_mode})")
 
     # TODO: Initialize database connection pool
     # TODO: Initialize Redis connection
@@ -25,7 +56,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Shutdown
-    print("Shutting down Kung Fu Chess server")
+    logger.info("Shutting down Kung Fu Chess server")
     # TODO: Graceful game handoff
     # TODO: Close connections
 

@@ -253,6 +253,8 @@ async def handle_websocket(
         game_id: The game ID
         player_key: The player's secret key (None for spectators)
     """
+    logger.info(f"WebSocket connection attempt: game_id={game_id}, has_player_key={player_key is not None}")
+
     # Import here to avoid circular imports
     from kfchess.services.game_service import get_game_service
 
@@ -261,6 +263,7 @@ async def handle_websocket(
     # Validate game exists
     state = service.get_game(game_id)
     if state is None:
+        logger.warning(f"WebSocket rejected: game {game_id} not found")
         await websocket.close(code=4004, reason="Game not found")
         return
 
@@ -269,8 +272,11 @@ async def handle_websocket(
     if player_key:
         player = service.validate_player_key(game_id, player_key)
         if player is None:
+            logger.warning(f"WebSocket rejected: invalid player key for game {game_id}")
             await websocket.close(code=4001, reason="Invalid player key")
             return
+
+    logger.info(f"WebSocket accepting connection for game {game_id}, player {player}")
 
     # Connect
     await connection_manager.connect(game_id, websocket, player)

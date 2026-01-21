@@ -14,6 +14,7 @@ export interface WsPieceState {
   player?: number;
   moving?: boolean;
   on_cooldown?: boolean;
+  moved?: boolean; // Whether piece has moved (for castling)
 }
 
 // Active move in WebSocket messages
