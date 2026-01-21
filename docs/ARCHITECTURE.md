@@ -26,6 +26,10 @@ This document defines the architecture for the rebuilt Kung Fu Chess game. It se
 
 ## Overview
 
+> **Note**: This document serves as both the architecture blueprint and implementation reference.
+> See the "Implementation Status" section at the end for current progress.
+> See `CLAUDE.md` in the repo root for quick developer reference.
+
 ### Goals
 
 1. **Maintainability**: Well-tested, typed, modern tooling
@@ -35,13 +39,13 @@ This document defines the architecture for the rebuilt Kung Fu Chess game. It se
 
 ### Key Architectural Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Game state storage | Redis | Fast, supports pub/sub, enables distributed servers |
-| Game tick ownership | Dedicated server per game | Clear ownership, explicit handoff on shutdown |
-| WebSocket routing | Redis pub/sub | Decouples connection handling from game logic |
-| Frontend state | Zustand | Lightweight, excellent TypeScript support |
-| Auth | FastAPI-Users | Handles email + OAuth, battle-tested |
+| Decision | Choice | Rationale | MVP Status |
+|----------|--------|-----------|------------|
+| Game state storage | In-memory (Redis planned) | Fast access, real-time updates. Redis for distributed scaling. | In-memory implemented |
+| Game tick ownership | Async task per game | Clear ownership, explicit handoff | Implemented |
+| WebSocket routing | Direct connection (Redis pub/sub planned) | MVP simplicity, pub/sub for multi-server | Direct implemented |
+| Frontend state | Zustand | Lightweight, excellent TypeScript support | Implemented |
+| Auth | FastAPI-Users | Handles email + OAuth, battle-tested | Configured, not wired |
 
 ---
 
@@ -49,263 +53,181 @@ This document defines the architecture for the rebuilt Kung Fu Chess game. It se
 
 ### Backend
 
-| Component | Technology | Version |
-|-----------|------------|---------|
-| Framework | FastAPI | 0.110+ |
-| ASGI Server | Uvicorn | 0.27+ |
-| Database ORM | SQLAlchemy | 2.0+ |
-| Migrations | Alembic | 1.13+ |
-| Cache/State | Redis | 7+ |
-| Auth | FastAPI-Users | 13+ |
-| Task Queue | None (game loops run in-process) | - |
-| Python | Python | 3.12+ |
-| Package Manager | uv | latest |
-| Linting/Formatting | Ruff | latest |
-| Testing | pytest + pytest-asyncio | latest |
+| Component | Technology | Version | Status |
+|-----------|------------|---------|--------|
+| Framework | FastAPI | 0.115+ | Implemented |
+| ASGI Server | Uvicorn | 0.34+ | Implemented |
+| Database ORM | SQLAlchemy | 2.0+ | Configured (models TODO) |
+| Migrations | Alembic | 1.14+ | Configured (migrations TODO) |
+| Cache/State | Redis | 7+ (client 5.2+) | Placeholder |
+| Auth | FastAPI-Users | 14+ | Configured (wiring TODO) |
+| Task Queue | None (game loops run in-process) | - | - |
+| Python | Python | 3.12+ | Implemented |
+| Package Manager | uv | latest | Implemented |
+| Linting/Formatting | Ruff | 0.8+ | Implemented |
+| Testing | pytest + pytest-asyncio | 8.3+/0.25+ | Implemented |
 
 ### Frontend
 
-| Component | Technology | Version |
-|-----------|------------|---------|
-| Framework | React | 18+ |
-| Language | TypeScript | 5+ |
-| Build Tool | Vite | 5+ |
-| State Management | Zustand | 4+ |
-| Canvas Rendering | PixiJS | 8+ |
-| Routing | React Router | 6+ |
-| HTTP Client | fetch (native) | - |
-| Styling | CSS Modules or Tailwind | - |
-| Testing | Vitest + React Testing Library | latest |
+| Component | Technology | Version | Status |
+|-----------|------------|---------|--------|
+| Framework | React | 19 | Implemented |
+| Language | TypeScript | 5.7+ | Implemented |
+| Build Tool | Vite | 6 | Implemented |
+| State Management | Zustand | 5 | Implemented |
+| Canvas Rendering | PixiJS | 8.6+ | Implemented |
+| Routing | React Router | 7 | Implemented |
+| HTTP Client | fetch (native) | - | Implemented |
+| Styling | CSS | - | Implemented |
+| Testing | Vitest + React Testing Library | 3/16+ | Implemented |
+| Node.js | Node.js | 20+ | Required |
 
 ### Infrastructure
 
-| Component | Technology |
-|-----------|------------|
-| Database | PostgreSQL 15+ |
-| Cache/Pub-Sub | Redis 7+ |
-| Reverse Proxy | Nginx |
-| Process Manager | systemd |
-| Deployment | Simple VMs |
+| Component | Technology | Status |
+|-----------|------------|--------|
+| Database | PostgreSQL 15+ | Dev ready (docker-compose) |
+| Cache/Pub-Sub | Redis 7+ | Dev ready (docker-compose) |
+| Reverse Proxy | Nginx | Production TODO |
+| Process Manager | systemd | Production TODO |
+| Deployment | Simple VMs | Production TODO |
 
 ---
 
 ## Directory Structure
 
+> **Note**: This is the target structure. Files marked with ✓ are implemented, others are planned.
+
 ```
 kfchess-cc/
-├── README.md
-├── ARCHITECTURE.md
-├── KFCHESS_ORIGINAL_IMPLEMENTATION.md
-├── docker-compose.yml              # Dev environment
-├── docker-compose.prod.yml         # Production reference
+├── README.md                       ✓
+├── CLAUDE.md                       ✓ Claude Code context
+├── docker-compose.yml              ✓ Dev environment
 │
-├── server/                         # Python backend
-│   ├── pyproject.toml
-│   ├── uv.lock
-│   ├── alembic.ini
-│   ├── alembic/                    # Database migrations
-│   │   ├── versions/
-│   │   └── env.py
+├── docs/                           ✓ Documentation
+│   ├── ARCHITECTURE.md             ✓ This file (blueprint)
+│   ├── MVP_IMPLEMENTATION.md       ✓ MVP implementation details
+│   ├── FOUR_PLAYER_DESIGN.md       ✓ 4-player mode design
+│   └── KFCHESS_ORIGINAL_IMPLEMENTATION.md  ✓ Legacy reference
+│
+├── scripts/                        ✓ Utility scripts
+│   ├── dev.sh                      ✓ Start full dev environment
+│   ├── dev-servers.sh              ✓ Start only dev servers
+│   └── migrate.sh                  ✓ Run migrations
+│
+├── server/                         ✓ Python backend
+│   ├── pyproject.toml              ✓
+│   ├── uv.lock                     ✓
+│   ├── .env.example                ✓
+│   ├── alembic/                    ✓ Database migrations (empty)
+│   │   ├── env.py                  ✓
+│   │   └── versions/               ✓ (no migrations yet)
+│   │
+│   ├── src/kfchess/
+│   │   ├── __init__.py             ✓
+│   │   ├── main.py                 ✓ FastAPI app entry point
+│   │   ├── settings.py             ✓ Pydantic settings
+│   │   │
+│   │   ├── api/                    ✓ HTTP API routes
+│   │   │   ├── router.py           ✓ Main router
+│   │   │   └── games.py            ✓ Game management endpoints
+│   │   │   # TODO: auth.py, users.py, lobbies.py, replays.py, campaign.py
+│   │   │
+│   │   ├── ws/                     ✓ WebSocket handlers
+│   │   │   ├── handler.py          ✓ Connection handler + game loop
+│   │   │   └── protocol.py         ✓ Message types/schemas
+│   │   │
+│   │   ├── game/                   ✓ Game engine (COMPLETE)
+│   │   │   ├── engine.py           ✓ Core game logic
+│   │   │   ├── board.py            ✓ Board representation
+│   │   │   ├── pieces.py           ✓ Piece definitions
+│   │   │   ├── moves.py            ✓ Move validation
+│   │   │   ├── collision.py        ✓ Collision detection
+│   │   │   └── state.py            ✓ Game state management
+│   │   │   # TODO: replay.py
+│   │   │
+│   │   ├── ai/                     ✓ AI system
+│   │   │   ├── base.py             ✓ AI interface
+│   │   │   └── dummy.py            ✓ Random move AI
+│   │   │   # TODO: mcts.py, heuristics.py, difficulty.py
+│   │   │
+│   │   ├── services/               ✓ Business logic
+│   │   │   └── game_service.py     ✓ In-memory game management
+│   │   │   # TODO: elo.py, s3.py
+│   │   │
+│   │   ├── db/                     Placeholder - TODO
+│   │   ├── redis/                  Placeholder - TODO
+│   │   ├── lobby/                  Placeholder - TODO
+│   │   └── campaign/               Placeholder - TODO
+│   │
+│   └── tests/                      ✓ Test suite
+│       ├── conftest.py             ✓
+│       ├── test_health.py          ✓
+│       └── unit/
+│           ├── game/               ✓ Game engine tests (comprehensive)
+│           ├── test_game_service.py ✓
+│           ├── test_api_games.py   ✓
+│           └── test_websocket.py   ✓
+│
+├── client/                         ✓ TypeScript frontend
+│   ├── package.json                ✓
+│   ├── vite.config.ts              ✓
+│   ├── tsconfig.json               ✓
+│   ├── index.html                  ✓
+│   ├── .env.example                ✓
 │   │
 │   ├── src/
-│   │   └── kfchess/
-│   │       ├── __init__.py
-│   │       ├── main.py             # FastAPI app entry point
-│   │       ├── config.py           # Configuration management
-│   │       ├── dependencies.py     # FastAPI dependencies
-│   │       │
-│   │       ├── api/                # HTTP API routes
-│   │       │   ├── __init__.py
-│   │       │   ├── router.py       # Main router
-│   │       │   ├── auth.py         # Auth endpoints
-│   │       │   ├── users.py        # User endpoints
-│   │       │   ├── games.py        # Game management endpoints
-│   │       │   ├── lobbies.py      # Lobby endpoints
-│   │       │   ├── replays.py      # Replay endpoints
-│   │       │   └── campaign.py     # Campaign endpoints
-│   │       │
-│   │       ├── ws/                 # WebSocket handlers
-│   │       │   ├── __init__.py
-│   │       │   ├── manager.py      # Connection manager
-│   │       │   ├── handlers.py     # Message handlers
-│   │       │   └── protocol.py     # Message types/schemas
-│   │       │
-│   │       ├── game/               # Game engine
-│   │       │   ├── __init__.py
-│   │       │   ├── engine.py       # Core game logic
-│   │       │   ├── board.py        # Board representation
-│   │       │   ├── pieces.py       # Piece definitions
-│   │       │   ├── moves.py        # Move validation
-│   │       │   ├── collision.py    # Collision detection
-│   │       │   ├── state.py        # Game state management
-│   │       │   └── replay.py       # Replay recording/playback
-│   │       │
-│   │       ├── ai/                 # AI system
-│   │       │   ├── __init__.py
-│   │       │   ├── base.py         # AI interface
-│   │       │   ├── mcts.py         # MCTS implementation
-│   │       │   ├── heuristics.py   # Evaluation functions
-│   │       │   └── difficulty.py   # Difficulty presets
-│   │       │
-│   │       ├── campaign/           # Campaign system
-│   │       │   ├── __init__.py
-│   │       │   ├── levels.py       # Level definitions
-│   │       │   └── progress.py     # Progress tracking
-│   │       │
-│   │       ├── lobby/              # Lobby system
-│   │       │   ├── __init__.py
-│   │       │   ├── manager.py      # Lobby management
-│   │       │   └── matchmaking.py  # Matchmaking logic
-│   │       │
-│   │       ├── db/                 # Database layer
-│   │       │   ├── __init__.py
-│   │       │   ├── models.py       # SQLAlchemy models
-│   │       │   ├── session.py      # Session management
-│   │       │   └── repositories/   # Data access layer
-│   │       │       ├── __init__.py
-│   │       │       ├── users.py
-│   │       │       ├── games.py
-│   │       │       ├── replays.py
-│   │       │       └── campaigns.py
-│   │       │
-│   │       ├── redis/              # Redis integration
-│   │       │   ├── __init__.py
-│   │       │   ├── client.py       # Redis client wrapper
-│   │       │   ├── game_state.py   # Game state storage
-│   │       │   ├── pubsub.py       # Pub/sub management
-│   │       │   └── lobby_state.py  # Lobby state storage
-│   │       │
-│   │       └── services/           # Business logic
-│   │           ├── __init__.py
-│   │           ├── game_server.py  # Game tick loop management
-│   │           ├── elo.py          # Rating calculations
-│   │           └── s3.py           # S3 integration
-│   │
-│   └── tests/
-│       ├── conftest.py
-│       ├── unit/
-│       │   ├── game/
-│       │   ├── ai/
-│       │   └── ...
-│       ├── integration/
-│       │   ├── api/
-│       │   ├── ws/
-│       │   └── ...
-│       └── e2e/
-│
-├── client/                         # TypeScript frontend
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── tsconfig.json
-│   ├── index.html
-│   │
-│   ├── src/
-│   │   ├── main.tsx               # App entry point
-│   │   ├── App.tsx                # Root component
-│   │   ├── vite-env.d.ts
+│   │   ├── main.tsx                ✓ App entry point
+│   │   ├── App.tsx                 ✓ Root component + routes
 │   │   │
-│   │   ├── api/                   # API client
-│   │   │   ├── client.ts          # HTTP client
-│   │   │   ├── types.ts           # API types
-│   │   │   └── endpoints/
-│   │   │       ├── auth.ts
-│   │   │       ├── users.ts
-│   │   │       ├── games.ts
-│   │   │       ├── lobbies.ts
-│   │   │       └── replays.ts
+│   │   ├── api/                    ✓ API client
+│   │   │   ├── client.ts           ✓ HTTP client
+│   │   │   ├── types.ts            ✓ API types
+│   │   │   └── index.ts            ✓
 │   │   │
-│   │   ├── ws/                    # WebSocket client
-│   │   │   ├── client.ts          # WebSocket manager
-│   │   │   ├── types.ts           # Message types
-│   │   │   └── hooks.ts           # React hooks
+│   │   ├── ws/                     ✓ WebSocket client
+│   │   │   ├── client.ts           ✓ WebSocket manager
+│   │   │   ├── types.ts            ✓ Message types
+│   │   │   └── index.ts            ✓
 │   │   │
-│   │   ├── stores/                # Zustand stores
-│   │   │   ├── auth.ts            # Auth state
-│   │   │   ├── game.ts            # Game state
-│   │   │   ├── lobby.ts           # Lobby state
-│   │   │   └── ui.ts              # UI state
+│   │   ├── stores/                 ✓ Zustand stores
+│   │   │   ├── game.ts             ✓ Game state (main)
+│   │   │   ├── auth.ts             ✓ Auth state (placeholder)
+│   │   │   └── lobby.ts            ✓ Lobby state (placeholder)
 │   │   │
-│   │   ├── game/                  # Game rendering
-│   │   │   ├── GameCanvas.tsx     # PIXI canvas wrapper
-│   │   │   ├── renderer.ts        # PIXI rendering logic
-│   │   │   ├── sprites.ts         # Sprite definitions
-│   │   │   ├── input.ts           # Input handling
-│   │   │   └── logic.ts           # Client-side validation
+│   │   ├── game/                   ✓ Game rendering
+│   │   │   ├── renderer.ts         ✓ PixiJS rendering logic
+│   │   │   ├── constants.ts        ✓ Board dimensions, colors
+│   │   │   ├── sprites.ts          ✓ Sprite management
+│   │   │   ├── interpolation.ts    ✓ Position smoothing
+│   │   │   ├── moves.ts            ✓ Client-side validation
+│   │   │   └── index.ts            ✓
 │   │   │
-│   │   ├── components/            # React components
-│   │   │   ├── layout/
-│   │   │   │   ├── Header.tsx
-│   │   │   │   ├── Footer.tsx
-│   │   │   │   └── Layout.tsx
+│   │   ├── components/             ✓ React components
 │   │   │   ├── game/
-│   │   │   │   ├── GameBoard.tsx
-│   │   │   │   ├── GameControls.tsx
-│   │   │   │   ├── GameStatus.tsx
-│   │   │   │   └── PlayerInfo.tsx
-│   │   │   ├── lobby/
-│   │   │   │   ├── LobbyList.tsx
-│   │   │   │   ├── LobbyCard.tsx
-│   │   │   │   └── CreateLobby.tsx
-│   │   │   ├── campaign/
-│   │   │   │   ├── CampaignMap.tsx
-│   │   │   │   ├── BeltDisplay.tsx
-│   │   │   │   └── LevelCard.tsx
-│   │   │   ├── replay/
-│   │   │   │   ├── ReplayViewer.tsx
-│   │   │   │   ├── ReplayControls.tsx
-│   │   │   │   └── ReplayBrowser.tsx
-│   │   │   ├── user/
-│   │   │   │   ├── Profile.tsx
-│   │   │   │   ├── ProfilePic.tsx
-│   │   │   │   └── GameHistory.tsx
-│   │   │   └── common/
-│   │   │       ├── Button.tsx
-│   │   │       ├── Modal.tsx
-│   │   │       ├── Spinner.tsx
-│   │   │       └── Alert.tsx
+│   │   │   │   ├── GameBoard.tsx   ✓ PixiJS canvas wrapper
+│   │   │   │   ├── GameStatus.tsx  ✓
+│   │   │   │   └── GameOverModal.tsx ✓
+│   │   │   └── layout/
+│   │   │       ├── Header.tsx      ✓
+│   │   │       └── Layout.tsx      ✓
+│   │   │   # TODO: lobby/, campaign/, replay/, user/, common/
 │   │   │
-│   │   ├── pages/                 # Route pages
-│   │   │   ├── Home.tsx
-│   │   │   ├── Game.tsx
-│   │   │   ├── Lobby.tsx
-│   │   │   ├── Campaign.tsx
-│   │   │   ├── Replays.tsx
-│   │   │   ├── Profile.tsx
-│   │   │   ├── Login.tsx
-│   │   │   ├── Register.tsx
-│   │   │   └── About.tsx
+│   │   ├── pages/                  ✓ Route pages
+│   │   │   ├── Home.tsx            ✓ Home/game creation
+│   │   │   └── Game.tsx            ✓ Game play page
+│   │   │   # TODO: Lobby, Campaign, Replays, Profile, Login, Register
 │   │   │
-│   │   ├── hooks/                 # Custom hooks
-│   │   │   ├── useAuth.ts
-│   │   │   ├── useGame.ts
-│   │   │   ├── useLobby.ts
-│   │   │   └── useReplay.ts
+│   │   ├── styles/
+│   │   │   └── index.css           ✓
 │   │   │
-│   │   ├── utils/                 # Utilities
-│   │   │   ├── time.ts
-│   │   │   ├── elo.ts
-│   │   │   └── validation.ts
-│   │   │
-│   │   ├── styles/                # Global styles
-│   │   │   ├── index.css
-│   │   │   ├── variables.css
-│   │   │   └── game.css
-│   │   │
-│   │   └── assets/                # Static assets
-│   │       ├── sprites/
-│   │       ├── audio/
-│   │       └── images/
+│   │   └── assets/                 ✓ Static assets
+│   │       └── sprites/            ✓ Chess piece images
 │   │
-│   └── tests/
-│       ├── setup.ts
-│       ├── components/
-│       └── game/
-│
-└── scripts/                       # Utility scripts
-    ├── dev.sh                     # Start dev environment
-    ├── migrate.sh                 # Run migrations
-    ├── deploy.sh                  # Deployment script
-    └── seed.py                    # Seed database
+│   └── tests/                      ✓
+│       ├── setup.ts                ✓
+│       └── components/
+│           └── Home.test.tsx       ✓
 ```
 
 ---
@@ -1723,7 +1645,9 @@ def migrate_v1_to_v2(data: dict) -> Replay:
 
 ---
 
-## Future: 4-Player Mode
+## 4-Player Mode
+
+> **Status**: Game engine support is implemented. Frontend rendering needs additional work for 4-player perspectives.
 
 ### Board Layout
 
@@ -1806,15 +1730,41 @@ def check_winner_4player(state: GameState) -> int | None:
 This architecture provides:
 
 1. **Maintainability**: TypeScript frontend, typed Python backend, comprehensive tests
-2. **Scalability**: Redis-backed distributed game servers with handoff
-3. **New Features**: Lobbies, improved AI (MCTS), replay seeking, email auth
+2. **Scalability**: Redis-backed distributed game servers with handoff (planned)
+3. **New Features**: Lobbies, improved AI (MCTS), replay seeking, email auth (planned)
 4. **Backwards Compatibility**: Migration path for existing data
 
 The system is designed for 2-player now with clear extension points for 4-player mode later.
 
-Next steps:
-1. Set up project structure and tooling
-2. Implement core game engine with tests
-3. Build out API layer
-4. Migrate frontend to TypeScript
-5. Add new features incrementally
+---
+
+## Implementation Status
+
+### Completed (MVP)
+- [x] Project structure and tooling (uv, Vite, TypeScript)
+- [x] Core game engine with comprehensive tests
+  - Board, pieces, moves, collision detection
+  - 2-player and 4-player board support
+  - Tick-based movement system
+  - Castling, pawn promotion
+- [x] REST API layer (game creation, moves, ready, legal-moves)
+- [x] WebSocket real-time communication
+- [x] Frontend React/TypeScript/PixiJS rendering
+- [x] Zustand state management
+- [x] Basic AI (DummyAI - random moves)
+- [x] Development scripts (dev.sh, migrate.sh)
+- [x] Docker Compose for dev databases
+
+### In Progress / Next Steps
+1. Database persistence (SQLAlchemy models, Alembic migrations)
+2. User authentication (FastAPI-Users is configured, needs wiring)
+3. Lobby system for matchmaking
+4. Replay recording and playback
+5. Advanced AI (MCTS implementation)
+6. ELO rating system
+
+### Future
+- Campaign mode with AI opponents
+- 4-player game support (engine ready, UI needs work)
+- Redis for distributed scaling
+- Production deployment (Nginx, systemd)
