@@ -3,10 +3,12 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
+from kfchess.api.router import api_router
 from kfchess.settings import get_settings
+from kfchess.ws.handler import handle_websocket
 
 
 @asynccontextmanager
@@ -58,10 +60,16 @@ async def root() -> dict[str, str]:
     return {"message": "Kung Fu Chess API", "version": "0.1.0"}
 
 
-# TODO: Include API routers
-# from kfchess.api.router import api_router
-# app.include_router(api_router, prefix="/api")
+# Include API routers
+app.include_router(api_router, prefix="/api")
 
-# TODO: WebSocket endpoint
-# from kfchess.ws.handlers import websocket_endpoint
-# app.add_api_websocket_route("/ws", websocket_endpoint)
+
+# WebSocket endpoint
+@app.websocket("/ws/game/{game_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    game_id: str,
+    player_key: str | None = None,
+) -> None:
+    """WebSocket endpoint for real-time game communication."""
+    await handle_websocket(websocket, game_id, player_key)
