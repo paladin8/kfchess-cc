@@ -123,3 +123,29 @@ export interface LegalMovesResponse {
 export interface ApiError {
   detail: string;
 }
+
+// ============================================
+// Replay Types
+// ============================================
+
+// A single move in a replay
+export interface ApiReplayMove {
+  tick: number;
+  piece_id: string;
+  to_row: number;
+  to_col: number;
+  player: number;
+}
+
+// Complete replay data from server
+export interface ApiReplay {
+  version: number;
+  speed: 'standard' | 'lightning';
+  board_type: 'standard' | 'four_player';
+  players: Record<string, string>; // "1" -> "player_id"
+  moves: ApiReplayMove[];
+  total_ticks: number;
+  winner: number | null;
+  win_reason: string | null;
+  created_at: string | null;
+}

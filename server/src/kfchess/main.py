@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from kfchess.api.router import api_router
 from kfchess.settings import get_settings
 from kfchess.ws.handler import handle_websocket
+from kfchess.ws.replay_handler import handle_replay_websocket
 
 
 def setup_logging() -> None:
@@ -95,7 +96,7 @@ async def root() -> dict[str, str]:
 app.include_router(api_router, prefix="/api")
 
 
-# WebSocket endpoint
+# WebSocket endpoint for live games
 @app.websocket("/ws/game/{game_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -104,3 +105,13 @@ async def websocket_endpoint(
 ) -> None:
     """WebSocket endpoint for real-time game communication."""
     await handle_websocket(websocket, game_id, player_key)
+
+
+# WebSocket endpoint for replay playback
+@app.websocket("/ws/replay/{game_id}")
+async def replay_websocket_endpoint(
+    websocket: WebSocket,
+    game_id: str,
+) -> None:
+    """WebSocket endpoint for replay playback."""
+    await handle_replay_websocket(websocket, game_id)

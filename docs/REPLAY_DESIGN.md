@@ -8,11 +8,11 @@ This document describes the design for replay recording, storage, and playback i
 
 1. [Overview](#overview)
 2. [Goals](#goals)
-3. [Backwards Compatibility](#backwards-compatibility)
+3. [Architecture](#architecture)
 4. [Data Model](#data-model)
-5. [Backend Implementation](#backend-implementation)
-6. [Frontend Implementation](#frontend-implementation)
-7. [API Endpoints](#api-endpoints)
+5. [WebSocket Protocol](#websocket-protocol)
+6. [Backend Implementation](#backend-implementation)
+7. [Frontend Implementation](#frontend-implementation)
 8. [Implementation Plan](#implementation-plan)
 
 ---
@@ -24,120 +24,83 @@ The replay system allows players to:
 - **Store**: Save completed games for later viewing
 - **Playback**: Watch replays with play/pause and seeking controls
 
-The replay viewer is similar to the game client but read-only, with additional playback controls.
+**Key Design Decision**: The server runs the replay simulation and streams state updates to the client via WebSocket—exactly like spectating a live game. The client has **no game engine logic**; it just renders what the server sends.
 
 ---
 
 ## Goals
 
-1. **Backwards compatible**: Support loading replays from the original Kung Fu Chess format
-2. **Efficient storage**: Store only the minimal data needed to reconstruct gameplay
-3. **Full playback fidelity**: Replays should look identical to the original game
-4. **Smooth seeking**: Users can jump to any point in the game
-5. **Simple implementation**: Reuse existing game rendering infrastructure
+1. **No client-side game logic**: Client only renders; server simulates
+2. **Reuse existing infrastructure**: Same WebSocket protocol and rendering as live games
+3. **Simple client implementation**: Replay viewer is nearly identical to spectator mode
+4. **Backwards compatible**: Support loading replays from the original Kung Fu Chess format
+5. **Efficient storage**: Store only moves, not full state at each tick
 
 ---
 
-## Backwards Compatibility
+## Architecture
 
-### Original Replay Format
-
-The original `Replay` class (from `../kfchess/lib/replay.py`) stores:
-
-```python
-class Replay:
-    speed: str                    # "standard" or "lightning"
-    players: dict[int, str]       # {1: "player1_name", 2: "player2_name"}
-    moves: list[ReplayMove]       # List of all moves
-    ticks: int                    # Total game duration in ticks
-
-class ReplayMove:
-    piece_id: str                 # e.g., "P:1:6:0"
-    player: int                   # Player who made the move
-    row: int                      # Destination row
-    col: int                      # Destination column
-    tick: int                     # Tick when move was initiated
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                           CLIENT                                │
+│  ┌─────────────┐    ┌──────────────┐    ┌──────────────────┐   │
+│  │ Replay Page │───▶│ Replay Store │───▶│ Game Renderer    │   │
+│  │ (controls)  │    │ (state only) │    │ (existing)       │   │
+│  └─────────────┘    └──────────────┘    └──────────────────┘   │
+│         │                   ▲                                   │
+│         │ WebSocket         │ state updates                     │
+│         ▼                   │                                   │
+└─────────┼───────────────────┼───────────────────────────────────┘
+          │                   │
+          ▼                   │
+┌─────────────────────────────────────────────────────────────────┐
+│                           SERVER                                │
+│  ┌─────────────────┐    ┌──────────────────┐                   │
+│  │ Replay WS       │───▶│ ReplaySession    │                   │
+│  │ Handler         │    │ (runs simulation)│                   │
+│  └─────────────────┘    └──────────────────┘                   │
+│                                │                                │
+│                                ▼                                │
+│                         ┌──────────────┐                       │
+│                         │ ReplayEngine │                       │
+│                         │ (tick-by-tick│                       │
+│                         │  simulation) │                       │
+│                         └──────────────┘                       │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-JSON format (camelCase):
-```json
-{
-  "speed": "standard",
-  "players": {"1": "player1", "2": "player2"},
-  "moves": [
-    {"pieceId": "P:1:6:4", "player": 1, "row": 4, "col": 4, "tick": 5},
-    {"pieceId": "P:2:1:4", "player": 2, "row": 3, "col": 4, "tick": 8}
-  ],
-  "ticks": 1500
-}
-```
-
-### New Replay Format
-
-The new format extends the original with additional metadata while maintaining compatibility:
-
-```json
-{
-  "version": 2,
-  "speed": "standard",
-  "board_type": "standard",
-  "players": {"1": "player1", "2": "player2"},
-  "moves": [
-    {"piece_id": "P:1:6:4", "player": 1, "to_row": 4, "to_col": 4, "tick": 5},
-    {"piece_id": "P:2:1:4", "player": 2, "to_row": 3, "to_col": 4, "tick": 8}
-  ],
-  "total_ticks": 1500,
-  "winner": 1,
-  "win_reason": "king_captured",
-  "created_at": "2025-01-21T12:00:00Z"
-}
-```
-
-### Migration Strategy
-
-The replay loader will detect format version and convert as needed:
-
-```python
-def load_replay(data: dict) -> Replay:
-    version = data.get("version", 1)
-
-    if version == 1:
-        return convert_v1_to_v2(data)
-    elif version == 2:
-        return Replay.from_dict(data)
-    else:
-        raise ValueError(f"Unknown replay version: {version}")
-
-def convert_v1_to_v2(data: dict) -> Replay:
-    """Convert original format to new format."""
-    moves = []
-    for m in data["moves"]:
-        moves.append(ReplayMove(
-            tick=m["tick"],
-            piece_id=m["pieceId"],
-            to_row=m["row"],
-            to_col=m["col"],
-            player=m["player"],
-        ))
-
-    return Replay(
-        version=2,
-        speed=Speed(data["speed"]),
-        board_type=BoardType.STANDARD,  # Original only supported standard
-        players=data["players"],
-        moves=moves,
-        total_ticks=data["ticks"],
-        winner=None,  # Original didn't store this
-        win_reason=None,
-        created_at=None,
-    )
-```
+**Flow:**
+1. Client connects to `/ws/replay/{game_id}`
+2. Server loads replay from database
+3. Server creates a `ReplaySession` that runs the `ReplayEngine`
+4. Client sends playback commands: `play`, `pause`, `seek`
+5. Server streams `state_update` messages (same format as live games)
+6. Client renders using existing game components
 
 ---
 
 ## Data Model
 
-### Backend (Python)
+### Replay Storage (Database)
+
+```python
+# server/src/kfchess/db/models.py
+
+class GameReplay(Base):
+    __tablename__ = "game_replays"
+
+    id = Column(String, primary_key=True)  # Same as game_id
+    speed = Column(String, nullable=False)
+    board_type = Column(String, nullable=False)
+    players = Column(JSON, nullable=False)
+    moves = Column(JSON, nullable=False)
+    total_ticks = Column(Integer, nullable=False)
+    winner = Column(Integer, nullable=True)
+    win_reason = Column(String, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+```
+
+### Replay Data Structure
 
 ```python
 # server/src/kfchess/game/replay.py
@@ -160,116 +123,96 @@ class Replay:
     players: dict[int, str]
     moves: list[ReplayMove]
     total_ticks: int
-    winner: int | None          # 0=draw, 1-4=player, None=unknown
+    winner: int | None
     win_reason: str | None
     created_at: datetime | None
-
-    @staticmethod
-    def from_game_state(state: GameState) -> "Replay":
-        """Create a replay from a completed game state."""
-        return Replay(
-            version=2,
-            speed=state.speed,
-            board_type=state.board.board_type,
-            players=state.players,
-            moves=list(state.replay_moves),
-            total_ticks=state.current_tick,
-            winner=state.winner,
-            win_reason=None,  # TODO: track win reason
-            created_at=state.finished_at,
-        )
-
-    @staticmethod
-    def from_dict(data: dict) -> "Replay":
-        """Load replay from dictionary (handles both v1 and v2 formats)."""
-        version = data.get("version", 1)
-        if version == 1:
-            return _convert_v1(data)
-        return _parse_v2(data)
-
-    def to_dict(self) -> dict:
-        """Serialize replay to dictionary."""
-        return {
-            "version": self.version,
-            "speed": self.speed.value,
-            "board_type": self.board_type.value,
-            "players": self.players,
-            "moves": [
-                {
-                    "tick": m.tick,
-                    "piece_id": m.piece_id,
-                    "to_row": m.to_row,
-                    "to_col": m.to_col,
-                    "player": m.player,
-                }
-                for m in self.moves
-            ],
-            "total_ticks": self.total_ticks,
-            "winner": self.winner,
-            "win_reason": self.win_reason,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
-
-    def get_moves_at_tick(self, tick: int) -> list[ReplayMove]:
-        """Get all moves that started at a specific tick."""
-        return [m for m in self.moves if m.tick == tick]
-
-    def get_moves_in_range(self, start_tick: int, end_tick: int) -> list[ReplayMove]:
-        """Get all moves in a tick range (inclusive)."""
-        return [m for m in self.moves if start_tick <= m.tick <= end_tick]
 ```
 
-### Frontend (TypeScript)
+### Backwards Compatibility
+
+The original replay format uses camelCase and different field names:
+
+```json
+{
+  "speed": "standard",
+  "players": {"1": "player1", "2": "player2"},
+  "moves": [
+    {"pieceId": "P:1:6:4", "player": 1, "row": 4, "col": 4, "tick": 5}
+  ],
+  "ticks": 1500
+}
+```
+
+The `Replay.from_dict()` method detects and converts v1 format automatically.
+
+---
+
+## WebSocket Protocol
+
+### Connection
+
+```
+WebSocket: /ws/replay/{game_id}
+```
+
+### Client → Server Messages
 
 ```typescript
-// client/src/stores/replay.ts
+// Start/resume playback
+{ "type": "play" }
 
-interface ReplayMove {
-  tick: number;
-  pieceId: string;
-  toRow: number;
-  toCol: number;
-  player: number;
+// Pause playback
+{ "type": "pause" }
+
+// Seek to specific tick
+{ "type": "seek", "tick": 500 }
+```
+
+### Server → Client Messages
+
+Uses the **same message types as live games**:
+
+```typescript
+// Replay metadata (sent on connect)
+{
+  "type": "replay_info",
+  "game_id": "ABC123",
+  "speed": "standard",
+  "board_type": "standard",
+  "players": { "1": "player1", "2": "player2" },
+  "total_ticks": 1500,
+  "winner": 1,
+  "win_reason": "king_captured"
 }
 
-interface Replay {
-  version: number;
-  speed: GameSpeed;
-  boardType: BoardType;
-  players: Record<number, string>;
-  moves: ReplayMove[];
-  totalTicks: number;
-  winner: number | null;
-  winReason: string | null;
-  createdAt: string | null;
+// State update (same as live game)
+{
+  "type": "state_update",
+  "tick": 100,
+  "pieces": [...],
+  "active_moves": [...],
+  "cooldowns": [...]
 }
 
-interface ReplayState {
-  // Replay data
-  replay: Replay | null;
-  isLoading: boolean;
-  error: string | null;
+// Playback status
+{
+  "type": "playback_status",
+  "is_playing": true,
+  "current_tick": 100,
+  "total_ticks": 1500
+}
 
-  // Playback state
-  currentTick: number;
-  isPlaying: boolean;
-  playbackSpeed: number;  // 1.0 = normal, 2.0 = 2x, 0.5 = half speed
+// Game over (when replay reaches end)
+{
+  "type": "game_over",
+  "winner": 1,
+  "reason": "king_captured"
+}
 
-  // Derived game state (computed from replay + currentTick)
-  pieces: Piece[];
-  activeMoves: ActiveMove[];
-  cooldowns: Cooldown[];
-
-  // Actions
-  loadReplay: (replayId: string) => Promise<void>;
-  loadReplayFromData: (data: Replay) => void;
-  play: () => void;
-  pause: () => void;
-  seek: (tick: number) => void;
-  setPlaybackSpeed: (speed: number) => void;
-  stepForward: () => void;
-  stepBackward: () => void;
-  reset: () => void;
+// Error
+{
+  "type": "error",
+  "message": "Replay not found"
 }
 ```
 
@@ -277,9 +220,129 @@ interface ReplayState {
 
 ## Backend Implementation
 
-### Replay Playback Engine
+### ReplaySession
 
-The `ReplayEngine` simulates game state at any given tick by replaying moves from the start:
+Manages playback state for a single replay viewer:
+
+```python
+# server/src/kfchess/replay/session.py
+
+class ReplaySession:
+    """Manages replay playback for a single client."""
+
+    def __init__(self, replay: Replay, websocket: WebSocket):
+        self.replay = replay
+        self.websocket = websocket
+        self.engine = ReplayEngine(replay)
+        self.current_tick = 0
+        self.is_playing = False
+        self._playback_task: asyncio.Task | None = None
+
+    async def start(self) -> None:
+        """Initialize session and send replay info."""
+        await self._send_replay_info()
+        await self._send_state_at_tick(0)
+
+    async def handle_message(self, message: dict) -> None:
+        """Handle incoming control message."""
+        msg_type = message.get("type")
+
+        if msg_type == "play":
+            await self.play()
+        elif msg_type == "pause":
+            self.pause()
+        elif msg_type == "seek":
+            tick = message.get("tick", 0)
+            await self.seek(tick)
+
+    async def play(self) -> None:
+        """Start or resume playback."""
+        if self.is_playing:
+            return
+
+        self.is_playing = True
+        await self._send_playback_status()
+        self._playback_task = asyncio.create_task(self._playback_loop())
+
+    def pause(self) -> None:
+        """Pause playback."""
+        self.is_playing = False
+        if self._playback_task:
+            self._playback_task.cancel()
+            self._playback_task = None
+
+    async def seek(self, tick: int) -> None:
+        """Jump to a specific tick."""
+        was_playing = self.is_playing
+        self.pause()
+
+        self.current_tick = max(0, min(tick, self.replay.total_ticks))
+        await self._send_state_at_tick(self.current_tick)
+        await self._send_playback_status()
+
+        if was_playing and self.current_tick < self.replay.total_ticks:
+            await self.play()
+
+    async def _playback_loop(self) -> None:
+        """Main playback loop - advances tick and sends state."""
+        config = SPEED_CONFIGS[self.replay.speed]
+        tick_interval = config.tick_period_ms / 1000.0
+
+        while self.is_playing and self.current_tick < self.replay.total_ticks:
+            await asyncio.sleep(tick_interval)
+
+            if not self.is_playing:
+                break
+
+            self.current_tick += 1
+            await self._send_state_at_tick(self.current_tick)
+
+            if self.current_tick >= self.replay.total_ticks:
+                self.is_playing = False
+                await self._send_game_over()
+
+        await self._send_playback_status()
+
+    async def _send_state_at_tick(self, tick: int) -> None:
+        """Compute and send state at the given tick."""
+        state = self.engine.get_state_at_tick(tick)
+        message = format_state_update(state)  # Same format as live games
+        await self.websocket.send_json(message)
+
+    async def _send_replay_info(self) -> None:
+        """Send replay metadata."""
+        await self.websocket.send_json({
+            "type": "replay_info",
+            "game_id": self.replay.game_id,
+            "speed": self.replay.speed.value,
+            "board_type": self.replay.board_type.value,
+            "players": self.replay.players,
+            "total_ticks": self.replay.total_ticks,
+            "winner": self.replay.winner,
+            "win_reason": self.replay.win_reason,
+        })
+
+    async def _send_playback_status(self) -> None:
+        """Send current playback status."""
+        await self.websocket.send_json({
+            "type": "playback_status",
+            "is_playing": self.is_playing,
+            "current_tick": self.current_tick,
+            "total_ticks": self.replay.total_ticks,
+        })
+
+    async def _send_game_over(self) -> None:
+        """Send game over message."""
+        await self.websocket.send_json({
+            "type": "game_over",
+            "winner": self.replay.winner,
+            "reason": self.replay.win_reason,
+        })
+```
+
+### ReplayEngine (Existing)
+
+The existing `ReplayEngine` computes state at any tick:
 
 ```python
 # server/src/kfchess/game/replay.py
@@ -289,276 +352,164 @@ class ReplayEngine:
 
     def __init__(self, replay: Replay):
         self.replay = replay
-        self.config = SPEED_CONFIGS[replay.speed]
-
         # Pre-index moves by tick for fast lookup
         self._moves_by_tick: dict[int, list[ReplayMove]] = defaultdict(list)
         for move in replay.moves:
             self._moves_by_tick[move.tick].append(move)
 
     def get_state_at_tick(self, target_tick: int) -> GameState:
-        """
-        Compute the game state at a specific tick.
-
-        This creates a fresh game and simulates all moves up to target_tick.
-        For seeking, the frontend can cache states at key intervals.
-        """
-        # Create initial game state
-        state = GameEngine.create_game(
-            speed=self.replay.speed,
-            players=self.replay.players,
-            board_type=self.replay.board_type,
-        )
-        state.status = GameStatus.PLAYING
-
-        # Simulate all ticks up to target
+        """Compute game state at a specific tick."""
+        # Creates fresh game and simulates all moves up to target_tick
+        state = GameEngine.create_game(...)
         while state.current_tick < target_tick:
-            # Apply any moves at this tick
-            for replay_move in self._moves_by_tick.get(state.current_tick, []):
-                move = GameEngine.validate_move(
-                    state,
-                    replay_move.player,
-                    replay_move.piece_id,
-                    replay_move.to_row,
-                    replay_move.to_col,
-                )
-                if move:
-                    GameEngine.apply_move(state, move)
-
-            # Advance tick
+            # Apply moves at this tick
+            for move in self._moves_by_tick.get(state.current_tick, []):
+                GameEngine.apply_move(state, move)
             GameEngine.tick(state)
-
         return state
-
-    def get_initial_state(self) -> GameState:
-        """Get the state at tick 0."""
-        return self.get_state_at_tick(0)
 ```
 
-### Replay Storage
-
-Replays are automatically saved to the database when games finish.
+### WebSocket Handler
 
 ```python
-# server/src/kfchess/db/models.py
+# server/src/kfchess/ws/replay_handler.py
 
-class GameReplay(Base):
-    __tablename__ = "game_replays"
+@router.websocket("/ws/replay/{game_id}")
+async def replay_websocket(websocket: WebSocket, game_id: str):
+    await websocket.accept()
 
-    id = Column(String, primary_key=True)  # Same as game_id
-    speed = Column(String, nullable=False)
-    board_type = Column(String, nullable=False)
-    players = Column(JSON, nullable=False)
-    moves = Column(JSON, nullable=False)
-    total_ticks = Column(Integer, nullable=False)
-    winner = Column(Integer, nullable=True)
-    win_reason = Column(String, nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    is_public = Column(Boolean, default=True)
-```
+    # Load replay from database
+    replay = await replay_repository.get_by_id(game_id)
+    if replay is None:
+        await websocket.send_json({"type": "error", "message": "Replay not found"})
+        await websocket.close()
+        return
 
-### Auto-Save on Game End
+    # Create session and start
+    session = ReplaySession(replay, websocket)
+    await session.start()
 
-When a game finishes, the `GameService` automatically saves the replay:
-
-```python
-# server/src/kfchess/services/game_service.py
-
-async def _on_game_finished(self, game_id: str, state: GameState) -> None:
-    """Called when a game ends. Saves replay to database."""
-    replay = Replay.from_game_state(state)
-    await self.replay_repository.save(replay)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            await session.handle_message(data)
+    except WebSocketDisconnect:
+        session.pause()
 ```
 
 ---
 
 ## Frontend Implementation
 
-### Replay Store
+### Replay Store (Simplified)
 
-The replay store manages playback state and computes derived game state:
+The replay store is much simpler—it just manages WebSocket connection and renders received state:
 
 ```typescript
 // client/src/stores/replay.ts
 
-export const useReplayStore = create<ReplayState>((set, get) => ({
-  // Initial state
-  replay: null,
-  isLoading: false,
-  error: null,
-  currentTick: 0,
-  isPlaying: false,
-  playbackSpeed: 1.0,
-  pieces: [],
-  activeMoves: [],
-  cooldowns: [],
+interface ReplayState {
+  // Connection
+  gameId: string | null;
+  connectionState: ConnectionState;
+  error: string | null;
 
-  loadReplay: async (replayId) => {
-    set({ isLoading: true, error: null });
-    try {
-      const replay = await api.getReplay(replayId);
-      get().loadReplayFromData(replay);
-    } catch (error) {
-      set({ error: error.message, isLoading: false });
-    }
-  },
+  // Replay metadata
+  speed: GameSpeed | null;
+  boardType: BoardType | null;
+  players: Record<number, string> | null;
+  totalTicks: number;
+  winner: number | null;
+  winReason: string | null;
 
-  loadReplayFromData: (replay) => {
-    // Initialize playback engine
-    const engine = new ReplayPlaybackEngine(replay);
-    const initialState = engine.getStateAtTick(0);
+  // Playback state (from server)
+  currentTick: number;
+  isPlaying: boolean;
 
-    set({
-      replay,
-      isLoading: false,
-      currentTick: 0,
-      isPlaying: false,
-      pieces: initialState.pieces,
-      activeMoves: [],
-      cooldowns: [],
-      _engine: engine,
-    });
-  },
+  // Game state (from server, same as live game)
+  pieces: Piece[];
+  activeMoves: ActiveMove[];
+  cooldowns: Cooldown[];
 
-  play: () => {
-    const { isPlaying, replay } = get();
-    if (isPlaying || !replay) return;
-
-    set({ isPlaying: true });
-    get()._startPlaybackLoop();
-  },
-
-  pause: () => {
-    set({ isPlaying: false });
-  },
-
-  seek: (tick) => {
-    const { replay, _engine } = get();
-    if (!replay || !_engine) return;
-
-    const clampedTick = Math.max(0, Math.min(tick, replay.totalTicks));
-    const state = _engine.getStateAtTick(clampedTick);
-
-    set({
-      currentTick: clampedTick,
-      pieces: state.pieces,
-      activeMoves: state.activeMoves,
-      cooldowns: state.cooldowns,
-    });
-  },
-
-  setPlaybackSpeed: (speed) => {
-    set({ playbackSpeed: speed });
-  },
-
-  stepForward: () => {
-    const { currentTick, replay } = get();
-    if (!replay) return;
-    get().seek(Math.min(currentTick + 1, replay.totalTicks));
-  },
-
-  stepBackward: () => {
-    const { currentTick } = get();
-    get().seek(Math.max(currentTick - 1, 0));
-  },
-
-  _startPlaybackLoop: () => {
-    const tick = () => {
-      const { isPlaying, currentTick, replay, playbackSpeed } = get();
-      if (!isPlaying || !replay) return;
-
-      if (currentTick >= replay.totalTicks) {
-        set({ isPlaying: false });
-        return;
-      }
-
-      get().seek(currentTick + 1);
-
-      // Schedule next tick based on speed config and playback speed
-      const tickMs = SPEED_CONFIGS[replay.speed].tickPeriodMs / playbackSpeed;
-      setTimeout(tick, tickMs);
-    };
-
-    // Start the loop
-    const { replay, playbackSpeed } = get();
-    const tickMs = SPEED_CONFIGS[replay.speed].tickPeriodMs / playbackSpeed;
-    setTimeout(tick, tickMs);
-  },
-
-  reset: () => {
-    set({
-      replay: null,
-      isLoading: false,
-      error: null,
-      currentTick: 0,
-      isPlaying: false,
-      playbackSpeed: 1.0,
-      pieces: [],
-      activeMoves: [],
-      cooldowns: [],
-    });
-  },
-}));
-```
-
-### Client-Side Replay Engine
-
-The frontend simulates game state by replaying from tick 0 to the target tick. This is simple and fast enough for typical game lengths (a few thousand ticks).
-
-```typescript
-// client/src/game/replayEngine.ts
-
-export class ReplayPlaybackEngine {
-  private replay: Replay;
-  private movesByTick: Map<number, ReplayMove[]>;
-
-  constructor(replay: Replay) {
-    this.replay = replay;
-    this.movesByTick = new Map();
-
-    // Index moves by tick for fast lookup
-    for (const move of replay.moves) {
-      const existing = this.movesByTick.get(move.tick) || [];
-      existing.push(move);
-      this.movesByTick.set(move.tick, existing);
-    }
-  }
-
-  getStateAtTick(targetTick: number): GameStateSnapshot {
-    // Always simulate from the beginning - simple and fast enough
-    let state = this.createInitialState();
-
-    for (let tick = 0; tick <= targetTick; tick++) {
-      state = this.simulateTick(state, tick);
-    }
-
-    return state;
-  }
-
-  private simulateTick(state: GameStateSnapshot, tick: number): GameStateSnapshot {
-    // Apply moves at this tick
-    const moves = this.movesByTick.get(tick) || [];
-    for (const move of moves) {
-      this.applyMove(state, move);
-    }
-
-    // Update active moves progress
-    this.updateActiveMoves(state, tick);
-
-    // Update cooldowns
-    this.updateCooldowns(state, tick);
-
-    state.currentTick = tick;
-    return state;
-  }
-
-  // ... helper methods for move application, collision detection, etc.
+  // Actions
+  connect: (gameId: string) => void;
+  disconnect: () => void;
+  play: () => void;
+  pause: () => void;
+  seek: (tick: number) => void;
 }
 ```
 
-### Replay Viewer Component
+### Replay WebSocket Client
 
-The replay viewer reuses the `GameBoard` component with a custom control panel:
+```typescript
+// client/src/ws/replayClient.ts
+
+export class ReplayWebSocketClient {
+  private ws: WebSocket | null = null;
+  private gameId: string;
+  private callbacks: ReplayCallbacks;
+
+  constructor(gameId: string, callbacks: ReplayCallbacks) {
+    this.gameId = gameId;
+    this.callbacks = callbacks;
+  }
+
+  connect(): void {
+    this.ws = new WebSocket(`/ws/replay/${this.gameId}`);
+
+    this.ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      this.handleMessage(message);
+    };
+
+    this.ws.onclose = () => {
+      this.callbacks.onConnectionChange('disconnected');
+    };
+  }
+
+  private handleMessage(message: any): void {
+    switch (message.type) {
+      case 'replay_info':
+        this.callbacks.onReplayInfo(message);
+        break;
+      case 'state_update':
+        this.callbacks.onStateUpdate(message);
+        break;
+      case 'playback_status':
+        this.callbacks.onPlaybackStatus(message);
+        break;
+      case 'game_over':
+        this.callbacks.onGameOver(message);
+        break;
+      case 'error':
+        this.callbacks.onError(message);
+        break;
+    }
+  }
+
+  play(): void {
+    this.ws?.send(JSON.stringify({ type: 'play' }));
+  }
+
+  pause(): void {
+    this.ws?.send(JSON.stringify({ type: 'pause' }));
+  }
+
+  seek(tick: number): void {
+    this.ws?.send(JSON.stringify({ type: 'seek', tick }));
+  }
+
+  disconnect(): void {
+    this.ws?.close();
+    this.ws = null;
+  }
+}
+```
+
+### Replay Page Component
+
+The replay page reuses the existing game renderer:
 
 ```typescript
 // client/src/pages/Replay.tsx
@@ -566,75 +517,48 @@ The replay viewer reuses the `GameBoard` component with a custom control panel:
 export function Replay() {
   const { replayId } = useParams<{ replayId: string }>();
 
-  const replay = useReplayStore((s) => s.replay);
-  const currentTick = useReplayStore((s) => s.currentTick);
-  const isPlaying = useReplayStore((s) => s.isPlaying);
-  const isLoading = useReplayStore((s) => s.isLoading);
-  const error = useReplayStore((s) => s.error);
+  // All state comes from server via WebSocket
   const pieces = useReplayStore((s) => s.pieces);
   const activeMoves = useReplayStore((s) => s.activeMoves);
   const cooldowns = useReplayStore((s) => s.cooldowns);
-  const playbackSpeed = useReplayStore((s) => s.playbackSpeed);
+  const boardType = useReplayStore((s) => s.boardType);
+  const currentTick = useReplayStore((s) => s.currentTick);
+  const totalTicks = useReplayStore((s) => s.totalTicks);
+  const isPlaying = useReplayStore((s) => s.isPlaying);
 
-  const loadReplay = useReplayStore((s) => s.loadReplay);
+  const connect = useReplayStore((s) => s.connect);
+  const disconnect = useReplayStore((s) => s.disconnect);
   const play = useReplayStore((s) => s.play);
   const pause = useReplayStore((s) => s.pause);
   const seek = useReplayStore((s) => s.seek);
-  const setPlaybackSpeed = useReplayStore((s) => s.setPlaybackSpeed);
-  const stepForward = useReplayStore((s) => s.stepForward);
-  const stepBackward = useReplayStore((s) => s.stepBackward);
 
   useEffect(() => {
     if (replayId) {
-      loadReplay(replayId);
+      connect(replayId);
     }
-    return () => useReplayStore.getState().reset();
-  }, [replayId, loadReplay]);
-
-  if (isLoading) {
-    return <div className="replay-loading">Loading replay...</div>;
-  }
-
-  if (error) {
-    return <div className="replay-error">{error}</div>;
-  }
-
-  if (!replay) {
-    return <div className="replay-error">Replay not found</div>;
-  }
+    return () => disconnect();
+  }, [replayId]);
 
   return (
     <div className="replay-page">
-      <div className="replay-content">
-        <div className="replay-board-wrapper">
-          {/* Reuse GameBoard in read-only mode */}
-          <GameBoard
-            boardType={replay.boardType}
-            squareSize={64}
-            pieces={pieces}
-            activeMoves={activeMoves}
-            cooldowns={cooldowns}
-            readOnly={true}
-          />
-        </div>
+      {/* Reuse existing game board - no changes needed */}
+      <GameBoard
+        boardType={boardType}
+        pieces={pieces}
+        activeMoves={activeMoves}
+        cooldowns={cooldowns}
+        readOnly={true}
+      />
 
-        <div className="replay-sidebar">
-          <ReplayInfo replay={replay} />
-
-          <ReplayControls
-            currentTick={currentTick}
-            totalTicks={replay.totalTicks}
-            isPlaying={isPlaying}
-            playbackSpeed={playbackSpeed}
-            onPlay={play}
-            onPause={pause}
-            onSeek={seek}
-            onSpeedChange={setPlaybackSpeed}
-            onStepForward={stepForward}
-            onStepBackward={stepBackward}
-          />
-        </div>
-      </div>
+      {/* Simple playback controls */}
+      <ReplayControls
+        currentTick={currentTick}
+        totalTicks={totalTicks}
+        isPlaying={isPlaying}
+        onPlay={play}
+        onPause={pause}
+        onSeek={seek}
+      />
     </div>
   );
 }
@@ -649,28 +573,13 @@ interface ReplayControlsProps {
   currentTick: number;
   totalTicks: number;
   isPlaying: boolean;
-  playbackSpeed: number;
   onPlay: () => void;
   onPause: () => void;
   onSeek: (tick: number) => void;
-  onSpeedChange: (speed: number) => void;
-  onStepForward: () => void;
-  onStepBackward: () => void;
 }
 
 export function ReplayControls(props: ReplayControlsProps) {
-  const {
-    currentTick,
-    totalTicks,
-    isPlaying,
-    playbackSpeed,
-    onPlay,
-    onPause,
-    onSeek,
-    onSpeedChange,
-    onStepForward,
-    onStepBackward,
-  } = props;
+  const { currentTick, totalTicks, isPlaying, onPlay, onPause, onSeek } = props;
 
   const progress = totalTicks > 0 ? (currentTick / totalTicks) * 100 : 0;
   const timeDisplay = formatTicksAsTime(currentTick);
@@ -678,56 +587,24 @@ export function ReplayControls(props: ReplayControlsProps) {
 
   return (
     <div className="replay-controls">
-      {/* Progress bar / seek slider */}
-      <div className="replay-progress">
-        <input
-          type="range"
-          min={0}
-          max={totalTicks}
-          value={currentTick}
-          onChange={(e) => onSeek(parseInt(e.target.value))}
-          className="replay-seek-bar"
-        />
-        <div className="replay-time">
-          {timeDisplay} / {totalTimeDisplay}
-        </div>
-      </div>
+      {/* Seek slider */}
+      <input
+        type="range"
+        min={0}
+        max={totalTicks}
+        value={currentTick}
+        onChange={(e) => onSeek(parseInt(e.target.value))}
+      />
 
-      {/* Playback buttons */}
-      <div className="replay-buttons">
-        <button onClick={onStepBackward} title="Step back">
-          ⏮
-        </button>
+      {/* Time display */}
+      <span>{timeDisplay} / {totalTimeDisplay}</span>
 
-        {isPlaying ? (
-          <button onClick={onPause} title="Pause">
-            ⏸
-          </button>
-        ) : (
-          <button onClick={onPlay} title="Play">
-            ▶
-          </button>
-        )}
-
-        <button onClick={onStepForward} title="Step forward">
-          ⏭
-        </button>
-      </div>
-
-      {/* Speed selector */}
-      <div className="replay-speed">
-        <label>Speed:</label>
-        <select
-          value={playbackSpeed}
-          onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
-        >
-          <option value={0.25}>0.25x</option>
-          <option value={0.5}>0.5x</option>
-          <option value={1}>1x</option>
-          <option value={2}>2x</option>
-          <option value={4}>4x</option>
-        </select>
-      </div>
+      {/* Play/Pause button */}
+      {isPlaying ? (
+        <button onClick={onPause}>Pause</button>
+      ) : (
+        <button onClick={onPlay}>Play</button>
+      )}
     </div>
   );
 }
@@ -742,133 +619,77 @@ function formatTicksAsTime(ticks: number): string {
 
 ---
 
-## API Endpoints
-
-### Get Replay for Completed Game
-
-```
-GET /api/games/{game_id}/replay
-```
-
-Returns the replay data for a completed game.
-
-**Response:**
-```json
-{
-  "version": 2,
-  "speed": "standard",
-  "board_type": "standard",
-  "players": {"1": "player1", "2": "player2"},
-  "moves": [...],
-  "total_ticks": 1500,
-  "winner": 1,
-  "win_reason": "king_captured",
-  "created_at": "2025-01-21T12:00:00Z"
-}
-```
-
-**Errors:**
-- `404`: Game not found
-- `400`: Game not finished yet
-
-### Get Replay State at Tick (Optional)
-
-For server-side seeking (alternative to client-side simulation):
-
-```
-GET /api/games/{game_id}/replay/state?tick={tick}
-```
-
-Returns the computed game state at a specific tick.
-
-**Response:**
-```json
-{
-  "tick": 500,
-  "pieces": [...],
-  "active_moves": [...],
-  "cooldowns": [...]
-}
-```
-
----
-
 ## Implementation Plan
 
-### Phase 1: Database & Backend
+### Phase 1: Database & Backend (COMPLETED)
 
-1. **Create database model** for `GameReplay`
-2. **Create Alembic migration** for the table
-3. **Create `replay.py` module** with `Replay` dataclass and conversion logic
-4. **Create replay repository** for database operations
-5. **Add auto-save** when games finish in `GameService`
-6. **Add replay export endpoint** (`GET /api/games/{game_id}/replay`)
-7. **Add backwards compatibility** for v1 replay format
-8. **Write tests** for replay loading/conversion/storage
+1. ~~Create database model for `GameReplay`~~
+2. ~~Create Alembic migration for the table~~
+3. ~~Create `replay.py` module with `Replay` dataclass~~
+4. ~~Create replay repository for database operations~~
+5. ~~Add auto-save when games finish~~
+6. ~~Add replay export endpoint (`GET /api/games/{game_id}/replay`)~~
+7. ~~Add backwards compatibility for v1 replay format~~
+8. ~~Write tests for replay loading/conversion/storage~~
 
-**Files to create/modify:**
-- `server/src/kfchess/db/models.py` (new)
-- `server/src/kfchess/db/session.py` (new)
-- `server/alembic/versions/001_add_game_replays.py` (new migration)
-- `server/src/kfchess/game/replay.py` (new)
-- `server/src/kfchess/db/repositories/replays.py` (new)
-- `server/src/kfchess/services/game_service.py` (add auto-save)
-- `server/src/kfchess/api/games.py` (add endpoint)
-- `server/tests/unit/game/test_replay.py` (new)
+### Phase 2: Replay WebSocket & Session (NEW)
 
-### Phase 2: Frontend Replay Store
-
-1. **Create replay store** with playback state management
-2. **Create client-side replay engine** for state simulation (no caching, simulate from tick 0)
-3. **Add API client method** for fetching replays
+1. **Create `ReplaySession` class** that manages playback for one client
+2. **Create WebSocket handler** at `/ws/replay/{game_id}`
+3. **Implement playback commands**: play, pause, seek
+4. **Stream state updates** using same format as live games
+5. **Write tests** for replay session
 
 **Files to create/modify:**
-- `client/src/stores/replay.ts` (new)
-- `client/src/game/replayEngine.ts` (new)
-- `client/src/api/client.ts` (add method)
-- `client/src/api/types.ts` (add types)
+- `server/src/kfchess/replay/session.py` (new)
+- `server/src/kfchess/ws/replay_handler.py` (new)
+- `server/src/kfchess/main.py` (add WebSocket route)
+- `server/tests/unit/replay/test_session.py` (new)
 
-### Phase 3: Replay Viewer UI
+### Phase 3: Frontend Replay Client (REWRITE)
+
+1. **Delete client-side replay engine** (`replayEngine.ts`)
+2. **Create `ReplayWebSocketClient`** class
+3. **Simplify replay store** to just manage connection + received state
+4. **Add replay types** to API types
+
+**Files to create/modify:**
+- `client/src/ws/replayClient.ts` (new)
+- `client/src/stores/replay.ts` (rewrite - much simpler)
+- `client/src/api/types.ts` (add replay message types)
+- `client/src/game/replayEngine.ts` (DELETE)
+
+### Phase 4: Replay Viewer UI
 
 1. **Create Replay page** component
-2. **Create ReplayControls** component with play/pause/seek
-3. **Modify GameBoard** to support read-only mode
-4. **Add route** for `/replay/:replayId`
-5. **Add "Watch Replay" button** to game over modal
+2. **Create ReplayControls** component (play/pause/seek only)
+3. **Add route** for `/replay/:replayId`
+4. **Add "Watch Replay" button** to game over screen
 
 **Files to create/modify:**
 - `client/src/pages/Replay.tsx` (new)
 - `client/src/pages/Replay.css` (new)
 - `client/src/components/replay/ReplayControls.tsx` (new)
-- `client/src/components/replay/ReplayInfo.tsx` (new)
-- `client/src/components/replay/index.ts` (new)
-- `client/src/components/game/GameBoard.tsx` (add readOnly prop)
 - `client/src/App.tsx` (add route)
-- `client/src/components/game/GameOverModal.tsx` (add button)
-
-### Phase 4: Polish and Testing
-
-1. **Keyboard shortcuts** (space=play/pause, arrows=step)
-2. **Loading states and error handling**
-3. **Integration tests**
 
 ### Future Enhancements
 
+- **Speed controls**: Allow 0.5x, 2x, 4x playback (requires server-side support)
 - **Replay browser**: List and search saved replays
 - **Replay sharing**: Generate shareable links
-- **Export**: Download replay as JSON file
-- **Import**: Load replay from file (for v1 backwards compatibility)
-- **Annotations**: Add comments at specific ticks
-- **Multiple perspectives**: Switch between player views in 4-player
+- **Export/Import**: Download/upload replay JSON files
+- **Keyboard shortcuts**: Space=play/pause, arrows=seek
 
 ---
 
 ## Design Decisions
 
-1. **No state caching**: Simulate from tick 0 to target tick on every seek. Simple and fast enough for typical game lengths.
+1. **Server-side simulation only**: Single source of truth, no logic duplication on client. Trade-off is ~100ms latency on seeking, which is acceptable for a replay viewer.
 
-2. **Client-side seeking**: Frontend simulates game state locally for responsiveness. Server just provides the replay data.
+2. **Reuse live game protocol**: The `state_update` message format is identical to live games, so the client renderer works unchanged.
 
-3. **Auto-save all games**: Every completed game is automatically saved. Provides consistent test data and complete history.
+3. **No speed controls (initially)**: Simplifies implementation. Can be added later by having server adjust tick interval.
 
-4. **4-player support**: The data model supports it, but UI considerations deferred to future.
+4. **WebSocket per viewer**: Each replay viewer has its own WebSocket connection and playback state. This allows multiple people to watch the same replay at different positions.
+
+5. **Compute state on demand**: Server computes state at requested tick (O(n) from tick 0). For typical games (few thousand ticks), this is fast enough. Could add caching/keyframes later if needed.

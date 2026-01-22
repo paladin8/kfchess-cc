@@ -13,6 +13,7 @@ import type {
   MarkReadyRequest,
   MarkReadyResponse,
   LegalMovesResponse,
+  ApiReplay,
 } from './types';
 
 const API_BASE = '/api';
@@ -172,6 +173,13 @@ export async function getLegalMoves(
     {},
     { gameId }
   );
+}
+
+/**
+ * Get replay data for a completed game
+ */
+export async function getReplay(gameId: string): Promise<ApiReplay> {
+  return request<ApiReplay>(`/games/${gameId}/replay`, {}, { gameId });
 }
 
 export { ApiClientError, GameNotFoundError, InvalidPlayerKeyError };
