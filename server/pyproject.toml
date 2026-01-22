@@ -18,6 +18,9 @@ dependencies = [
     "python-multipart>=0.0.20",
     "boto3>=1.35.0",
     "passlib[bcrypt]>=1.7.4",
+    "resend>=2.0.0",
+    "slowapi>=0.1.9",
+    "email-validator>=2.0.0",
 ]
 
 [project.optional-dependencies]
