@@ -1,7 +1,8 @@
 """Game service for managing active games.
 
 This service handles game creation, state management, and move processing.
-For MVP, games are stored in-memory only.
+Games are stored in-memory during play, and replays are saved to the database
+when games finish.
 """
 
 import asyncio
@@ -14,7 +15,8 @@ from typing import Any
 from kfchess.ai.base import AIPlayer
 from kfchess.ai.dummy import DummyAI
 from kfchess.game.board import BoardType
-from kfchess.game.engine import GameEngine, GameEvent
+from kfchess.game.engine import GameEngine, GameEvent, GameEventType
+from kfchess.game.replay import Replay
 from kfchess.game.state import GameState, GameStatus, Speed
 
 logger = logging.getLogger(__name__)
@@ -342,23 +344,23 @@ class GameService:
 
         return True, game_started
 
-    def tick(self, game_id: str) -> tuple[GameState | None, list[GameEvent]]:
+    def tick(self, game_id: str) -> tuple[GameState | None, list[GameEvent], bool]:
         """Advance the game by one tick.
 
         Args:
             game_id: The game ID
 
         Returns:
-            Tuple of (updated state, events) or (None, []) if game not found
+            Tuple of (updated state, events, game_finished) or (None, [], False) if game not found
         """
         managed_game = self.games.get(game_id)
         if managed_game is None:
-            return None, []
+            return None, [], False
 
         state = managed_game.state
 
         if state.status != GameStatus.PLAYING:
-            return state, []
+            return state, [], False
 
         # Process AI moves
         for player_num, ai in managed_game.ai_players.items():
@@ -373,7 +375,32 @@ class GameService:
         # Advance game state
         _, events = GameEngine.tick(state)
 
-        return state, events
+        # Check if game just finished
+        game_finished = any(
+            e.type in (GameEventType.GAME_OVER, GameEventType.DRAW) for e in events
+        )
+
+        return state, events, game_finished
+
+    def get_replay(self, game_id: str) -> Replay | None:
+        """Get the replay data for a finished game.
+
+        Args:
+            game_id: The game ID
+
+        Returns:
+            Replay data or None if game not found or not finished
+        """
+        managed_game = self.games.get(game_id)
+        if managed_game is None:
+            return None
+
+        state = managed_game.state
+
+        if state.status != GameStatus.FINISHED:
+            return None
+
+        return Replay.from_game_state(state)
 
     def get_legal_moves(self, game_id: str, player_key: str) -> list[dict] | None:
         """Get all legal moves for a player.

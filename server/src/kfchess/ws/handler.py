@@ -424,6 +424,36 @@ async def _handle_ready(
         await _start_game_loop_if_needed(game_id)
 
 
+async def _save_replay(game_id: str, service: Any) -> None:
+    """Save the game replay to the database.
+
+    Args:
+        game_id: The game ID
+        service: The game service
+    """
+    try:
+        replay = service.get_replay(game_id)
+        if replay is None:
+            logger.warning(f"Could not get replay for game {game_id}")
+            return
+
+        # Save to database
+        from kfchess.db.repositories.replays import ReplayRepository
+        from kfchess.db.session import async_session_factory
+
+        async with async_session_factory() as session:
+            try:
+                repository = ReplayRepository(session)
+                await repository.save(game_id, replay)
+                await session.commit()
+                logger.info(f"Saved replay for game {game_id} ({len(replay.moves)} moves)")
+            except Exception as e:
+                await session.rollback()
+                logger.exception(f"Failed to save replay for game {game_id}: {e}")
+    except Exception as e:
+        logger.exception(f"Error saving replay for game {game_id}: {e}")
+
+
 async def _run_game_loop(game_id: str) -> None:
     """Run the game tick loop.
 
@@ -466,7 +496,7 @@ async def _run_game_loop(game_id: str) -> None:
                 break
 
             # Advance the game state
-            state, events = service.tick(game_id)
+            state, events, game_finished = service.tick(game_id)
             if state is None:
                 break
 
@@ -562,6 +592,10 @@ async def _run_game_loop(game_id: str) -> None:
                     ).model_dump(),
                 )
                 logger.info(f"Game {game_id} finished, winner: {state.winner}")
+
+                # Save replay to database
+                await _save_replay(game_id, service)
+
                 break
 
             # Sleep for remainder of tick interval

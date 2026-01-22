@@ -11,7 +11,7 @@ from alembic import context
 from kfchess.settings import get_settings
 
 # Import models so Alembic can detect them
-# from kfchess.db.models import Base
+from kfchess.db.models import Base
 
 config = context.config
 
@@ -23,8 +23,7 @@ settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Target metadata for autogenerate
-# target_metadata = Base.metadata
-target_metadata = None  # TODO: Set to Base.metadata when models are defined
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

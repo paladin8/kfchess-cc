@@ -249,3 +249,39 @@ async def get_legal_moves(game_id: str, player_key: str) -> dict[str, Any]:
         raise HTTPException(status_code=403, detail="Invalid player key")
 
     return {"moves": moves}
+
+
+@router.get("/{game_id}/replay")
+async def get_replay(game_id: str) -> dict[str, Any]:
+    """Get the replay data for a completed game.
+
+    First tries to get the replay from the database. If not found,
+    checks if the game is still in memory and finished.
+
+    Returns:
+        Replay data including moves, players, and game outcome
+    """
+    from kfchess.db.repositories.replays import ReplayRepository
+    from kfchess.db.session import async_session_factory
+
+    # First, try to get from database
+    async with async_session_factory() as session:
+        repository = ReplayRepository(session)
+        replay = await repository.get_by_id(game_id)
+        if replay is not None:
+            return replay.to_dict()
+
+    # Fall back to in-memory game state
+    service = get_game_service()
+    replay = service.get_replay(game_id)
+
+    if replay is None:
+        # Check if game exists but isn't finished
+        state = service.get_game(game_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+        if not state.is_finished:
+            raise HTTPException(status_code=400, detail="Game is not finished yet")
+        raise HTTPException(status_code=404, detail="Replay not found")
+
+    return replay.to_dict()
