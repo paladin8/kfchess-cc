@@ -15,6 +15,9 @@ import type {
   LegalMovesResponse,
   ApiReplay,
   ApiReplayListResponse,
+  ApiUser,
+  RegisterRequest,
+  UpdateUserRequest,
 } from './types';
 
 const API_BASE = '/api';
@@ -66,6 +69,26 @@ class InvalidPlayerKeyError extends ApiClientError {
   constructor(detail?: string) {
     super('Invalid player key', 403, detail);
     this.name = 'InvalidPlayerKeyError';
+  }
+}
+
+/**
+ * Error thrown for authentication failures (401)
+ */
+class AuthenticationError extends ApiClientError {
+  constructor(detail?: string) {
+    super('Authentication failed', 401, detail);
+    this.name = 'AuthenticationError';
+  }
+}
+
+/**
+ * Error thrown when user already exists during registration (400)
+ */
+class UserAlreadyExistsError extends ApiClientError {
+  constructor(detail?: string) {
+    super('User already exists', 400, detail);
+    this.name = 'UserAlreadyExistsError';
   }
 }
 
@@ -195,4 +218,188 @@ export async function listReplays(
   );
 }
 
-export { ApiClientError, GameNotFoundError, InvalidPlayerKeyError };
+// ============================================
+// Auth API Functions
+// ============================================
+
+/**
+ * Get current authenticated user
+ * Returns null if not authenticated (401)
+ */
+export async function getCurrentUser(): Promise<ApiUser | null> {
+  try {
+    return await request<ApiUser>('/users/me', {
+      credentials: 'include', // Include cookies
+    });
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 401) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Login with email and password
+ */
+export async function login(email: string, password: string): Promise<void> {
+  const formData = new URLSearchParams();
+  formData.append('username', email); // FastAPI-Users uses 'username' for email
+  formData.append('password', password);
+
+  const response = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: formData,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    let detail: string | undefined;
+    try {
+      const errorBody = await response.json();
+      detail = typeof errorBody.detail === 'string'
+        ? errorBody.detail
+        : errorBody.detail?.reason || 'Login failed';
+    } catch {
+      detail = 'Login failed';
+    }
+
+    if (response.status === 400) {
+      throw new AuthenticationError(detail);
+    }
+    throw new ApiClientError('Login failed', response.status, detail);
+  }
+}
+
+/**
+ * Logout current user
+ */
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+}
+
+/**
+ * Register a new user with email and password
+ */
+export async function register(req: RegisterRequest): Promise<ApiUser> {
+  const response = await fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(req),
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    let detail: string | undefined;
+    try {
+      const errorBody = await response.json();
+      detail = typeof errorBody.detail === 'string'
+        ? errorBody.detail
+        : errorBody.detail?.reason || 'Registration failed';
+    } catch {
+      detail = 'Registration failed';
+    }
+
+    if (response.status === 400 && detail?.includes('REGISTER_USER_ALREADY_EXISTS')) {
+      throw new UserAlreadyExistsError('A user with this email already exists');
+    }
+    throw new ApiClientError('Registration failed', response.status, detail);
+  }
+
+  return response.json();
+}
+
+/**
+ * Update current user's profile
+ */
+export async function updateUser(req: UpdateUserRequest): Promise<ApiUser> {
+  return request<ApiUser>('/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify(req),
+    credentials: 'include',
+  });
+}
+
+/**
+ * Request password reset email
+ */
+export async function forgotPassword(email: string): Promise<void> {
+  await fetch(`${API_BASE}/auth/forgot-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+    credentials: 'include',
+  });
+  // Always returns 202, even if email doesn't exist (security)
+}
+
+/**
+ * Reset password with token
+ */
+export async function resetPassword(token: string, password: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/auth/reset-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ token, password }),
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    let detail: string | undefined;
+    try {
+      const errorBody = await response.json();
+      detail = typeof errorBody.detail === 'string'
+        ? errorBody.detail
+        : errorBody.detail?.reason || 'Password reset failed';
+    } catch {
+      detail = 'Password reset failed';
+    }
+    throw new ApiClientError('Password reset failed', response.status, detail);
+  }
+}
+
+/**
+ * Get Google OAuth authorization URL
+ */
+export async function getGoogleAuthUrl(): Promise<string> {
+  const response = await request<{ authorization_url: string }>('/auth/google/authorize', {
+    credentials: 'include',
+  });
+  return response.authorization_url;
+}
+
+/**
+ * Request a new verification email
+ * Always returns success (202) for security - doesn't reveal if email exists
+ */
+export async function requestVerificationEmail(email: string): Promise<void> {
+  await fetch(`${API_BASE}/auth/request-verify-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+    credentials: 'include',
+  });
+  // Always succeeds (202) - doesn't reveal if email exists
+}
+
+export {
+  ApiClientError,
+  GameNotFoundError,
+  InvalidPlayerKeyError,
+  AuthenticationError,
+  UserAlreadyExistsError,
+};

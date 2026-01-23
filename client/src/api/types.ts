@@ -167,3 +167,47 @@ export interface ApiReplayListResponse {
   replays: ApiReplaySummary[];
   total: number;
 }
+
+// ============================================
+// Auth Types
+// ============================================
+
+// User data from server (matches UserRead schema)
+export interface ApiUser {
+  id: number;
+  email: string;
+  username: string;
+  picture_url: string | null;
+  google_id: string | null;
+  ratings: Record<string, number>;
+  created_at: string;
+  last_online: string;
+  is_active: boolean;
+  is_verified: boolean;
+  is_superuser: boolean;
+}
+
+// Login request
+export interface LoginRequest {
+  username: string; // FastAPI-Users uses 'username' field for email
+  password: string;
+}
+
+// Registration request
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  username?: string; // Optional - will be auto-generated if not provided
+}
+
+// Update user request
+export interface UpdateUserRequest {
+  username?: string;
+  picture_url?: string;
+  password?: string;
+}
+
+// Auth error response
+export interface AuthErrorResponse {
+  detail: string | { code: string; reason: string };
+}
