@@ -68,9 +68,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     reset_password_token_secret = get_settings().secret_key
     verification_token_secret = get_settings().secret_key
 
-    async def on_after_register(
-        self, user: User, request: Request | None = None
-    ) -> None:
+    async def on_after_register(self, user: User, request: Request | None = None) -> None:
         """Called after successful user registration.
 
         Logs the registration and sends verification email if email service
@@ -128,7 +126,9 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         This method extends the default FastAPI-Users OAuth handling to:
         1. First check for legacy users by google_id (which stores their email)
         2. If found, create/update OAuth account and return existing user
-        3. Otherwise, fall back to standard FastAPI-Users OAuth flow
+        3. Check for existing OAuth account
+        4. Check for existing user by email (if associate_by_email is True)
+        5. Create new user with auto-generated username
 
         Legacy users in the old system:
         - Used Google OAuth only
@@ -170,18 +170,82 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
                 )
                 return legacy_user
 
-        # Fall back to standard FastAPI-Users OAuth flow
-        return await super().oauth_callback(
+        # Check for existing OAuth account
+        oauth_account = await self._get_oauth_account(oauth_name, account_id)
+        if oauth_account:
+            # Update existing OAuth account
+            oauth_account.access_token = access_token
+            oauth_account.expires_at = expires_at
+            oauth_account.refresh_token = refresh_token
+            await self.user_db.session.flush()
+
+            # Return the associated user
+            user = await self.user_db.get(oauth_account.user_id)
+            if user:
+                return user
+
+        # Check for existing user by email (if associate_by_email is True)
+        if associate_by_email and account_email:
+            user = await self.user_db.get_by_email(account_email)
+            if user:
+                # Create OAuth account for existing user
+                await self._create_or_update_oauth_account(
+                    user=user,
+                    oauth_name=oauth_name,
+                    access_token=access_token,
+                    account_id=account_id,
+                    account_email=account_email,
+                    expires_at=expires_at,
+                    refresh_token=refresh_token,
+                )
+                return user
+
+        # Create new user with auto-generated username
+        username = await self._generate_unique_username()
+        new_user = User(
+            email=account_email,
+            username=username,
+            hashed_password=self.password_helper.hash(self.password_helper.generate()),
+            is_active=True,
+            is_verified=is_verified_by_default,
+            is_superuser=False,
+        )
+        self.user_db.session.add(new_user)
+        await self.user_db.session.flush()
+
+        logger.info(f"Created new OAuth user {new_user.id} ({new_user.username})")
+
+        # Create OAuth account for new user
+        await self._create_or_update_oauth_account(
+            user=new_user,
             oauth_name=oauth_name,
             access_token=access_token,
             account_id=account_id,
             account_email=account_email,
             expires_at=expires_at,
             refresh_token=refresh_token,
-            request=request,
-            associate_by_email=associate_by_email,
-            is_verified_by_default=is_verified_by_default,
         )
+
+        await self.on_after_register(new_user, request)
+        return new_user
+
+    async def _get_oauth_account(self, oauth_name: str, account_id: str) -> OAuthAccount | None:
+        """Get an OAuth account by provider name and account ID.
+
+        Args:
+            oauth_name: OAuth provider name
+            account_id: Provider account ID
+
+        Returns:
+            The OAuth account if found, None otherwise
+        """
+        result = await self.user_db.session.execute(
+            select(OAuthAccount).where(
+                OAuthAccount.oauth_name == oauth_name,
+                OAuthAccount.account_id == account_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def _find_legacy_google_user(self, email: str) -> User | None:
         """Find a legacy user by their google_id (which stores their email).
@@ -192,10 +256,8 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         Returns:
             The legacy user if found, None otherwise
         """
-        result = await self.user_db.session.execute(
-            select(User).where(User.google_id == email)
-        )
-        return result.scalar_one_or_none()
+        result = await self.user_db.session.execute(select(User).where(User.google_id == email))
+        return result.unique().scalar_one_or_none()
 
     async def _create_or_update_oauth_account(
         self,

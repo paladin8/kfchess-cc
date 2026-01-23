@@ -80,6 +80,7 @@ def get_auth_router() -> APIRouter:
                 auth_backend,
                 settings.secret_key,
                 redirect_url=f"{settings.frontend_url}/auth/google/callback",
+                is_verified_by_default=True,  # Google verifies email addresses
             ),
             prefix="/auth/google",
             tags=["auth"],

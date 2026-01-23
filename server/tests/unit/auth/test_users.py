@@ -1,7 +1,8 @@
 """Tests for UserManager and username generation."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from kfchess.auth.users import (
     ANIMALS,
@@ -126,7 +127,9 @@ class TestUserManager:
     async def test_find_legacy_google_user_found(self, user_manager, mock_legacy_user):
         """Test finding legacy user by google_id."""
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_legacy_user
+        mock_unique = MagicMock()
+        mock_unique.scalar_one_or_none.return_value = mock_legacy_user
+        mock_result.unique.return_value = mock_unique
         user_manager.user_db.session.execute = AsyncMock(return_value=mock_result)
 
         result = await user_manager._find_legacy_google_user("legacy@gmail.com")
@@ -137,7 +140,9 @@ class TestUserManager:
     async def test_find_legacy_google_user_not_found(self, user_manager):
         """Test legacy user lookup returns None when not found."""
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_unique = MagicMock()
+        mock_unique.scalar_one_or_none.return_value = None
+        mock_result.unique.return_value = mock_unique
         user_manager.user_db.session.execute = AsyncMock(return_value=mock_result)
 
         result = await user_manager._find_legacy_google_user("nonexistent@gmail.com")
@@ -188,51 +193,55 @@ class TestUserManager:
         assert call_kwargs["account_email"] == "legacy@gmail.com"
 
     @pytest.mark.asyncio
-    async def test_oauth_callback_falls_back_for_new_user(self, user_manager):
-        """Test oauth_callback falls back to parent when no legacy user found."""
+    async def test_oauth_callback_creates_new_user_when_no_legacy(self, user_manager):
+        """Test oauth_callback creates new user when no legacy user found."""
         user_manager._find_legacy_google_user = AsyncMock(return_value=None)
+        user_manager._get_oauth_account = AsyncMock(return_value=None)
+        user_manager._generate_unique_username = AsyncMock(return_value="Tiger Pawn 123")
+        user_manager._create_or_update_oauth_account = AsyncMock()
+        user_manager.on_after_register = AsyncMock()
+        user_manager.user_db.session.add = MagicMock()
+        user_manager.user_db.session.flush = AsyncMock()
 
-        new_user = MagicMock(spec=User)
-        new_user.id = 999
+        result = await user_manager.oauth_callback(
+            oauth_name="google",
+            access_token="test_token",
+            account_id="123456789",
+            account_email="newuser@gmail.com",
+            is_verified_by_default=True,
+        )
 
-        with patch.object(
-            UserManager.__bases__[1],  # BaseUserManager
-            "oauth_callback",
-            new_callable=AsyncMock,
-            return_value=new_user,
-        ) as mock_parent:
-            result = await user_manager.oauth_callback(
-                oauth_name="google",
-                access_token="test_token",
-                account_id="123456789",
-                account_email="newuser@gmail.com",
-            )
+        # Should have created a new user
+        assert result is not None
+        assert result.email == "newuser@gmail.com"
+        assert result.username == "Tiger Pawn 123"
+        assert result.is_verified is True
 
-            assert result == new_user
-            mock_parent.assert_called_once()
+        # Should have called create methods
+        user_manager._generate_unique_username.assert_called_once()
+        user_manager._create_or_update_oauth_account.assert_called_once()
+        user_manager.on_after_register.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_oauth_callback_skips_legacy_check_for_non_google(self, user_manager):
         """Test oauth_callback skips legacy lookup for non-Google providers."""
         user_manager._find_legacy_google_user = AsyncMock()
+        user_manager._get_oauth_account = AsyncMock(return_value=None)
+        user_manager._generate_unique_username = AsyncMock(return_value="Tiger Pawn 123")
+        user_manager._create_or_update_oauth_account = AsyncMock()
+        user_manager.on_after_register = AsyncMock()
+        user_manager.user_db.session.add = MagicMock()
+        user_manager.user_db.session.flush = AsyncMock()
 
-        new_user = MagicMock(spec=User)
+        await user_manager.oauth_callback(
+            oauth_name="github",  # Not Google
+            access_token="test_token",
+            account_id="123456789",
+            account_email="user@github.com",
+        )
 
-        with patch.object(
-            UserManager.__bases__[1],
-            "oauth_callback",
-            new_callable=AsyncMock,
-            return_value=new_user,
-        ):
-            await user_manager.oauth_callback(
-                oauth_name="github",  # Not Google
-                access_token="test_token",
-                account_id="123456789",
-                account_email="user@github.com",
-            )
-
-            # Should not check for legacy Google users
-            user_manager._find_legacy_google_user.assert_not_called()
+        # Should not check for legacy Google users
+        user_manager._find_legacy_google_user.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_create_or_update_oauth_account_creates_new(self, user_manager, mock_user):
@@ -260,9 +269,7 @@ class TestUserManager:
         assert isinstance(result, OAuthAccount)
 
     @pytest.mark.asyncio
-    async def test_create_or_update_oauth_account_updates_existing(
-        self, user_manager, mock_user
-    ):
+    async def test_create_or_update_oauth_account_updates_existing(self, user_manager, mock_user):
         """Test updating existing OAuth account."""
         existing_oauth = MagicMock(spec=OAuthAccount)
         existing_oauth.user_id = mock_user.id
@@ -299,9 +306,7 @@ class TestUserManagerCreate:
         return UserManager(mock_user_db)
 
     @pytest.mark.asyncio
-    async def test_create_rejects_legacy_google_user_email(
-        self, user_manager, mock_legacy_user
-    ):
+    async def test_create_rejects_legacy_google_user_email(self, user_manager, mock_legacy_user):
         """Test create() rejects registration with legacy Google user email."""
         from fastapi_users.exceptions import UserAlreadyExists
 
