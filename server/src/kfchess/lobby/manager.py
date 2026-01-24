@@ -3,6 +3,8 @@
 This module provides the LobbyManager class which manages all active lobbies
 in memory. Lobbies are used as waiting rooms where players gather before
 starting a game.
+
+Optionally supports database persistence when a session factory is provided.
 """
 
 import asyncio
@@ -11,8 +13,12 @@ import random
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from kfchess.lobby.models import Lobby, LobbyPlayer, LobbySettings, LobbyStatus
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +46,7 @@ class LobbyError:
 
 
 class LobbyManager:
-    """Manages all active lobbies in memory.
+    """Manages all active lobbies in memory with optional database persistence.
 
     This class is responsible for:
     - Creating and deleting lobbies
@@ -48,16 +54,73 @@ class LobbyManager:
     - Handling ready states and settings
     - Starting games from lobbies
     - Enforcing the one-lobby-per-player rule
+    - Persisting lobby state to database (if session factory provided)
     """
 
-    def __init__(self) -> None:
-        """Initialize the lobby manager."""
+    def __init__(
+        self,
+        session_factory: "async_sessionmaker[AsyncSession] | None" = None,
+    ) -> None:
+        """Initialize the lobby manager.
+
+        Args:
+            session_factory: Optional SQLAlchemy async session factory for persistence.
+                If not provided, lobbies are stored in-memory only.
+        """
         self._lobbies: dict[str, Lobby] = {}  # code -> Lobby
         self._player_keys: dict[str, dict[int, str]] = {}  # code -> {slot: key}
         self._key_to_slot: dict[str, tuple[str, int]] = {}  # key -> (code, slot)
         self._player_to_lobby: dict[str, tuple[str, int]] = {}  # player_id -> (code, slot)
         self._next_lobby_id: int = 1
         self._lock = asyncio.Lock()
+        self._session_factory = session_factory
+
+    async def _persist_lobby(self, lobby: Lobby) -> None:
+        """Persist a lobby to the database if persistence is enabled.
+
+        Args:
+            lobby: The lobby to persist
+        """
+        if self._session_factory is None:
+            return
+
+        from kfchess.db.repositories.lobbies import LobbyRepository
+
+        try:
+            async with self._session_factory() as session:
+                repository = LobbyRepository(session)
+                await repository.save(lobby)
+                await session.commit()
+        except Exception as e:
+            # Log but don't raise - in-memory state is source of truth
+            # Persistence failures are logged for monitoring/alerting
+            logger.warning(
+                f"Failed to persist lobby {lobby.code} to database: {e}. "
+                "In-memory state remains valid."
+            )
+
+    async def _delete_lobby_from_db(self, code: str) -> None:
+        """Delete a lobby from the database if persistence is enabled.
+
+        Args:
+            code: The lobby code to delete
+        """
+        if self._session_factory is None:
+            return
+
+        from kfchess.db.repositories.lobbies import LobbyRepository
+
+        try:
+            async with self._session_factory() as session:
+                repository = LobbyRepository(session)
+                await repository.delete_by_code(code)
+                await session.commit()
+        except Exception as e:
+            # Log but don't raise - lobby is already removed from memory
+            logger.warning(
+                f"Failed to delete lobby {code} from database: {e}. "
+                "Lobby already removed from memory."
+            )
 
     async def create_lobby(
         self,
@@ -142,7 +205,10 @@ class LobbyManager:
 
             logger.info(f"Lobby {code} created by {host_username} (user_id={host_user_id})")
 
-            return lobby, host_key
+        # Persist outside lock to avoid potential deadlocks
+        await self._persist_lobby(lobby)
+
+        return lobby, host_key
 
     async def join_lobby(
         self,
@@ -219,7 +285,10 @@ class LobbyManager:
 
             logger.info(f"Player {username} joined lobby {code} in slot {slot}")
 
-            return lobby, player_key, slot
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby, player_key, slot
 
     async def leave_lobby(
         self,
@@ -244,7 +313,15 @@ class LobbyManager:
                 return None
 
             slot = key_info[1]
-            return await self._leave_lobby_internal(code, slot, player_id)
+            result = await self._leave_lobby_internal(code, slot, player_id)
+
+        # Persist or delete outside lock
+        if result is None:
+            await self._delete_lobby_from_db(code)
+        else:
+            await self._persist_lobby(result)
+
+        return result
 
     async def _leave_lobby_internal(
         self,
@@ -336,7 +413,10 @@ class LobbyManager:
             player.is_ready = ready
             logger.debug(f"Player in slot {slot} set ready={ready} in lobby {code}")
 
-            return lobby
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby
 
     async def update_settings(
         self,
@@ -405,7 +485,10 @@ class LobbyManager:
                         player.is_ready = False
                 logger.info(f"Settings updated in lobby {code}, all players unreadied")
 
-            return lobby
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby
 
     async def kick_player(
         self,
@@ -464,7 +547,10 @@ class LobbyManager:
 
             logger.info(f"Player {target.username} kicked from lobby {code}")
 
-            return lobby
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby
 
     async def add_ai(
         self,
@@ -524,7 +610,10 @@ class LobbyManager:
 
             logger.info(f"AI player {ai_type} added to lobby {code} in slot {ai_slot}")
 
-            return lobby
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby
 
     async def remove_ai(
         self,
@@ -573,7 +662,10 @@ class LobbyManager:
 
             logger.info(f"AI player removed from lobby {code} slot {target_slot}")
 
-            return lobby
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby
 
     async def start_game(
         self,
@@ -638,7 +730,10 @@ class LobbyManager:
 
             logger.info(f"Game {game_id} starting from lobby {code}")
 
-            return game_id, game_player_keys
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return game_id, game_player_keys
 
     async def end_game(
         self,
@@ -670,7 +765,10 @@ class LobbyManager:
 
             logger.info(f"Game ended in lobby {code}, winner: {winner}")
 
-            return lobby
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby
 
     async def return_to_lobby(
         self,
@@ -694,7 +792,10 @@ class LobbyManager:
 
             lobby.status = LobbyStatus.WAITING
 
-            return lobby
+        # Persist outside lock
+        await self._persist_lobby(lobby)
+
+        return lobby
 
     def get_lobby(self, code: str) -> Lobby | None:
         """Get a lobby by code.
@@ -766,7 +867,13 @@ class LobbyManager:
             True if deleted, False if not found
         """
         async with self._lock:
-            return await self._delete_lobby_internal(code)
+            result = await self._delete_lobby_internal(code)
+
+        # Delete from DB outside lock
+        if result:
+            await self._delete_lobby_from_db(code)
+
+        return result
 
     async def _delete_lobby_internal(self, code: str) -> bool:
         """Internal method to delete a lobby.
@@ -851,7 +958,11 @@ class LobbyManager:
             if stale_lobbies:
                 logger.info(f"Cleaned up {len(stale_lobbies)} stale lobbies")
 
-            return len(stale_lobbies)
+        # Delete from DB outside lock
+        for code in stale_lobbies:
+            await self._delete_lobby_from_db(code)
+
+        return len(stale_lobbies)
 
 
 # Global singleton instance
@@ -864,3 +975,25 @@ def get_lobby_manager() -> LobbyManager:
     if _lobby_manager is None:
         _lobby_manager = LobbyManager()
     return _lobby_manager
+
+
+def init_lobby_manager(
+    session_factory: "async_sessionmaker[AsyncSession] | None" = None,
+) -> LobbyManager:
+    """Initialize the global lobby manager with optional persistence.
+
+    Args:
+        session_factory: Optional SQLAlchemy async session factory for persistence.
+
+    Returns:
+        The initialized LobbyManager instance.
+    """
+    global _lobby_manager
+    _lobby_manager = LobbyManager(session_factory=session_factory)
+    return _lobby_manager
+
+
+def reset_lobby_manager() -> None:
+    """Reset the global lobby manager. Used for testing."""
+    global _lobby_manager
+    _lobby_manager = None

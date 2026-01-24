@@ -37,8 +37,11 @@ def pytest_collection_modifyitems(config, items):
 
 
 def generate_test_id() -> str:
-    """Generate a unique test ID to avoid collisions."""
-    return f"TEST_{uuid.uuid4().hex[:8].upper()}"
+    """Generate a unique test ID to avoid collisions.
+
+    Must be <= 10 chars to fit the lobby code column.
+    """
+    return f"T{uuid.uuid4().hex[:5].upper()}"  # "T" + 5 chars = 6 chars
 
 
 @pytest.fixture

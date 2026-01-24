@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -108,10 +109,12 @@ class Lobby(Base):
     player_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_ranked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="waiting")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="waiting", index=True
+    )
     game_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=func.now(), nullable=False
+        DateTime, default=func.now(), nullable=False, index=True
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -120,6 +123,11 @@ class Lobby(Base):
     host: Mapped["User | None"] = relationship("User", foreign_keys=[host_id])
     players: Mapped[list["LobbyPlayer"]] = relationship(
         "LobbyPlayer", back_populates="lobby", cascade="all, delete-orphan"
+    )
+
+    # Composite index for list_public_waiting() queries
+    __table_args__ = (
+        Index("ix_lobbies_public_waiting", "is_public", "status", "created_at"),
     )
 
 

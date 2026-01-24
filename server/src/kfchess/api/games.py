@@ -70,6 +70,31 @@ class ReadyResponse(BaseModel):
     status: str
 
 
+class LiveGamePlayer(BaseModel):
+    """Player info in a live game."""
+
+    slot: int
+    username: str
+    is_ai: bool = False
+
+
+class LiveGameItem(BaseModel):
+    """A live game in the list response."""
+
+    game_id: str
+    lobby_code: str | None = None
+    players: list[LiveGamePlayer]
+    settings: dict
+    current_tick: int
+    started_at: str | None = None
+
+
+class LiveGamesResponse(BaseModel):
+    """Response for listing live games."""
+
+    games: list[LiveGameItem]
+
+
 @router.post("", response_model=CreateGameResponse)
 async def create_game(request: CreateGameRequest) -> CreateGameResponse:
     """Create a new game against AI."""
@@ -111,6 +136,77 @@ async def create_game(request: CreateGameRequest) -> CreateGameResponse:
         board_type=request.board_type,
         status="waiting",
     )
+
+
+# IMPORTANT: /live endpoint must be defined BEFORE /{game_id} to avoid being
+# caught by the parameterized route
+@router.get("/live", response_model=LiveGamesResponse)
+async def list_live_games(
+    speed: str | None = None,
+    player_count: int | None = None,
+) -> LiveGamesResponse:
+    """List games currently in progress for spectating.
+
+    This endpoint returns all public games that are currently being played.
+    Users can spectate any game by connecting to its WebSocket without a player key.
+    """
+    from kfchess.lobby.manager import get_lobby_manager
+    from kfchess.lobby.models import LobbyStatus
+
+    lobby_manager = get_lobby_manager()
+    service = get_game_service()
+
+    games = []
+
+    # Get games from IN_GAME lobbies (these have player info)
+    for code, lobby in list(lobby_manager._lobbies.items()):
+        if lobby.status != LobbyStatus.IN_GAME:
+            continue
+        if not lobby.settings.is_public:
+            continue
+        if speed and lobby.settings.speed != speed:
+            continue
+        if player_count and lobby.settings.player_count != player_count:
+            continue
+
+        game_id = lobby.current_game_id
+        if not game_id:
+            continue
+
+        # Get current game state
+        state = service.get_game(game_id)
+        if state is None:
+            continue
+
+        # Build player list
+        players = [
+            LiveGamePlayer(
+                slot=slot,
+                username=p.username,
+                is_ai=p.is_ai,
+            )
+            for slot, p in sorted(lobby.players.items())
+        ]
+
+        managed_game = service.get_managed_game(game_id)
+        started_at = managed_game.created_at.isoformat() if managed_game else None
+
+        games.append(
+            LiveGameItem(
+                game_id=game_id,
+                lobby_code=code,
+                players=players,
+                settings={
+                    "speed": lobby.settings.speed,
+                    "playerCount": lobby.settings.player_count,
+                    "isRanked": lobby.settings.is_ranked,
+                },
+                current_tick=state.current_tick,
+                started_at=started_at,
+            )
+        )
+
+    return LiveGamesResponse(games=games)
 
 
 @router.get("/{game_id}")
