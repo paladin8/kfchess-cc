@@ -127,6 +127,7 @@ a:hover {
 
 .btn-primary:hover {
   background-color: var(--color-primary-dark);
+  color: white;
 }
 
 .btn-secondary {
@@ -136,6 +137,7 @@ a:hover {
 
 .btn-secondary:hover {
   background-color: #5a6268;
+  color: white;
 }
 
 /* Home Page */
@@ -417,8 +419,13 @@ a:hover {
 }
 
 .auth-success {
+  background-color: rgba(40, 167, 69, 0.1);
+  border: 1px solid #28a745;
   color: #28a745;
-  text-align: center;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
 }
 
 .auth-message {
@@ -435,6 +442,10 @@ a:hover {
 .user-name {
   color: var(--color-text);
   font-weight: 500;
+}
+
+.user-name:hover {
+  color: var(--color-primary);
 }
 
 .user-loading {
@@ -471,4 +482,89 @@ a:hover {
   color: #d4d4d4;
   text-decoration: none;
   cursor: default;
+}
+
+/* Profile Page */
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-field > label {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.profile-value {
+  color: var(--color-text);
+  font-size: 1rem;
+}
+
+.profile-value-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.profile-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.profile-edit-form input {
+  padding: 0.75rem;
+  font-size: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
+
+.profile-edit-form input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.profile-edit-form input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.profile-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.profile-ratings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-rating {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-background);
+  border-radius: 4px;
+}
+
+.rating-mode {
+  color: var(--color-text-muted);
+  text-transform: capitalize;
+}
+
+.rating-value {
+  font-weight: 600;
+  color: var(--color-text);
 }

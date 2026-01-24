@@ -2,8 +2,9 @@
 
 import os
 
-# Disable rate limiting for all tests
+# Disable rate limiting and email sending for all tests
 os.environ["RATE_LIMITING_ENABLED"] = "false"
+os.environ["SEND_EMAILS"] = "false"
 
 # Clear the settings cache to pick up the new environment variable
 from kfchess.settings import get_settings

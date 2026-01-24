@@ -6,8 +6,9 @@ DEV_MODE authentication bypass for local development.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from kfchess.auth.dependencies import (
     get_required_user_with_dev_bypass,
@@ -61,10 +62,23 @@ async def update_current_user(
 
     Returns:
         Updated user data
+
+    Raises:
+        HTTPException: 400 if username is already taken
     """
     try:
         updated_user = await user_manager.update(update_data, user)
         return updated_user
-    except Exception:
-        # Let FastAPI-Users exceptions propagate (validation errors, etc.)
-        raise
+    except IntegrityError as e:
+        # Check if this is a username conflict
+        error_str = str(e).lower()
+        if "username" in error_str or "unique" in error_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username is already taken. Please choose another.",
+            ) from e
+        # Re-raise other integrity errors
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Update failed due to a constraint violation.",
+        ) from e

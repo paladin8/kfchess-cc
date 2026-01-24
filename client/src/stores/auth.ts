@@ -146,6 +146,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         message = 'A user with this email already exists';
       } else if (error instanceof api.ApiClientError && error.status === 429) {
         message = 'Too many registration attempts. Please wait a moment and try again.';
+      } else if (error instanceof api.ApiClientError && error.detail) {
+        // Check for username conflict in detail message
+        if (error.detail.toLowerCase().includes('username')) {
+          message = 'This username is already taken. Please choose another.';
+        } else {
+          message = error.detail;
+        }
       } else if (error instanceof Error) {
         message = error.message;
       }

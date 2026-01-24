@@ -94,7 +94,7 @@ function Header() {
               <span className="user-loading">...</span>
             ) : isAuthenticated && user ? (
               <>
-                <span className="user-name">{user.username}</span>
+                <Link to="/profile" className="user-name">{user.username}</Link>
                 <button className="btn btn-link" onClick={handleLogout}>
                   Logout
                 </button>

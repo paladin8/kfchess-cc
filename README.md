@@ -21,7 +21,7 @@ Kung Fu Chess removes the turn-based nature of traditional chess. Both players c
 
 ## Current Status
 
-This is a rebuild of the original Kung Fu Chess. The MVP is functional:
+This is a rebuild of the original Kung Fu Chess. Core features are functional:
 
 - [x] Core game engine with tick-based movement and collision detection
 - [x] 2-player and 4-player board support
@@ -29,7 +29,7 @@ This is a rebuild of the original Kung Fu Chess. The MVP is functional:
 - [x] React/PixiJS frontend with smooth rendering
 - [x] Basic AI opponent (random moves)
 - [x] Game replay recording and playback with browser
-- [ ] User authentication and accounts
+- [x] User authentication (email/password + Google OAuth)
 - [ ] Lobby system and matchmaking
 - [ ] Advanced AI (MCTS)
 
@@ -114,7 +114,13 @@ npm test
 
 ### Environment Variables
 
-The backend runs in `DEV_MODE=true` by default, which bypasses authentication for easier development.
+The backend runs in `DEV_MODE=true` by default, which auto-logs in as `DEV_USER_ID` for easier development. Set `DEV_MODE=false` to test actual authentication flows.
+
+Key environment variables (see `server/.env.example` for full list):
+- `DEV_MODE` - Enable development mode auto-login
+- `SECRET_KEY` - JWT signing key (required in production)
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - For Google OAuth (optional)
+- `RESEND_API_KEY` - For sending verification/reset emails (optional)
 
 ## Project Structure
 
@@ -145,6 +151,7 @@ kfchess-cc/
 ## Documentation
 
 - [Architecture](./docs/ARCHITECTURE.md) - System design, technical decisions, and implementation status
+- [Authentication](./docs/AUTHENTICATION_DESIGN.md) - User auth with email/password and Google OAuth
 - [MVP Implementation](./docs/MVP_IMPLEMENTATION.md) - Detailed MVP implementation notes
 - [4-Player Design](./docs/FOUR_PLAYER_DESIGN.md) - 4-player mode specification
 - [Replay System](./docs/REPLAY_DESIGN.md) - Replay recording, storage, and playback design

@@ -350,7 +350,7 @@ export class GameRenderer {
     const container = new Container();
 
     // Create the piece sprite - use appropriate texture based on player and board type
-    const texture = getPieceTexture(piece.type, piece.player, this.boardType);
+    const texture = getPieceTexture(piece.type, piece.player);
     const sprite = new Sprite(texture);
 
     // Original alignment: sprite is 90% of cell size
@@ -384,7 +384,7 @@ export class GameRenderer {
    * Update a piece sprite's appearance (for promotions)
    */
   private updatePieceSpriteAppearance(pieceSprite: PieceSprite, piece: RendererPiece): void {
-    const texture = getPieceTexture(piece.type, piece.player, this.boardType);
+    const texture = getPieceTexture(piece.type, piece.player);
     if (pieceSprite.sprite.texture !== texture) {
       pieceSprite.sprite.texture = texture;
       const SPRITE_FACTOR = 0.90;
@@ -511,7 +511,7 @@ export class GameRenderer {
 
       if (isHovered && selectedPieceType && selectedPiecePlayer !== undefined) {
         // Show ghost piece on hovered legal move square
-        const texture = getPieceTexture(selectedPieceType, selectedPiecePlayer, this.boardType);
+        const texture = getPieceTexture(selectedPieceType, selectedPiecePlayer);
         const ghostSprite = new Sprite(texture);
 
         // Same sizing as regular pieces

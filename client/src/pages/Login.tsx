@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
 
@@ -17,6 +17,11 @@ function Login() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Clear any stale errors when component mounts
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   // Get the redirect destination with validation (default to home)
   const state = location.state as unknown;

@@ -45,7 +45,7 @@ This document defines the architecture for the rebuilt Kung Fu Chess game. It se
 | Game tick ownership | Async task per game | Clear ownership, explicit handoff | Implemented |
 | WebSocket routing | Direct connection (Redis pub/sub planned) | MVP simplicity, pub/sub for multi-server | Direct implemented |
 | Frontend state | Zustand | Lightweight, excellent TypeScript support | Implemented |
-| Auth | FastAPI-Users | Handles email + OAuth, battle-tested | Configured, not wired |
+| Auth | FastAPI-Users | Handles email + OAuth, battle-tested | Implemented |
 
 ---
 
@@ -60,7 +60,7 @@ This document defines the architecture for the rebuilt Kung Fu Chess game. It se
 | Database ORM | SQLAlchemy | 2.0+ | Configured (models TODO) |
 | Migrations | Alembic | 1.14+ | Configured (migrations TODO) |
 | Cache/State | Redis | 7+ (client 5.2+) | Placeholder |
-| Auth | FastAPI-Users | 14+ | Configured (wiring TODO) |
+| Auth | FastAPI-Users | 14+ | Implemented |
 | Task Queue | None (game loops run in-process) | - | - |
 | Python | Python | 3.12+ | Implemented |
 | Package Manager | uv | latest | Implemented |
@@ -119,20 +119,32 @@ kfchess-cc/
 │   ├── pyproject.toml              ✓
 │   ├── uv.lock                     ✓
 │   ├── .env.example                ✓
-│   ├── alembic/                    ✓ Database migrations (empty)
+│   ├── alembic/                    ✓ Database migrations
 │   │   ├── env.py                  ✓
-│   │   └── versions/               ✓ (no migrations yet)
+│   │   └── versions/               ✓
+│   │       ├── 001_add_game_replays.py  ✓
+│   │       └── 002_add_users.py         ✓
 │   │
 │   ├── src/kfchess/
 │   │   ├── __init__.py             ✓
 │   │   ├── main.py                 ✓ FastAPI app entry point
 │   │   ├── settings.py             ✓ Pydantic settings
 │   │   │
+│   │   ├── auth/                   ✓ Authentication (COMPLETE)
+│   │   │   ├── schemas.py          ✓ UserRead, UserCreate, UserUpdate
+│   │   │   ├── users.py            ✓ UserManager + OAuth
+│   │   │   ├── backend.py          ✓ Cookie JWT backend
+│   │   │   ├── dependencies.py     ✓ current_user, DEV_MODE bypass
+│   │   │   ├── router.py           ✓ Route registration
+│   │   │   ├── email.py            ✓ Resend integration
+│   │   │   └── rate_limit.py       ✓ SlowAPI rate limiting
+│   │   │
 │   │   ├── api/                    ✓ HTTP API routes
 │   │   │   ├── router.py           ✓ Main router
 │   │   │   ├── games.py            ✓ Game management endpoints
-│   │   │   └── replays.py          ✓ Replay list endpoint
-│   │   │   # TODO: auth.py, users.py, lobbies.py, campaign.py
+│   │   │   ├── replays.py          ✓ Replay list endpoint
+│   │   │   └── users.py            ✓ User profile endpoints
+│   │   │   # TODO: lobbies.py, campaign.py
 │   │   │
 │   │   ├── ws/                     ✓ WebSocket handlers
 │   │   │   ├── handler.py          ✓ Connection handler + game loop
@@ -161,10 +173,11 @@ kfchess-cc/
 │   │   │   # TODO: elo.py, s3.py
 │   │   │
 │   │   ├── db/                     ✓ Database layer
-│   │   │   ├── models.py           ✓ SQLAlchemy models (GameReplay)
+│   │   │   ├── models.py           ✓ SQLAlchemy models (User, OAuthAccount, GameReplay)
 │   │   │   ├── session.py          ✓ Database session management
 │   │   │   └── repositories/       ✓ Repository pattern
-│   │   │       └── replays.py      ✓ Replay CRUD operations
+│   │   │       ├── replays.py      ✓ Replay CRUD operations
+│   │   │       └── users.py        ✓ User CRUD operations
 │   │   ├── redis/                  Placeholder - TODO
 │   │   ├── lobby/                  Placeholder - TODO
 │   │   └── campaign/               Placeholder - TODO
@@ -172,11 +185,14 @@ kfchess-cc/
 │   └── tests/                      ✓ Test suite
 │       ├── conftest.py             ✓
 │       ├── test_health.py          ✓
-│       └── unit/
-│           ├── game/               ✓ Game engine tests (comprehensive)
-│           ├── test_game_service.py ✓
-│           ├── test_api_games.py   ✓
-│           └── test_websocket.py   ✓
+│       ├── unit/
+│       │   ├── game/               ✓ Game engine tests (comprehensive)
+│       │   ├── auth/               ✓ Auth unit tests
+│       │   ├── test_game_service.py ✓
+│       │   ├── test_api_games.py   ✓
+│       │   └── test_websocket.py   ✓
+│       └── integration/
+│           └── auth/               ✓ Auth integration tests
 │
 ├── client/                         ✓ TypeScript frontend
 │   ├── package.json                ✓
@@ -202,7 +218,7 @@ kfchess-cc/
 │   │   ├── stores/                 ✓ Zustand stores
 │   │   │   ├── game.ts             ✓ Game state (main)
 │   │   │   ├── replay.ts           ✓ Replay state
-│   │   │   ├── auth.ts             ✓ Auth state (placeholder)
+│   │   │   ├── auth.ts             ✓ Auth state (COMPLETE)
 │   │   │   └── lobby.ts            ✓ Lobby state (placeholder)
 │   │   │
 │   │   ├── game/                   ✓ Game rendering
@@ -221,17 +237,24 @@ kfchess-cc/
 │   │   │   ├── replay/             ✓ Replay components
 │   │   │   │   ├── ReplayBoard.tsx ✓
 │   │   │   │   └── ReplayControls.tsx ✓
-│   │   │   └── layout/
-│   │   │       ├── Header.tsx      ✓
-│   │   │       └── Layout.tsx      ✓
-│   │   │   # TODO: lobby/, campaign/, user/, common/
+│   │   │   ├── layout/
+│   │   │   │   ├── Header.tsx      ✓ With user menu + verification banner
+│   │   │   │   └── Layout.tsx      ✓
+│   │   │   └── AuthProvider.tsx    ✓ Auto-fetch user on load
+│   │   │   # TODO: lobby/, campaign/, common/
 │   │   │
 │   │   ├── pages/                  ✓ Route pages
 │   │   │   ├── Home.tsx            ✓ Home/game creation
 │   │   │   ├── Game.tsx            ✓ Game play page
 │   │   │   ├── Replay.tsx          ✓ Replay viewer
-│   │   │   └── Replays.tsx         ✓ Replay browser
-│   │   │   # TODO: Lobby, Campaign, Profile, Login, Register
+│   │   │   ├── Replays.tsx         ✓ Replay browser
+│   │   │   ├── Login.tsx           ✓ Login page
+│   │   │   ├── Register.tsx        ✓ Registration page
+│   │   │   ├── ForgotPassword.tsx  ✓ Request password reset
+│   │   │   ├── ResetPassword.tsx   ✓ Set new password
+│   │   │   ├── Verify.tsx          ✓ Email verification
+│   │   │   └── GoogleCallback.tsx  ✓ OAuth callback
+│   │   │   # TODO: Lobby, Campaign, Profile
 │   │   │
 │   │   ├── styles/
 │   │   │   └── index.css           ✓
@@ -1098,90 +1121,66 @@ class PositionEvaluator:
 
 ## Authentication
 
-### FastAPI-Users Setup
+> **Status: Implemented** - See [AUTHENTICATION_DESIGN.md](./AUTHENTICATION_DESIGN.md) for full details.
 
-```python
-# api/auth.py
-from fastapi_users import FastAPIUsers
-from fastapi_users.authentication import (
-    AuthenticationBackend,
-    CookieTransport,
-    JWTStrategy,
-)
-from fastapi_users.db import SQLAlchemyUserDatabase
+### Overview
 
-# Cookie-based auth (for web client)
-cookie_transport = CookieTransport(cookie_max_age=3600 * 24 * 30)  # 30 days
+Authentication uses FastAPI-Users with cookie-based JWT tokens, supporting both email/password and Google OAuth.
 
-def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=3600 * 24 * 30)
+| Feature | Implementation |
+|---------|----------------|
+| Session | 30-day JWT in httponly cookie |
+| Password Auth | Email + password with Argon2 hashing |
+| Google OAuth | Full flow with legacy user migration |
+| Email Verification | Via Resend (optional for login) |
+| Password Reset | Token-based, 1-hour expiry |
+| Rate Limiting | SlowAPI per-endpoint limits |
 
-auth_backend = AuthenticationBackend(
-    name="cookie",
-    transport=cookie_transport,
-    get_strategy=get_jwt_strategy,
-)
+### API Endpoints
 
-# FastAPI-Users instance
-fastapi_users = FastAPIUsers[User, int](
-    get_user_manager,
-    [auth_backend],
-)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/register` | POST | Register with email/password |
+| `/api/auth/login` | POST | Login (form-encoded) |
+| `/api/auth/logout` | POST | Clear auth cookie |
+| `/api/auth/forgot-password` | POST | Request reset email |
+| `/api/auth/reset-password` | POST | Reset with token |
+| `/api/auth/verify` | POST | Verify email with token |
+| `/api/auth/request-verify-token` | POST | Request verification email |
+| `/api/users/me` | GET | Get current user |
+| `/api/users/me` | PATCH | Update profile |
+| `/api/auth/google/authorize` | GET | Start Google OAuth |
+| `/api/auth/google/callback` | GET | Google OAuth callback |
 
-# Include routers
-app.include_router(
-    fastapi_users.get_auth_router(auth_backend),
-    prefix="/api/auth",
-    tags=["auth"],
-)
-app.include_router(
-    fastapi_users.get_register_router(UserRead, UserCreate),
-    prefix="/api/auth",
-    tags=["auth"],
-)
-app.include_router(
-    fastapi_users.get_reset_password_router(),
-    prefix="/api/auth",
-    tags=["auth"],
-)
-app.include_router(
-    fastapi_users.get_verify_router(UserRead),
-    prefix="/api/auth",
-    tags=["auth"],
-)
+### Backend Structure
 
-# Google OAuth
-from httpx_oauth.clients.google import GoogleOAuth2
-
-google_oauth_client = GoogleOAuth2(
-    settings.GOOGLE_CLIENT_ID,
-    settings.GOOGLE_CLIENT_SECRET,
-)
-
-app.include_router(
-    fastapi_users.get_oauth_router(google_oauth_client, auth_backend, settings.SECRET_KEY),
-    prefix="/api/auth/google",
-    tags=["auth"],
-)
+```
+server/src/kfchess/auth/
+├── schemas.py        # UserRead, UserCreate, UserUpdate
+├── users.py          # UserManager with OAuth + random usernames
+├── backend.py        # Cookie JWT configuration
+├── dependencies.py   # current_user + DEV_MODE bypass
+├── router.py         # Route registration with rate limiting
+├── email.py          # Resend integration
+└── rate_limit.py     # SlowAPI configuration
 ```
 
-### Dev Mode Bypass
+### Frontend Pages
+
+- `/login` - Email/password + Google OAuth button
+- `/register` - Registration with optional username
+- `/forgot-password` - Request password reset
+- `/reset-password` - Set new password (from email link)
+- `/verify` - Email verification handler
+- `/auth/google/callback` - OAuth callback
+
+### DEV_MODE Bypass
+
+For development, set `DEV_MODE=true` and `DEV_USER_ID=1` to auto-login without authentication.
 
 ```python
-# config.py
-class Settings(BaseSettings):
-    DEV_MODE: bool = False
-    DEV_USER_ID: int | None = None
-
-# dependencies.py
-async def get_current_user(
-    request: Request,
-    user: User = Depends(fastapi_users.current_user(optional=True)),
-) -> User | None:
-    if settings.DEV_MODE and settings.DEV_USER_ID:
-        # Auto-login as dev user
-        return await user_repo.get(settings.DEV_USER_ID)
-    return user
+# When DEV_MODE=true and no auth cookie present:
+# GET /api/users/me returns the DEV_USER_ID user automatically
 ```
 
 ---
@@ -1746,7 +1745,7 @@ This architecture provides:
 
 1. **Maintainability**: TypeScript frontend, typed Python backend, comprehensive tests
 2. **Scalability**: Redis-backed distributed game servers with handoff (planned)
-3. **New Features**: Lobbies, improved AI (MCTS), replay seeking, email auth (planned)
+3. **New Features**: Lobbies, improved AI (MCTS), replay seeking
 4. **Backwards Compatibility**: Migration path for existing data
 
 The system is designed for 2-player now with clear extension points for 4-player mode later.
@@ -1755,7 +1754,7 @@ The system is designed for 2-player now with clear extension points for 4-player
 
 ## Implementation Status
 
-### Completed (MVP)
+### Completed (MVP+)
 - [x] Project structure and tooling (uv, Vite, TypeScript)
 - [x] Core game engine with comprehensive tests
   - Board, pieces, moves, collision detection
@@ -1776,13 +1775,18 @@ The system is designed for 2-player now with clear extension points for 4-player
   - O(n) incremental playback optimization
   - Replay browser UI
   - See [REPLAY_DESIGN.md](./REPLAY_DESIGN.md) for details
+- [x] User authentication
+  - Email/password registration and login
+  - Google OAuth with legacy user migration
+  - Email verification and password reset
+  - Rate limiting on auth endpoints
+  - DEV_MODE bypass for development
+  - See [AUTHENTICATION_DESIGN.md](./AUTHENTICATION_DESIGN.md) for details
 
 ### In Progress / Next Steps
-1. Database persistence for users (SQLAlchemy models, Alembic migrations)
-2. User authentication (FastAPI-Users is configured, needs wiring)
-3. Lobby system for matchmaking
-4. Advanced AI (MCTS implementation)
-5. ELO rating system
+1. Lobby system for matchmaking
+2. Advanced AI (MCTS implementation)
+3. ELO rating system
 
 ### Future
 - Campaign mode with AI opponents

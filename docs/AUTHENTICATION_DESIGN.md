@@ -1,20 +1,70 @@
 # User Authentication Design
 
-This document describes the design and implementation plan for user authentication in Kung Fu Chess, with full backwards compatibility for legacy users.
+This document describes the design and implementation of user authentication in Kung Fu Chess, with full backwards compatibility for legacy users.
+
+> **Status: IMPLEMENTED** - All phases complete. See [Implementation Status](#implementation-status) for details.
 
 ---
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Legacy System Analysis](#legacy-system-analysis)
-3. [Database Schema](#database-schema)
-4. [Backend Architecture](#backend-architecture)
-5. [API Endpoints](#api-endpoints)
-6. [Frontend Integration](#frontend-integration)
-7. [Migration Strategy](#migration-strategy)
-8. [Implementation Phases](#implementation-phases)
-9. [Testing Strategy](#testing-strategy)
+1. [Implementation Status](#implementation-status)
+2. [Overview](#overview)
+3. [Legacy System Analysis](#legacy-system-analysis)
+4. [Database Schema](#database-schema)
+5. [Backend Architecture](#backend-architecture)
+6. [API Endpoints](#api-endpoints)
+7. [Frontend Integration](#frontend-integration)
+8. [Security Features](#security-features)
+9. [Migration Strategy](#migration-strategy)
+10. [Testing](#testing)
+
+---
+
+## Implementation Status
+
+All authentication features have been implemented and tested.
+
+### Completed Features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Email/password registration | ✅ Complete | With auto-generated usernames |
+| Email/password login | ✅ Complete | Cookie-based JWT, 30-day lifetime |
+| Google OAuth | ✅ Complete | Full flow with legacy user migration |
+| Email verification | ✅ Complete | Via Resend, optional for login |
+| Password reset | ✅ Complete | Token-based, 1-hour expiry |
+| Rate limiting | ✅ Complete | Per-endpoint limits via SlowAPI |
+| DEV_MODE bypass | ✅ Complete | Auto-login for development |
+| Frontend pages | ✅ Complete | Login, Register, Verify, Reset Password |
+| Verification banner | ✅ Complete | With client-side rate limiting |
+
+### File Structure (Implemented)
+
+```
+server/src/kfchess/auth/
+├── __init__.py          # Module exports
+├── schemas.py           # UserRead, UserCreate, UserUpdate
+├── users.py             # UserManager with OAuth + legacy support
+├── backend.py           # Cookie-based JWT authentication
+├── dependencies.py      # current_user, DEV_MODE bypass
+├── router.py            # Route registration with rate limiting
+├── email.py             # Resend email integration
+└── rate_limit.py        # SlowAPI rate limiting
+
+client/src/
+├── pages/
+│   ├── Login.tsx           # Email/password + Google OAuth
+│   ├── Register.tsx        # Registration with optional username
+│   ├── ForgotPassword.tsx  # Request password reset
+│   ├── ResetPassword.tsx   # Set new password
+│   ├── Verify.tsx          # Email verification handler
+│   └── GoogleCallback.tsx  # OAuth callback handler
+├── components/
+│   ├── AuthProvider.tsx    # Auto-fetch user on load
+│   └── layout/Header.tsx   # Verification banner + user menu
+└── stores/auth.ts          # Zustand auth state
+```
 
 ---
 
@@ -454,6 +504,44 @@ function AuthProvider({ children }) {
 
 ---
 
+## Security Features
+
+### Rate Limiting
+
+Per-endpoint rate limits to prevent abuse:
+
+| Endpoint | Limit | Rationale |
+|----------|-------|-----------|
+| Login | 5/minute | Prevent brute force |
+| Register | 3/minute | Prevent spam accounts |
+| Forgot Password | 3/minute | Prevent email bombing |
+| Email Verification | 5/minute | Allow retries |
+| Google OAuth | 10/minute | Higher for OAuth flow |
+
+Rate limiting can be disabled via `RATE_LIMITING_ENABLED=false` for tests.
+
+### Token Security
+
+| Feature | Implementation |
+|---------|----------------|
+| JWT Cookies | httponly, samesite=lax, secure in production |
+| Token Lifetime | 30 days for session, 1 hour for password reset |
+| URL Token Clearing | Tokens removed from URL after extraction (prevents Referer leaks) |
+
+### Email Security
+
+- **No enumeration**: Forgot-password and request-verify always return 202 (don't reveal if email exists)
+- **Async sending**: Emails sent in thread pool to avoid blocking
+- **Graceful failures**: Email errors don't fail auth flows
+
+### Frontend Security
+
+- **Redirect validation**: Post-login redirects must start with `/`, no `://` or `//`
+- **OAuth state validation**: Full CSRF protection for Google OAuth
+- **Error sanitization**: Google errors mapped to safe user messages
+
+---
+
 ## Migration Strategy
 
 ### Alembic Migration: `002_add_users.py`
@@ -513,248 +601,88 @@ def _migrate_legacy_users():
 
 ---
 
-## Implementation Phases
+## Testing
 
-### Phase 1: Database Foundation
-- Add `resend` and `slowapi` to `pyproject.toml`
-- Add new settings (`frontend_url`, `resend_api_key`, `email_from`)
-- Add User and OAuthAccount models to `models.py`
-- Create Alembic migration `002_add_users.py`
-- Run migration on development database
-- Verify tables created correctly
+### Test Coverage
 
-### Phase 2: FastAPI-Users Core
-- Create `auth/` module with all files
-- Implement UserManager with random username generation
-- Configure cookie-based JWT backend
-- Add password validation (8-128 chars) in schemas
-- Add rate limiting to auth endpoints
-- Add Resend email integration (with dev fallback)
-- Register auth routes in `api/router.py`
-- Test: `/api/auth/register` creates user
+| Category | Files | Tests |
+|----------|-------|-------|
+| Unit - Schemas | `test_schemas.py` | Password validation, username optional |
+| Unit - Dependencies | `test_dependencies.py` | DEV_MODE bypass, user retrieval |
+| Unit - Email | `test_email.py` | Send verification, send reset, failure handling |
+| Integration - Login | `test_login_flow.py` | Login, logout, wrong password |
+| Integration - Registration | `test_registration_flow.py` | Register, username generation, duplicates |
+| Integration - OAuth | `test_google_oauth.py` | OAuth flow, legacy user migration |
+| Integration - DEV_MODE | `test_dev_mode.py` | Auto-login bypass |
 
-### Phase 3: DEV_MODE Bypass
-- Implement `get_current_user_with_dev_bypass` dependency
-- Create seed script for dev user
-- Test: With `DEV_MODE=true DEV_USER_ID=1`, `/api/users/me` works without login
+### Running Tests
 
-### Phase 4: Google OAuth
-- Configure GoogleOAuth2 client (conditional on settings)
-- Add OAuth routes to router
-- Implement legacy user lookup by `google_id` in UserManager
-- Test: Complete OAuth flow creates/finds user
+```bash
+# All tests (rate limiting auto-disabled)
+cd server && uv run pytest tests/ -v
 
-### Phase 5: Frontend Integration
-- Update `auth.ts` store with full API implementation
-- Create Login, Register, ForgotPassword pages
-- Create AuthProvider wrapper
-- Update App.tsx routes
-- Update Header to show user info / logout
-
-### Phase 6: Testing & Polish
-- Unit tests for UserManager, schemas
-- Integration tests for auth endpoints
-- Test legacy user migration scenario
-- Password reset email stubs (TODO: actual email service)
-
----
-
-## Testing Strategy
-
-### Unit Tests
-
-```python
-# tests/unit/auth/test_users.py
-
-def test_generate_random_username():
-    username = generate_random_username()
-    parts = username.split()
-    assert len(parts) == 3
-    assert parts[0] in ANIMALS
-    assert parts[1] in CHESS_PIECES
-    assert 100 <= int(parts[2]) <= 999
-
-
-def test_user_create_schema_optional_username():
-    user = UserCreate(email="test@example.com", password="password123")
-    assert user.username is None  # Will be auto-generated
-```
-
-### Integration Tests
-
-```python
-# tests/integration/auth/test_endpoints.py
-
-@pytest.mark.integration
-async def test_register_creates_user(client, db_session):
-    response = await client.post("/api/auth/register", json={
-        "email": "new@example.com",
-        "password": "testpassword123",
-    })
-    assert response.status_code == 201
-    assert "username" in response.json()  # Auto-generated
-
-
-@pytest.mark.integration
-async def test_login_sets_cookie(client, test_user):
-    response = await client.post("/api/auth/login", data={
-        "username": test_user.email,
-        "password": "testpassword",
-    })
-    assert response.status_code == 200
-    assert "kfchess_auth" in response.cookies
-
-
-@pytest.mark.integration
-async def test_dev_mode_bypass(client, dev_user):
-    # With DEV_MODE=true and DEV_USER_ID set
-    response = await client.get("/api/users/me")
-    assert response.status_code == 200
-    assert response.json()["id"] == dev_user.id
+# Auth tests only
+uv run pytest tests/unit/auth tests/integration/auth -v
 ```
 
 ---
 
-## Files Summary
+## Configuration
 
-### New Files to Create
+### Environment Variables
 
-| File | Purpose |
-|------|---------|
-| `server/src/kfchess/auth/__init__.py` | Module exports |
-| `server/src/kfchess/auth/schemas.py` | Pydantic schemas with password validation |
-| `server/src/kfchess/auth/users.py` | UserManager |
-| `server/src/kfchess/auth/backend.py` | JWT backend |
-| `server/src/kfchess/auth/dependencies.py` | FastAPIUsers, dependencies |
-| `server/src/kfchess/auth/router.py` | Route registration |
-| `server/src/kfchess/auth/email.py` | Resend email sending |
-| `server/src/kfchess/auth/rate_limit.py` | SlowAPI rate limiting |
-| `server/src/kfchess/db/repositories/users.py` | UserRepository |
-| `server/alembic/versions/002_add_users.py` | Migration |
-| `client/src/pages/Login.tsx` | Login page |
-| `client/src/pages/Register.tsx` | Registration page |
-| `client/src/components/AuthProvider.tsx` | Auth wrapper |
+```bash
+# Required
+SECRET_KEY=your-secret-key-here
 
-### Files to Modify
+# Google OAuth (optional - disables Google login if not set)
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 
-| File | Changes |
-|------|---------|
-| `server/src/kfchess/db/models.py` | Add User, OAuthAccount models |
-| `server/src/kfchess/api/router.py` | Include auth_router |
-| `server/src/kfchess/settings.py` | Add `frontend_url`, `resend_api_key`, `email_from` |
-| `server/pyproject.toml` | Add `resend`, `slowapi` dependencies |
-| `client/src/stores/auth.ts` | Full implementation |
-| `client/src/App.tsx` | Add routes, AuthProvider |
-| `client/src/components/layout/Header.tsx` | User info, logout |
+# Email via Resend (optional - logs tokens if not set)
+RESEND_API_KEY=...
+EMAIL_FROM=noreply@kfchess.com
+SEND_EMAILS=true  # Must be explicitly enabled
+
+# Frontend URL (for email links and OAuth redirects)
+FRONTEND_URL=http://localhost:5173
+
+# Development
+DEV_MODE=true
+DEV_USER_ID=1
+RATE_LIMITING_ENABLED=true  # Auto-disabled in tests
+```
+
+### Google Cloud Console Setup
+
+For Google OAuth:
+
+1. Create OAuth 2.0 Client ID (Web application)
+2. Add authorized JavaScript origins:
+   - `http://localhost:5173` (dev)
+   - `https://www.kfchess.com` (prod)
+3. Add authorized redirect URIs:
+   - `http://localhost:5173/auth/google/callback` (dev)
+   - `https://www.kfchess.com/auth/google/callback` (prod)
+4. Enable People API in Google Cloud Console
 
 ---
 
 ## Design Decisions
 
-### Email Service: Resend
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| ID Type | BIGINT | Backwards compatibility with legacy |
+| `hashed_password` nullable | Yes | Google-only users have no password |
+| `google_id` field | Separate from email | Clean OAuth lookup, supports email changes |
+| `is_verified` default | FALSE | New email users need verification |
+| Cookie auth | 30-day JWT | Balance security and convenience |
+| Random usernames | "Animal Piece Number" | Matches legacy format, reduces friction |
+| Email optional | Yes | Users can login unverified |
+| Rate limit toggleable | Yes | Disabled for tests automatically |
 
-Use [Resend](https://resend.com) for sending verification and password reset emails.
+### Out of Scope
 
-```python
-# server/src/kfchess/auth/email.py
-
-import resend
-from kfchess.settings import get_settings
-
-async def send_verification_email(email: str, token: str) -> None:
-    """Send email verification link."""
-    settings = get_settings()
-    if not settings.resend_api_key:
-        print(f"[DEV] Verification token for {email}: {token}")
-        return
-
-    resend.api_key = settings.resend_api_key
-    verify_url = f"{settings.frontend_url}/verify?token={token}"
-
-    resend.Emails.send({
-        "from": settings.email_from,
-        "to": email,
-        "subject": "Verify your Kung Fu Chess account",
-        "html": f"<p>Click <a href='{verify_url}'>here</a> to verify your account.</p>",
-    })
-
-
-async def send_password_reset_email(email: str, token: str) -> None:
-    """Send password reset link."""
-    settings = get_settings()
-    if not settings.resend_api_key:
-        print(f"[DEV] Password reset token for {email}: {token}")
-        return
-
-    resend.api_key = settings.resend_api_key
-    reset_url = f"{settings.frontend_url}/reset-password?token={token}"
-
-    resend.Emails.send({
-        "from": settings.email_from,
-        "to": email,
-        "subject": "Reset your Kung Fu Chess password",
-        "html": f"<p>Click <a href='{reset_url}'>here</a> to reset your password.</p>",
-    })
-```
-
-**Settings additions:**
-```python
-# In settings.py
-resend_api_key: str = ""
-email_from: str = "noreply@kfchess.com"
-frontend_url: str = "http://localhost:5173"
-```
-
-### Rate Limiting
-
-Simple rate limiting on auth endpoints using SlowAPI:
-
-```python
-# server/src/kfchess/auth/rate_limit.py
-
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
-
-# Apply to auth routes:
-# - /auth/login: 5 attempts per minute
-# - /auth/register: 3 attempts per minute
-# - /auth/forgot-password: 3 attempts per minute
-```
-
-**Dependencies to add:**
-```toml
-slowapi = ">=0.1.9"
-```
-
-### Password Requirements
-
-Minimum requirements appropriate for a casual game:
-
-- **Minimum length**: 8 characters
-- **No maximum length** (within reason, e.g., 128 chars)
-- **No complexity requirements** (no mandatory symbols/numbers)
-
-```python
-# server/src/kfchess/auth/schemas.py
-
-from pydantic import field_validator
-
-class UserCreate(schemas.BaseUserCreate):
-    username: str | None = None
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        if len(v) > 128:
-            raise ValueError("Password must be at most 128 characters")
-        return v
-```
-
-### Out of Scope (for now)
-
-- **Account Linking**: Linking Google OAuth to existing email/password accounts - not needed initially
-- **Session Invalidation**: "Logout everywhere" functionality - standard logout is sufficient
+- **Account Linking**: Linking Google OAuth to existing email/password accounts
+- **Session Invalidation**: "Logout everywhere" functionality
+- **2FA**: Two-factor authentication

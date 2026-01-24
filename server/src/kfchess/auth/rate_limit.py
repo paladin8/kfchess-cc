@@ -24,7 +24,7 @@ VERIFY_LIMIT = "5/minute"
 OAUTH_LIMIT = "10/minute"  # More lenient since OAuth involves redirects
 
 
-def create_rate_limit_dependency(limit_string: str) -> Callable:
+def create_rate_limit_dependency(limit_string: str, name: str) -> Callable:
     """Create a rate limit dependency for use with FastAPI routers.
 
     This creates a dependency that can be added to router.include_router()
@@ -32,10 +32,19 @@ def create_rate_limit_dependency(limit_string: str) -> Callable:
 
     Args:
         limit_string: Rate limit in format "requests/period" (e.g., "5/minute")
+        name: Unique name for this rate limit (used by SlowAPI for tracking)
 
     Returns:
         An async dependency function that applies rate limiting
     """
+    # Create the decorated function ONCE at dependency creation time,
+    # not on every request. SlowAPI uses function identity to track limits.
+    @limiter.limit(limit_string)
+    async def _check_limit(request: Request, response: Response) -> None:
+        pass
+
+    # Give each function a unique name so SlowAPI tracks them separately
+    _check_limit.__name__ = f"_check_limit_{name}"
 
     async def rate_limit_dependency(request: Request, response: Response) -> None:
         """Apply rate limiting to this request."""
@@ -43,20 +52,14 @@ def create_rate_limit_dependency(limit_string: str) -> Callable:
         if not get_settings().rate_limiting_enabled:
             return
 
-        # The limiter.limit decorator expects to wrap a function,
-        # so we create a dummy function and call it
-        @limiter.limit(limit_string)
-        async def _check_limit(request: Request, response: Response) -> None:
-            pass
-
         await _check_limit(request, response)
 
     return rate_limit_dependency
 
 
 # Pre-built dependencies for common rate limits
-login_rate_limit = create_rate_limit_dependency(LOGIN_LIMIT)
-register_rate_limit = create_rate_limit_dependency(REGISTER_LIMIT)
-forgot_password_rate_limit = create_rate_limit_dependency(FORGOT_PASSWORD_LIMIT)
-verify_rate_limit = create_rate_limit_dependency(VERIFY_LIMIT)
-oauth_rate_limit = create_rate_limit_dependency(OAUTH_LIMIT)
+login_rate_limit = create_rate_limit_dependency(LOGIN_LIMIT, "login")
+register_rate_limit = create_rate_limit_dependency(REGISTER_LIMIT, "register")
+forgot_password_rate_limit = create_rate_limit_dependency(FORGOT_PASSWORD_LIMIT, "forgot_password")
+verify_rate_limit = create_rate_limit_dependency(VERIFY_LIMIT, "verify")
+oauth_rate_limit = create_rate_limit_dependency(OAUTH_LIMIT, "oauth")

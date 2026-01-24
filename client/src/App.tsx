@@ -11,6 +11,7 @@ import GoogleCallback from './pages/GoogleCallback';
 import Verify from './pages/Verify';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import Profile from './pages/Profile';
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
           <Route path="verify" element={<Verify />} />
           <Route path="forgot-password" element={<ForgotPassword />} />
           <Route path="reset-password" element={<ResetPassword />} />
+          <Route path="profile" element={<Profile />} />
           {/* TODO: Add routes */}
           {/* <Route path="lobby" element={<Lobby />} /> */}
           {/* <Route path="campaign" element={<Campaign />} /> */}
