@@ -454,6 +454,35 @@ async def _save_replay(game_id: str, service: Any) -> None:
         logger.exception(f"Error saving replay for game {game_id}: {e}")
 
 
+async def _notify_lobby_game_ended(game_id: str, winner: int | None, reason: str) -> None:
+    """Notify the lobby that a game has ended.
+
+    This is called when a game finishes to allow players to return to the lobby.
+
+    Args:
+        game_id: The game ID
+        winner: The winning player slot (1-4) or None for draw
+        reason: The reason the game ended
+    """
+    try:
+        from kfchess.lobby.manager import get_lobby_manager
+        from kfchess.ws.lobby_handler import notify_game_ended
+
+        manager = get_lobby_manager()
+        lobby_code = manager.find_lobby_by_game(game_id)
+
+        if lobby_code is None:
+            # Game wasn't started from a lobby (e.g., quick play)
+            logger.debug(f"Game {game_id} has no associated lobby")
+            return
+
+        await notify_game_ended(lobby_code, winner, reason)
+        logger.info(f"Notified lobby {lobby_code} that game {game_id} ended")
+
+    except Exception as e:
+        logger.exception(f"Error notifying lobby of game end for {game_id}: {e}")
+
+
 async def _run_game_loop(game_id: str) -> None:
     """Run the game tick loop.
 
@@ -595,6 +624,9 @@ async def _run_game_loop(game_id: str) -> None:
 
                 # Save replay to database
                 await _save_replay(game_id, service)
+
+                # Notify lobby that game ended (for return-to-lobby flow)
+                await _notify_lobby_game_ended(game_id, state.winner, reason)
 
                 break
 

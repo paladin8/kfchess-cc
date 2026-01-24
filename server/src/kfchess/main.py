@@ -14,6 +14,7 @@ from kfchess.api.router import api_router
 from kfchess.auth.rate_limit import limiter
 from kfchess.settings import get_settings
 from kfchess.ws.handler import handle_websocket
+from kfchess.ws.lobby_handler import handle_lobby_websocket
 from kfchess.ws.replay_handler import handle_replay_websocket
 
 
@@ -107,6 +108,17 @@ async def root() -> dict[str, str]:
 
 # Include API routers
 app.include_router(api_router, prefix="/api")
+
+
+# WebSocket endpoint for lobby real-time communication
+@app.websocket("/ws/lobby/{code}")
+async def lobby_websocket_endpoint(
+    websocket: WebSocket,
+    code: str,
+    player_key: str,
+) -> None:
+    """WebSocket endpoint for lobby real-time communication."""
+    await handle_lobby_websocket(websocket, code, player_key)
 
 
 # WebSocket endpoint for live games

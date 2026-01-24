@@ -71,6 +71,7 @@ class LobbyManager:
         self._player_keys: dict[str, dict[int, str]] = {}  # code -> {slot: key}
         self._key_to_slot: dict[str, tuple[str, int]] = {}  # key -> (code, slot)
         self._player_to_lobby: dict[str, tuple[str, int]] = {}  # player_id -> (code, slot)
+        self._game_to_lobby: dict[str, str] = {}  # game_id -> lobby_code
         self._next_lobby_id: int = 1
         self._lock = asyncio.Lock()
         self._session_factory = session_factory
@@ -721,6 +722,9 @@ class LobbyManager:
             game_id = _generate_game_id()
             lobby.current_game_id = game_id
 
+            # Track game_id -> lobby_code for end_game notifications
+            self._game_to_lobby[game_id] = code
+
             # Generate new player keys for the game
             game_player_keys: dict[int, str] = {}
             for player_slot, player in lobby.players.items():
@@ -734,6 +738,17 @@ class LobbyManager:
         await self._persist_lobby(lobby)
 
         return game_id, game_player_keys
+
+    def find_lobby_by_game(self, game_id: str) -> str | None:
+        """Find the lobby code for a game.
+
+        Args:
+            game_id: The game ID
+
+        Returns:
+            Lobby code or None if not found
+        """
+        return self._game_to_lobby.get(game_id)
 
     async def end_game(
         self,
@@ -753,6 +768,10 @@ class LobbyManager:
             lobby = self._lobbies.get(code)
             if lobby is None:
                 return None
+
+            # Clean up game_id -> lobby_code mapping
+            if lobby.current_game_id:
+                self._game_to_lobby.pop(lobby.current_game_id, None)
 
             lobby.status = LobbyStatus.FINISHED
             lobby.current_game_id = None

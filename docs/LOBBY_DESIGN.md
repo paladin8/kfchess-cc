@@ -479,7 +479,8 @@ The `player_key` is returned when joining the lobby and used to authenticate the
   }
 }
 
-// Player joined
+// Player joined (sent to OTHER connected players, not the joining player)
+// The joining player receives lobby_state instead
 {
   "type": "player_joined",
   "slot": 2,
@@ -497,7 +498,7 @@ The `player_key` is returned when joining the lobby and used to authenticate the
 {
   "type": "player_left",
   "slot": 2,
-  "reason": "left" | "kicked" | "disconnected"
+  "reason": "left" | "kicked" | "disconnected" | "removed"  // "removed" for AI removal
 }
 
 // Player ready changed
@@ -529,6 +530,7 @@ The `player_key` is returned when joining the lobby and used to authenticate the
 }
 
 // Game ended (players can return to lobby)
+// winner: slot number of winner, or 0 for draw/no winner
 {
   "type": "game_ended",
   "winner": 1,
@@ -1985,41 +1987,44 @@ The game WebSocket now sends countdown updates:
 
 ## Implementation Plan
 
-### Phase 1: Data Models & Manager
+### Phase 1: Data Models & Manager ✅
 
-1. Create lobby models (`server/src/kfchess/lobby/models.py`)
-2. Create database models and migration
-3. Implement LobbyManager class (`server/src/kfchess/lobby/manager.py`)
-4. Write unit tests for LobbyManager
-
-**Files:**
-- `server/src/kfchess/lobby/models.py`
-- `server/src/kfchess/lobby/manager.py`
-- `server/alembic/versions/003_add_lobbies.py`
-- `server/tests/unit/lobby/test_manager.py`
-
-### Phase 2: REST API
-
-1. Create lobby API routes (`server/src/kfchess/api/lobbies.py`)
-2. Implement create, join, list (WAITING only), delete endpoints
-3. Add live games endpoint to games API (`server/src/kfchess/api/games.py`)
-4. Write API tests
+1. ✅ Create lobby models (`server/src/kfchess/lobby/models.py`)
+2. ⏳ Create database models and migration (deferred - using in-memory for MVP)
+3. ✅ Implement LobbyManager class (`server/src/kfchess/lobby/manager.py`)
+4. ✅ Write unit tests for LobbyManager
 
 **Files:**
-- `server/src/kfchess/api/lobbies.py`
-- `server/src/kfchess/api/games.py` (add live games endpoint)
-- `server/tests/unit/test_api_lobbies.py`
+- `server/src/kfchess/lobby/models.py` ✅
+- `server/src/kfchess/lobby/manager.py` ✅
+- `server/alembic/versions/003_add_lobbies.py` (deferred)
+- `server/tests/unit/lobby/test_manager.py` ✅
 
-### Phase 3: WebSocket Handler
+### Phase 2: REST API ✅
 
-1. Create lobby WebSocket handler (`server/src/kfchess/ws/lobby_handler.py`)
-2. Implement all message handlers
-3. Integrate with GameService for game creation
-4. Write WebSocket tests
+1. ✅ Create lobby API routes (`server/src/kfchess/api/lobbies.py`)
+2. ✅ Implement create, join, list (WAITING only), delete endpoints
+3. ⏳ Add live games endpoint to games API (deferred to Phase 5)
+4. ✅ Write API tests
 
 **Files:**
-- `server/src/kfchess/ws/lobby_handler.py`
-- `server/tests/unit/test_lobby_websocket.py`
+- `server/src/kfchess/api/lobbies.py` ✅
+- `server/src/kfchess/api/games.py` (live games endpoint deferred)
+- `server/tests/unit/test_api_lobbies.py` ✅
+
+### Phase 3: WebSocket Handler ✅
+
+1. ✅ Create lobby WebSocket handler (`server/src/kfchess/ws/lobby_handler.py`)
+2. ✅ Implement all message handlers
+3. ✅ Integrate with GameService for game creation
+4. ✅ Write WebSocket tests
+5. ✅ Wire up game end notification from game handler
+
+**Files:**
+- `server/src/kfchess/ws/lobby_handler.py` ✅
+- `server/src/kfchess/ws/handler.py` (added `_notify_lobby_game_ended`) ✅
+- `server/src/kfchess/lobby/manager.py` (added `find_lobby_by_game`) ✅
+- `server/tests/unit/test_lobby_websocket.py` ✅
 
 ### Phase 4: Frontend Store
 
@@ -2202,6 +2207,25 @@ The game WebSocket now sends countdown updates:
 - Persists across page reloads within the same browser
 - Different browsers/devices get different IDs (intentional)
 - Simple implementation, no server-side session management needed
+
+### 15. Game-to-Lobby Tracking
+
+**Decision:** The LobbyManager maintains a `_game_to_lobby` mapping (game_id → lobby_code) to enable game end notifications.
+
+**Rationale:**
+- Game handler needs to notify the lobby when a game ends
+- Game doesn't know its lobby code, only its game ID
+- Reverse lookup allows decoupled notification from game handler to lobby
+- Mapping is updated when game starts (may differ from pre-generated ID) and cleared when game ends
+
+### 16. game_starting Sent to All Human Players
+
+**Decision:** The `game_starting` message is sent to ALL human players in the lobby, not just the host.
+
+**Rationale:**
+- Future-proofs for multiplayer lobbies with 2+ human players
+- All players need their game player_key to join the game
+- Consistent behavior regardless of player count
 
 ---
 
