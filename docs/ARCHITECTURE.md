@@ -39,13 +39,14 @@ This document defines the architecture for the rebuilt Kung Fu Chess game. It se
 
 ### Key Architectural Decisions
 
-| Decision | Choice | Rationale | MVP Status |
-|----------|--------|-----------|------------|
+| Decision | Choice | Rationale | Status |
+|----------|--------|-----------|--------|
 | Game state storage | In-memory (Redis planned) | Fast access, real-time updates. Redis for distributed scaling. | In-memory implemented |
 | Game tick ownership | Async task per game | Clear ownership, explicit handoff | Implemented |
 | WebSocket routing | Direct connection (Redis pub/sub planned) | MVP simplicity, pub/sub for multi-server | Direct implemented |
 | Frontend state | Zustand | Lightweight, excellent TypeScript support | Implemented |
 | Auth | FastAPI-Users | Handles email + OAuth, battle-tested | Implemented |
+| Lobby persistence | PostgreSQL | Reliable storage, ACID transactions | Implemented |
 
 ---
 
@@ -57,8 +58,8 @@ This document defines the architecture for the rebuilt Kung Fu Chess game. It se
 |-----------|------------|---------|--------|
 | Framework | FastAPI | 0.115+ | Implemented |
 | ASGI Server | Uvicorn | 0.34+ | Implemented |
-| Database ORM | SQLAlchemy | 2.0+ | Configured (models TODO) |
-| Migrations | Alembic | 1.14+ | Configured (migrations TODO) |
+| Database ORM | SQLAlchemy | 2.0+ | Implemented |
+| Migrations | Alembic | 1.14+ | Implemented (4 migrations) |
 | Cache/State | Redis | 7+ (client 5.2+) | Placeholder |
 | Auth | FastAPI-Users | 14+ | Implemented |
 | Task Queue | None (game loops run in-process) | - | - |
@@ -123,7 +124,9 @@ kfchess-cc/
 │   │   ├── env.py                  ✓
 │   │   └── versions/               ✓
 │   │       ├── 001_add_game_replays.py  ✓
-│   │       └── 002_add_users.py         ✓
+│   │       ├── 002_add_users.py         ✓
+│   │       ├── 003_add_lobbies.py       ✓
+│   │       └── 004_add_lobby_indexes.py ✓
 │   │
 │   ├── src/kfchess/
 │   │   ├── __init__.py             ✓
@@ -143,13 +146,15 @@ kfchess-cc/
 │   │   │   ├── router.py           ✓ Main router
 │   │   │   ├── games.py            ✓ Game management endpoints
 │   │   │   ├── replays.py          ✓ Replay list endpoint
+│   │   │   ├── lobbies.py          ✓ Lobby management endpoints
 │   │   │   └── users.py            ✓ User profile endpoints
-│   │   │   # TODO: lobbies.py, campaign.py
+│   │   │   # TODO: campaign.py
 │   │   │
 │   │   ├── ws/                     ✓ WebSocket handlers
 │   │   │   ├── handler.py          ✓ Connection handler + game loop
 │   │   │   ├── protocol.py         ✓ Message types/schemas
-│   │   │   └── replay_handler.py   ✓ Replay WebSocket handler
+│   │   │   ├── replay_handler.py   ✓ Replay WebSocket handler
+│   │   │   └── lobby_handler.py    ✓ Lobby WebSocket handler
 │   │   │
 │   │   ├── game/                   ✓ Game engine (COMPLETE)
 │   │   │   ├── engine.py           ✓ Core game logic
@@ -177,22 +182,28 @@ kfchess-cc/
 │   │   │   ├── session.py          ✓ Database session management
 │   │   │   └── repositories/       ✓ Repository pattern
 │   │   │       ├── replays.py      ✓ Replay CRUD operations
-│   │   │       └── users.py        ✓ User CRUD operations
+│   │   │       ├── users.py        ✓ User CRUD operations
+│   │   │       └── lobbies.py      ✓ Lobby CRUD operations
+│   │   ├── lobby/                  ✓ Lobby system (COMPLETE)
+│   │   │   ├── manager.py          ✓ Lobby lifecycle + player management
+│   │   │   └── models.py           ✓ Lobby data models
 │   │   ├── redis/                  Placeholder - TODO
-│   │   ├── lobby/                  Placeholder - TODO
 │   │   └── campaign/               Placeholder - TODO
 │   │
-│   └── tests/                      ✓ Test suite
+│   └── tests/                      ✓ Test suite (532+ tests)
 │       ├── conftest.py             ✓
 │       ├── test_health.py          ✓
 │       ├── unit/
 │       │   ├── game/               ✓ Game engine tests (comprehensive)
 │       │   ├── auth/               ✓ Auth unit tests
+│       │   ├── lobby/              ✓ Lobby unit tests
+│       │   ├── replay/             ✓ Replay unit tests
 │       │   ├── test_game_service.py ✓
 │       │   ├── test_api_games.py   ✓
 │       │   └── test_websocket.py   ✓
 │       └── integration/
-│           └── auth/               ✓ Auth integration tests
+│           ├── auth/               ✓ Auth integration tests
+│           └── lobby/              ✓ Lobby integration tests
 │
 ├── client/                         ✓ TypeScript frontend
 │   ├── package.json                ✓
@@ -219,7 +230,7 @@ kfchess-cc/
 │   │   │   ├── game.ts             ✓ Game state (main)
 │   │   │   ├── replay.ts           ✓ Replay state
 │   │   │   ├── auth.ts             ✓ Auth state (COMPLETE)
-│   │   │   └── lobby.ts            ✓ Lobby state (placeholder)
+│   │   │   └── lobby.ts            ✓ Lobby state (COMPLETE)
 │   │   │
 │   │   ├── game/                   ✓ Game rendering
 │   │   │   ├── renderer.ts         ✓ PixiJS rendering logic
@@ -237,24 +248,31 @@ kfchess-cc/
 │   │   │   ├── replay/             ✓ Replay components
 │   │   │   │   ├── ReplayBoard.tsx ✓
 │   │   │   │   └── ReplayControls.tsx ✓
+│   │   │   ├── lobby/              ✓ Lobby components
+│   │   │   │   ├── LobbySettings.tsx  ✓
+│   │   │   │   ├── LobbyPlayers.tsx   ✓
+│   │   │   │   └── LobbyCard.tsx      ✓
 │   │   │   ├── layout/
 │   │   │   │   ├── Header.tsx      ✓ With user menu + verification banner
 │   │   │   │   └── Layout.tsx      ✓
 │   │   │   └── AuthProvider.tsx    ✓ Auto-fetch user on load
-│   │   │   # TODO: lobby/, campaign/, common/
+│   │   │   # TODO: campaign/, common/
 │   │   │
 │   │   ├── pages/                  ✓ Route pages
 │   │   │   ├── Home.tsx            ✓ Home/game creation
 │   │   │   ├── Game.tsx            ✓ Game play page
+│   │   │   ├── Lobby.tsx           ✓ Lobby page
+│   │   │   ├── Lobbies.tsx         ✓ Lobby browser
 │   │   │   ├── Replay.tsx          ✓ Replay viewer
 │   │   │   ├── Replays.tsx         ✓ Replay browser
 │   │   │   ├── Login.tsx           ✓ Login page
 │   │   │   ├── Register.tsx        ✓ Registration page
+│   │   │   ├── Profile.tsx         ✓ User profile page
 │   │   │   ├── ForgotPassword.tsx  ✓ Request password reset
 │   │   │   ├── ResetPassword.tsx   ✓ Set new password
 │   │   │   ├── Verify.tsx          ✓ Email verification
 │   │   │   └── GoogleCallback.tsx  ✓ OAuth callback
-│   │   │   # TODO: Lobby, Campaign, Profile
+│   │   │   # TODO: Campaign
 │   │   │
 │   │   ├── styles/
 │   │   │   └── index.css           ✓
@@ -262,10 +280,14 @@ kfchess-cc/
 │   │   └── assets/                 ✓ Static assets
 │   │       └── sprites/            ✓ Chess piece images
 │   │
-│   └── tests/                      ✓
+│   └── tests/                      ✓ Vitest tests (1800+ test cases)
 │       ├── setup.ts                ✓
-│       └── components/
-│           └── Home.test.tsx       ✓
+│       ├── game/                   ✓ Game logic tests
+│       ├── stores/                 ✓ Store tests (replay, etc.)
+│       └── components/             ✓ Component tests
+│           ├── Home.test.tsx       ✓
+│           ├── Lobby.test.tsx      ✓
+│           └── GameOverModal.test.tsx ✓
 ```
 
 ---
@@ -1754,7 +1776,7 @@ The system is designed for 2-player now with clear extension points for 4-player
 
 ## Implementation Status
 
-### Completed (MVP+)
+### Completed
 - [x] Project structure and tooling (uv, Vite, TypeScript)
 - [x] Core game engine with comprehensive tests
   - Board, pieces, moves, collision detection
@@ -1763,17 +1785,22 @@ The system is designed for 2-player now with clear extension points for 4-player
   - Castling, pawn promotion
 - [x] REST API layer (game creation, moves, ready, legal-moves)
 - [x] WebSocket real-time communication
+  - State optimization (only broadcasts on meaningful changes)
+  - `time_since_tick` for smooth client interpolation
 - [x] Frontend React/TypeScript/PixiJS rendering
 - [x] Zustand state management
 - [x] Basic AI (DummyAI - random moves)
 - [x] Development scripts (dev.sh, migrate.sh)
 - [x] Docker Compose for dev databases
+- [x] Comprehensive test suite
+  - Backend: 532+ tests (unit + integration)
+  - Frontend: 1800+ test cases (game logic, stores, components)
 - [x] Replay system (recording, storage, playback)
   - Database model and repository
   - Auto-save on game completion
   - WebSocket-based playback with play/pause/seek
-  - O(n) incremental playback optimization
-  - Replay browser UI
+  - O(n) incremental playback optimization with cumulative tick offsets
+  - Replay browser UI with auto-play
   - See [REPLAY_DESIGN.md](./REPLAY_DESIGN.md) for details
 - [x] User authentication
   - Email/password registration and login
@@ -1782,11 +1809,18 @@ The system is designed for 2-player now with clear extension points for 4-player
   - Rate limiting on auth endpoints
   - DEV_MODE bypass for development
   - See [AUTHENTICATION_DESIGN.md](./AUTHENTICATION_DESIGN.md) for details
+- [x] Lobby system
+  - Create/join/leave lobbies
+  - Player ready states
+  - AI slot support (bot:dummy)
+  - Public/private and ranked/unranked modes
+  - WebSocket real-time updates
+  - Database persistence
+  - Disconnection handling with grace period
 
 ### In Progress / Next Steps
-1. Lobby system for matchmaking
-2. Advanced AI (MCTS implementation)
-3. ELO rating system
+1. Advanced AI (MCTS implementation)
+2. ELO rating system (database column exists, implementation needed)
 
 ### Future
 - Campaign mode with AI opponents

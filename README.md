@@ -30,7 +30,8 @@ This is a rebuild of the original Kung Fu Chess. Core features are functional:
 - [x] Basic AI opponent (random moves)
 - [x] Game replay recording and playback with browser
 - [x] User authentication (email/password + Google OAuth)
-- [ ] Lobby system and matchmaking
+- [x] Lobby system with matchmaking (create, join, ready, AI slots)
+- [ ] Campaign mode
 - [ ] Advanced AI (MCTS)
 
 ## Tech Stack
@@ -131,14 +132,17 @@ kfchess-cc/
 │   │   ├── game/        # Core game engine
 │   │   ├── api/         # REST API routes
 │   │   ├── ws/          # WebSocket handlers
+│   │   ├── auth/        # Authentication (FastAPI-Users)
+│   │   ├── lobby/       # Lobby management
 │   │   ├── ai/          # AI opponents
+│   │   ├── replay/      # Replay playback
 │   │   └── services/    # Business logic
-│   ├── tests/           # pytest tests
+│   ├── tests/           # pytest tests (unit + integration)
 │   └── alembic/         # Database migrations
 ├── client/              # TypeScript React frontend
 │   ├── src/
 │   │   ├── game/        # PixiJS rendering
-│   │   ├── stores/      # Zustand state
+│   │   ├── stores/      # Zustand state (game, lobby, replay, auth)
 │   │   ├── api/         # HTTP client
 │   │   ├── ws/          # WebSocket client
 │   │   ├── components/  # React components
