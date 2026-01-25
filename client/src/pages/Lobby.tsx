@@ -412,6 +412,13 @@ export function Lobby() {
         <div className="lobby-title">
           <h1>Lobby</h1>
           <span className="lobby-code">{lobby.code}</span>
+          <button
+            className="btn btn-sm btn-link copy-link-btn"
+            onClick={handleCopyLink}
+            title="Copy invite link"
+          >
+            {copyFeedback ? '✓' : '🔗'}
+          </button>
         </div>
         <button className="btn btn-link" onClick={handleLeave}>
           Leave Lobby

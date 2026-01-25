@@ -342,9 +342,12 @@ describe('Lobby Page', () => {
       });
 
       renderWithRouter(<Lobby />);
-      // Non-host should not see dropdowns for settings
+      // Non-host should see disabled dropdowns for settings
       const selects = screen.queryAllByRole('combobox');
-      expect(selects.length).toBe(0);
+      expect(selects.length).toBe(4);
+      selects.forEach((select) => {
+        expect(select).toBeDisabled();
+      });
     });
   });
 

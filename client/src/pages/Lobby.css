@@ -35,6 +35,12 @@
   border-radius: 4px;
 }
 
+.copy-link-btn {
+  font-size: 1rem;
+  padding: 0.25rem 0.5rem;
+  margin-left: 0.25rem;
+}
+
 .lobby-loading {
   text-align: center;
   padding: 4rem 2rem;
@@ -138,8 +144,14 @@
 
 .slots-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
+}
+
+@media (max-width: 500px) {
+  .slots-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .player-slot {
@@ -149,6 +161,7 @@
   padding: 1rem;
   position: relative;
   transition: border-color 0.2s;
+  min-width: 200px;
 }
 
 .player-slot.empty {

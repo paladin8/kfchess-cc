@@ -456,6 +456,11 @@ async def _handle_message(
 
     elif msg_type == "add_ai":
         ai_type = data.get("aiType", "bot:dummy")
+
+        # Get current slots before adding to identify the new one
+        lobby_before = manager.get_lobby(code)
+        existing_slots = set(lobby_before.players.keys()) if lobby_before else set()
+
         result = await manager.add_ai(code, player_key, ai_type)
 
         if isinstance(result, LobbyError):
@@ -464,16 +469,20 @@ async def _handle_message(
             )
             return
 
-        # Find the AI player that was just added (highest slot)
-        ai_player = max(
-            (p for p in result.players.values() if p.is_ai),
-            key=lambda p: p.slot,
-        )
+        # Find the slot that was just added
+        new_slots = set(result.players.keys())
+        added_slots = new_slots - existing_slots
+        if not added_slots:
+            logger.warning(f"add_ai succeeded but no new slot found in lobby {code}")
+            return
+
+        added_slot = added_slots.pop()
+        ai_player = result.players[added_slot]
 
         # Broadcast player joined
         await lobby_connection_manager.broadcast(
             code,
-            {"type": "player_joined", "slot": ai_player.slot, "player": serialize_player(ai_player)},
+            {"type": "player_joined", "slot": added_slot, "player": serialize_player(ai_player)},
         )
 
     elif msg_type == "remove_ai":
