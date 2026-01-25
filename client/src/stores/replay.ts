@@ -182,6 +182,8 @@ export const useReplayStore = create<ReplayStore>((set, get) => ({
             winner: message.winner,
             winReason: message.win_reason,
           });
+          // Auto-play when replay loads
+          get().play();
           break;
 
         case 'state':

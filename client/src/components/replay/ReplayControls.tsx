@@ -4,7 +4,7 @@
  * Playback controls for replay: play/pause button, seek slider, time display.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useReplayStore, selectFormattedTime, selectFormattedTotalTime } from '../../stores/replay';
 import './ReplayControls.css';
 
@@ -21,6 +21,10 @@ export function ReplayControls() {
   const formattedTime = useReplayStore(selectFormattedTime);
   const formattedTotalTime = useReplayStore(selectFormattedTotalTime);
 
+  // Track dragging state for the slider - only seek on release
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragTick, setDragTick] = useState(0);
+
   const isConnected = connectionState === 'connected';
   const isAtEnd = currentTick >= totalTicks;
 
@@ -36,13 +40,32 @@ export function ReplayControls() {
     }
   }, [isPlaying, isAtEnd, play, pause, seek]);
 
-  const handleSeek = useCallback(
+  const handleSliderMouseDown = useCallback(() => {
+    setIsDragging(true);
+    setDragTick(currentTick);
+  }, [currentTick]);
+
+  const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const tick = parseInt(e.target.value, 10);
-      seek(tick);
+      if (isDragging) {
+        // During drag, just update local state for visual feedback
+        setDragTick(tick);
+      } else {
+        // Direct click (not drag) - seek immediately
+        seek(tick);
+      }
     },
-    [seek]
+    [isDragging, seek]
   );
+
+  const handleSliderMouseUp = useCallback(() => {
+    if (isDragging) {
+      // Seek to final position on release
+      seek(dragTick);
+      setIsDragging(false);
+    }
+  }, [isDragging, dragTick, seek]);
 
   const handleSkipBackward = useCallback(() => {
     // Skip back 5 seconds (50 ticks at 10 ticks/second)
@@ -58,8 +81,10 @@ export function ReplayControls() {
     seek(0);
   }, [seek]);
 
+  // Use drag position during drag, otherwise current tick
+  const displayTick = isDragging ? dragTick : currentTick;
   // Calculate progress percentage for the slider track fill
-  const progress = totalTicks > 0 ? (currentTick / totalTicks) * 100 : 0;
+  const progress = totalTicks > 0 ? (displayTick / totalTicks) * 100 : 0;
 
   return (
     <div className="replay-controls">
@@ -70,8 +95,10 @@ export function ReplayControls() {
           className="replay-slider"
           min={0}
           max={totalTicks}
-          value={currentTick}
-          onChange={handleSeek}
+          value={displayTick}
+          onMouseDown={handleSliderMouseDown}
+          onChange={handleSliderChange}
+          onMouseUp={handleSliderMouseUp}
           disabled={!isConnected}
           style={{
             background: `linear-gradient(to right, var(--color-primary) ${progress}%, var(--color-surface-light) ${progress}%)`,
