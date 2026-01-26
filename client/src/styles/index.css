@@ -1,17 +1,16 @@
 /* CSS Variables */
 :root {
-  --color-primary: #4a90a4;
-  --color-primary-dark: #357a8c;
-  --color-secondary: #6c757d;
-  --color-background: #1a1a2e;
-  --color-surface: #16213e;
-  --color-surface-light: #1e2a4a;
-  --color-text: #eaeaea;
-  --color-text-muted: #a0a0a0;
-  --color-border: #2a2a4a;
+  --color-primary: #7bcc70;
+  --color-primary-dark: #87d07d;
+  --color-secondary: #5b91c6;
+  --color-background: #fcfcf4;
+  --color-surface: #ffffff;
+  --color-surface-light: #ffffff;
+  --color-text: #000000;
+  --color-text-muted: #737373;
+  --color-border: #cccccc;
 
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --font-family: 'Karla', sans-serif;
 
   --header-height: 60px;
 }
@@ -43,12 +42,13 @@ body {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-secondary);
   text-decoration: none;
 }
 
 a:hover {
-  color: var(--color-primary-dark);
+  color: var(--color-secondary);
+  opacity: 0.8;
 }
 
 /* Layout */
@@ -68,44 +68,220 @@ a:hover {
 
 /* Header */
 .header {
-  height: var(--header-height);
-  background-color: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  padding-top: 20px;
+  background-color: var(--color-background);
 }
 
 .header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 100%;
-  max-width: 1200px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 0 1rem;
 }
 
 .logo {
-  font-size: 1.5rem;
-  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 30px;
+  font-weight: 700;
   color: var(--color-text);
+}
+
+.logo-img {
+  width: 30px;
+  height: 30px;
+}
+
+.logo-img img {
+  height: 100%;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
 .nav {
   display: flex;
-  gap: 1.5rem;
+  align-items: center;
+  gap: 15px;
 }
 
 .nav a {
-  color: var(--color-text-muted);
+  color: var(--color-text);
+  font-size: 15px;
 }
 
 .nav a:hover {
-  color: var(--color-text);
+  color: var(--color-secondary);
 }
 
-.user-menu {
+.nav a.nav-link-active {
+  color: var(--color-secondary);
+  border-bottom: 2px solid var(--color-secondary);
+  margin-bottom: -2px;
+}
+
+/* Login link */
+.login-link {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.login-link:hover {
+  color: var(--color-secondary);
+}
+
+.login-link.nav-link-active {
+  color: var(--color-secondary);
+  border-bottom: 2px solid var(--color-secondary);
+  margin-bottom: -2px;
+}
+
+/* Header Menu (hamburger or profile pic) */
+.header-menu-wrapper {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 1rem;
+}
+
+/* Hide hamburger on desktop for unauthenticated users */
+.header-menu-wrapper.mobile-only {
+  display: none;
+}
+
+/* Hide secondary links in dropdown on desktop since they're in nav */
+.header-dropdown-secondary {
+  display: none;
+}
+
+.hamburger-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  height: 28px;
+  width: 28px;
+}
+
+.hamburger-icon {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 18px;
+}
+
+.hamburger-icon span {
+  display: block;
+  height: 2px;
+  background-color: var(--color-text);
+  border-radius: 1px;
+}
+
+.profile-pic-button {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.profile-pic {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.profile-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.header-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  min-width: 100px;
+  z-index: 1000;
+}
+
+.header-dropdown-option {
+  padding: 8px 12px;
+}
+
+.header-dropdown-option a,
+.header-dropdown-option button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 15px;
+  font-family: var(--font-family);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.header-dropdown-option a:hover,
+.header-dropdown-option button:hover {
+  color: var(--color-secondary);
+}
+
+.header-dropdown-divider {
+  height: 1px;
+  background-color: var(--color-border);
+  margin: 4px 0;
+}
+
+/* Mobile responsive header */
+@media (max-width: 768px) {
+  .logo-text {
+    display: none;
+  }
+
+  .nav .nav-secondary {
+    display: none;
+  }
+
+  .nav {
+    gap: 12px;
+  }
+
+  .header-right {
+    gap: 12px;
+  }
+
+  /* Hide login link, show hamburger on mobile */
+  .login-link {
+    display: none;
+  }
+
+  .header-menu-wrapper.mobile-only {
+    display: flex;
+  }
+
+  /* Show secondary links in dropdown on mobile */
+  .header-dropdown-secondary {
+    display: block;
+  }
 }
 
 /* Buttons */
@@ -123,6 +299,9 @@ a:hover {
 .btn-primary {
   background-color: var(--color-primary);
   color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
 .btn-primary:hover {
@@ -140,47 +319,6 @@ a:hover {
   color: white;
 }
 
-/* Home Page */
-.home-page {
-  text-align: center;
-  padding-top: 2rem;
-}
-
-.home-page h1 {
-  font-size: 3rem;
-  margin-bottom: 0.5rem;
-}
-
-.tagline {
-  font-size: 1.25rem;
-  color: var(--color-text-muted);
-  margin-bottom: 3rem;
-}
-
-.play-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 2rem;
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.play-option {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 2rem;
-}
-
-.play-option h2 {
-  margin-bottom: 0.5rem;
-}
-
-.play-option p {
-  color: var(--color-text-muted);
-  margin-bottom: 1.5rem;
-}
-
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -188,7 +326,7 @@ a:hover {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -196,7 +334,7 @@ a:hover {
 }
 
 .modal-content {
-  background: var(--color-surface);
+  background: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 2rem;
@@ -349,7 +487,7 @@ a:hover {
   font-size: 1rem;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  background-color: var(--color-background);
+  background-color: var(--color-surface);
   color: var(--color-text);
 }
 
@@ -438,16 +576,6 @@ a:hover {
   color: var(--color-text);
 }
 
-/* User menu styles */
-.user-name {
-  color: var(--color-text);
-  font-weight: 500;
-}
-
-.user-name:hover {
-  color: var(--color-primary);
-}
-
 .user-loading {
   color: var(--color-text-muted);
 }
@@ -525,7 +653,7 @@ a:hover {
   font-size: 1rem;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  background-color: var(--color-background);
+  background-color: var(--color-surface);
   color: var(--color-text);
 }
 
@@ -555,7 +683,8 @@ a:hover {
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0.75rem;
-  background-color: var(--color-background);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
 }
 

@@ -217,14 +217,14 @@ See `docs/FOUR_PLAYER_DESIGN.md` for board layout and implementation plan.
 - Authentication (email/password, Google OAuth, verification, password reset)
 - Lobby system (create/join/leave, ready states, AI slots, persistence)
 - Basic AI (DummyAI - random moves)
+- 4-player UI
 - Comprehensive tests (532+ backend, 1800+ frontend)
 
 ### Next Steps
-1. Advanced AI (MCTS implementation)
-2. ELO rating system
-
-### Future
-- Campaign mode
-- 4-player UI (engine ready)
-- Redis for distributed scaling
-- Production deployment
+1. Game sound/music + volume controls
+2. Analytics + instrumentation
+3. Advanced AI (MCTS implementation)
+4. ELO rating system
+5. Campaign mode
+6. Redis for distributed scaling
+7. Production deployment

@@ -4,14 +4,15 @@
  * Board dimensions, colors, and timing constants.
  */
 
-// Board square colors
+// Board square colors (green/white checkerboard like original)
 export const BOARD_COLORS = {
-  light: 0xf0d9b5,
-  dark: 0xb58863,
-  highlight: 0xffff00,
-  legalMove: 0x90ee90,
-  selected: 0x7fff00,
+  light: 0xffffff,
+  dark: 0x8ed47d,
+  highlight: 0xf0f000,
+  legalMove: 0xf0f000,
+  selected: 0xf0f000,
   invalid: 0x666666, // For 4-player corner squares
+  background: 0xfcfcf4,
 } as const;
 
 // Board dimensions by type
@@ -36,7 +37,7 @@ export const RENDER = {
   HIGHLIGHT_ALPHA: 0.5,
   LEGAL_MOVE_ALPHA: 0.4,
   COOLDOWN_OVERLAY_ALPHA: 0.5,
-  COOLDOWN_OVERLAY_COLOR: 0x7fff00, // Green, same as selection
+  COOLDOWN_OVERLAY_COLOR: 0xf0f000, // Yellow, same as selection
   SELECTION_STROKE_WIDTH: 4, // Width of selection outline
   // Offset to center pieces within squares (compensates for sprite artwork positioning)
   // Positive values move pieces right/down, negative values move them left/up

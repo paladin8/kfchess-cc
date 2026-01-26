@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLobbyStore } from '../stores/lobby';
+import './Home.css';
 
 type BoardType = 'standard' | 'four_player';
+type Speed = 'standard' | 'lightning';
 
 function Home() {
   const navigate = useNavigate();
@@ -15,6 +17,14 @@ function Home() {
   const [showCreateLobbyModal, setShowCreateLobbyModal] = useState(false);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
   const [addAiToLobby, setAddAiToLobby] = useState(false);
+  const [speed, setSpeed] = useState<Speed>(() => {
+    return (localStorage.getItem('friendlySpeed') as Speed) || 'standard';
+  });
+
+  const handleSpeedChange = (newSpeed: Speed) => {
+    setSpeed(newSpeed);
+    localStorage.setItem('friendlySpeed', newSpeed);
+  };
 
   const handlePlayVsAI = () => {
     setShowBoardTypeModal(true);
@@ -25,16 +35,15 @@ function Home() {
     setIsCreating(true);
 
     try {
-      // Create a private lobby with AI filling the slots
       const playerCount = selectedBoardType === 'four_player' ? 4 : 2;
       const code = await createLobby(
         {
           isPublic: false,
-          speed: 'standard',
+          speed,
           playerCount,
           isRanked: false,
         },
-        true // Add AI to fill slots
+        true
       );
 
       const state = useLobbyStore.getState();
@@ -51,12 +60,36 @@ function Home() {
     }
   };
 
-  const handleBrowseLobbies = () => {
-    navigate('/lobbies');
+  const handlePlayVsFriend = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
+
+    try {
+      const code = await createLobby(
+        {
+          isPublic: false,
+          speed,
+          playerCount: 2,
+          isRanked: false,
+        },
+        false
+      );
+
+      const state = useLobbyStore.getState();
+      if (state.playerKey) {
+        connect(code, state.playerKey);
+      }
+      navigate(`/lobby/${code}`);
+    } catch (error) {
+      console.error('Failed to create game:', error);
+      alert('Failed to create game. Please try again.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleCreateLobby = () => {
-    setShowCreateLobbyModal(true);
+  const handleCampaign = () => {
+    navigate('/campaign');
   };
 
   const handleCreateLobbySubmit = useCallback(async () => {
@@ -90,36 +123,77 @@ function Home() {
   }, [createLobby, connect, navigate, addAiToLobby, isCreatingLobby]);
 
   return (
-    <div className="home-page">
-      <h1>Kung Fu Chess</h1>
-      <p className="tagline">Real-time chess where both players move simultaneously</p>
+    <div className="home">
+      <div className="home-banner">
+        <div className="home-banner-inner">
+          <div className="home-banner-video">
+            <video autoPlay loop muted playsInline>
+              <source src="/static/banner-video.mp4" type="video/mp4" />
+            </video>
+          </div>
+          <div className="home-banner-text">
+            <div className="home-banner-text-main">Chess Without Turns</div>
+            <div className="home-banner-text-sub">
+              The world's most popular strategy game goes real-time.
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <div className="play-options">
-        <div className="play-option">
-          <h2>Quick Play</h2>
-          <p>Jump into a game against an AI opponent</p>
-          <button className="btn btn-primary" onClick={handlePlayVsAI} disabled={isCreating}>
-            {isCreating ? 'Creating...' : 'Play vs AI'}
+      <div className="home-play-buttons">
+        <div className="home-play-button-wrapper">
+          <button className="home-play-button" onClick={handleCampaign}>
+            Campaign
           </button>
+          <div className="home-play-subtitle">Complete Solo Missions</div>
         </div>
 
-        <div className="play-option">
-          <h2>Multiplayer</h2>
-          <p>Find an opponent or create a lobby</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <button className="btn btn-primary" onClick={handleBrowseLobbies}>
-              Browse Lobbies
+        <div className="home-play-button-wrapper">
+          <button
+            className="home-play-button"
+            onClick={handlePlayVsAI}
+            disabled={isCreating}
+          >
+            {isCreating ? 'Creating...' : 'Play vs AI'}
+          </button>
+          <div className="home-play-option-wrapper">
+            <button
+              className={`home-play-option ${speed === 'standard' ? 'selected' : ''}`}
+              onClick={() => handleSpeedChange('standard')}
+            >
+              Standard
             </button>
-            <button className="btn btn-secondary" onClick={handleCreateLobby}>
-              Create Lobby
+            <button
+              className={`home-play-option ${speed === 'lightning' ? 'selected' : ''}`}
+              onClick={() => handleSpeedChange('lightning')}
+            >
+              Lightning
             </button>
           </div>
         </div>
 
-        <div className="play-option">
-          <h2>Campaign</h2>
-          <p>Progress through 64 levels and earn belts</p>
-          <button className="btn btn-secondary" disabled>Start Campaign</button>
+        <div className="home-play-button-wrapper">
+          <button
+            className="home-play-button"
+            onClick={handlePlayVsFriend}
+            disabled={isCreating}
+          >
+            Play vs Friend
+          </button>
+          <div className="home-play-option-wrapper">
+            <button
+              className={`home-play-option ${speed === 'standard' ? 'selected' : ''}`}
+              onClick={() => handleSpeedChange('standard')}
+            >
+              Standard
+            </button>
+            <button
+              className={`home-play-option ${speed === 'lightning' ? 'selected' : ''}`}
+              onClick={() => handleSpeedChange('lightning')}
+            >
+              Lightning
+            </button>
+          </div>
         </div>
       </div>
 

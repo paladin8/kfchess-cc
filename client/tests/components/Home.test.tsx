@@ -4,14 +4,14 @@ import { describe, it, expect } from 'vitest';
 import Home from '../../src/pages/Home';
 
 describe('Home', () => {
-  it('renders the title', () => {
+  it('renders the main heading', () => {
     render(
       <BrowserRouter>
         <Home />
       </BrowserRouter>
     );
 
-    expect(screen.getByText('Kung Fu Chess')).toBeInTheDocument();
+    expect(screen.getByText('Chess Without Turns')).toBeInTheDocument();
   });
 
   it('renders play options', () => {
@@ -21,8 +21,8 @@ describe('Home', () => {
       </BrowserRouter>
     );
 
-    expect(screen.getByText('Quick Play')).toBeInTheDocument();
-    expect(screen.getByText('Multiplayer')).toBeInTheDocument();
     expect(screen.getByText('Campaign')).toBeInTheDocument();
+    expect(screen.getByText('Play vs AI')).toBeInTheDocument();
+    expect(screen.getByText('Play vs Friend')).toBeInTheDocument();
   });
 });

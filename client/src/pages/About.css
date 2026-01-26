@@ -1,0 +1,46 @@
+/* About Page Styles */
+.about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem 0;
+}
+
+.about-image {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.about-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.about-image-caption {
+  margin-top: 0.5rem;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.about-text {
+  width: 100%;
+}
+
+.about-text p {
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.about-text a {
+  color: var(--color-secondary);
+  font-weight: 700;
+}
+
+.about-text a:hover {
+  text-decoration: underline;
+}

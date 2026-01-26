@@ -41,6 +41,10 @@
   margin-left: 0.25rem;
 }
 
+.btn-link.copy-link-btn:hover {
+  text-decoration: none;
+}
+
 .lobby-loading {
   text-align: center;
   padding: 4rem 2rem;
@@ -102,7 +106,7 @@
   font-size: 0.9rem;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  background-color: var(--color-background);
+  background-color: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
 }
@@ -155,7 +159,7 @@
 }
 
 .player-slot {
-  background-color: var(--color-background);
+  background-color: var(--color-surface);
   border: 2px solid var(--color-border);
   border-radius: 8px;
   padding: 1rem;
@@ -298,14 +302,21 @@
 }
 
 .share-link code {
-  background-color: var(--color-background);
-  padding: 0.5rem 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: 0 1rem;
   border-radius: 4px;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
+  height: 34px;
+  line-height: 34px;
   max-width: 400px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.share-link .btn {
+  height: 34px;
 }
 
 /* Connection Banner */
@@ -444,7 +455,7 @@
   font-size: 1rem;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  background-color: var(--color-background);
+  background-color: var(--color-surface);
   color: var(--color-text);
   text-transform: uppercase;
 }
