@@ -192,7 +192,7 @@ class TestGoogleOAuthLegacyUserMigration:
             # Should have an auto-generated username
             assert result.username is not None
             parts = result.username.split()
-            assert len(parts) == 3  # "Animal Piece Number" format
+            assert len(parts) == 4  # "Adjective Animal Piece Number" format
 
 
 class TestGoogleOAuthLegacyUserRegistrationBlock:

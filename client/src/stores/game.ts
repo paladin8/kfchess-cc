@@ -77,6 +77,9 @@ interface GameState {
   lastError: string | null;
   countdown: number | null; // Countdown seconds before game starts (null = no countdown)
 
+  // Audio events (for sound effects)
+  captureCount: number; // Increments on each capture (for triggering capture sounds)
+
   // Internal
   wsClient: GameWebSocketClient | null;
 }
@@ -131,6 +134,7 @@ const initialState: GameState = {
   selectedPieceId: null,
   lastError: null,
   countdown: null,
+  captureCount: 0,
   wsClient: null,
 };
 
@@ -428,7 +432,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   updateFromStateMessage: (msg) => {
-    const { pieces: existingPieces, selectedPieceId } = get();
+    const { pieces: existingPieces, selectedPieceId, captureCount } = get();
 
     // Get IDs of pieces in active moves (they have moved)
     const activeMoveIds = new Set(msg.active_moves.map((m) => m.piece_id));
@@ -458,6 +462,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
+    // Count capture events for audio playback
+    const captureEvents = msg.events.filter((e) => e.type === 'capture').length;
+    const newCaptureCount = captureCount + captureEvents;
+
     set({
       currentTick: msg.tick,
       lastTickTime: performance.now(),
@@ -466,6 +474,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       activeMoves,
       cooldowns,
       selectedPieceId: newSelectedPieceId,
+      captureCount: newCaptureCount,
     });
   },
 

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLobbyStore } from '../stores/lobby';
+import { staticUrl } from '../config';
 import './Home.css';
 
 type BoardType = 'standard' | 'four_player';
@@ -128,7 +129,7 @@ function Home() {
         <div className="home-banner-inner">
           <div className="home-banner-video">
             <video autoPlay loop muted playsInline>
-              <source src="/static/banner-video.mp4" type="video/mp4" />
+              <source src={staticUrl('banner-video.mp4')} type="video/mp4" />
             </video>
           </div>
           <div className="home-banner-text">

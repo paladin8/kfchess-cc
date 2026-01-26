@@ -7,7 +7,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameStore } from '../stores/game';
-import { GameBoard, GameStatus, GameOverModal } from '../components/game';
+import { GameBoard, GameStatus, GameOverModal, AudioControls } from '../components/game';
+import { useAudio } from '../hooks/useAudio';
 import './Game.css';
 
 export function Game() {
@@ -28,6 +29,32 @@ export function Game() {
   const currentTick = useGameStore((s) => s.currentTick);
   const connectionState = useGameStore((s) => s.connectionState);
   const countdown = useGameStore((s) => s.countdown);
+  const captureCount = useGameStore((s) => s.captureCount);
+
+  // Audio management
+  const {
+    musicVolume,
+    soundVolume,
+    setMusicVolume,
+    setSoundVolume,
+    playCaptureSound,
+  } = useAudio({
+    isPlaying: status === 'playing',
+    isFinished: status === 'finished',
+  });
+
+  // Track previous capture count to detect new captures
+  const prevCaptureCountRef = useRef(captureCount);
+  useEffect(() => {
+    // Play capture sound for each new capture
+    if (captureCount > prevCaptureCountRef.current) {
+      const newCaptures = captureCount - prevCaptureCountRef.current;
+      for (let i = 0; i < newCaptures; i++) {
+        playCaptureSound();
+      }
+    }
+    prevCaptureCountRef.current = captureCount;
+  }, [captureCount, playCaptureSound]);
 
   // Stable action callbacks that don't change between renders
   const doConnect = useCallback(() => {
@@ -155,6 +182,12 @@ export function Game() {
         </div>
         <div className="game-sidebar">
           <GameStatus />
+          <AudioControls
+            musicVolume={musicVolume}
+            soundVolume={soundVolume}
+            onMusicVolumeChange={setMusicVolume}
+            onSoundVolumeChange={setSoundVolume}
+          />
           <div className="game-instructions">
             <h3>How to Play</h3>
             <ul>

@@ -56,11 +56,11 @@ class TestRegistrationFlow:
             data = response.json()
             username = data["username"]
 
-            # Username should have format "Animal Piece Number"
+            # Username should have format "Adjective Animal Piece Number"
             parts = username.split()
-            assert len(parts) == 3
-            assert parts[2].isdigit()
-            assert len(parts[2]) == 3
+            assert len(parts) == 4
+            assert parts[3].isdigit()
+            assert len(parts[3]) == 5
 
     @pytest.mark.asyncio
     async def test_register_with_custom_username(self):

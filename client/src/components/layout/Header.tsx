@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
 import * as api from '../../api/client';
+import { staticUrl } from '../../config';
 
 const RESEND_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const STORAGE_KEY = 'lastVerificationEmailSent';
@@ -98,7 +99,7 @@ function Header() {
       <header className="header">
         <div className="header-content">
           <Link to="/" className="logo">
-            <span className="logo-img"><img src="/static/logo.png" alt="" /></span>
+            <span className="logo-img"><img src={staticUrl('logo.png')} alt="" /></span>
             <span className="logo-text">Kung Fu Chess</span>
           </Link>
           <div className="header-right">
@@ -123,7 +124,7 @@ function Header() {
                   aria-expanded={showDropdown}
                 >
                   <div className="profile-pic">
-                    <img src="/static/default-profile.jpg" alt={user.username} />
+                    <img src={staticUrl('default-profile.jpg')} alt={user.username} />
                   </div>
                 </button>
                 {showDropdown && (

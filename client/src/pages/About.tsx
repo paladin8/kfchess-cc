@@ -1,10 +1,11 @@
+import { staticUrl } from '../config';
 import './About.css';
 
 function About() {
   return (
     <div className="about">
       <div className="about-image">
-        <img src="/static/kungfuchess.jpg" alt="Original Kung Fu Chess" />
+        <img src={staticUrl('kungfuchess.jpg')} alt="Original Kung Fu Chess" />
         <div className="about-image-caption">The original Kung Fu Chess.</div>
       </div>
       <div className="about-text">
