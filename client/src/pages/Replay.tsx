@@ -8,6 +8,8 @@ import { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useReplayStore } from '../stores/replay';
 import { ReplayBoard, ReplayControls } from '../components/replay';
+import { AudioControls } from '../components/game';
+import { useAudio } from '../hooks/useAudio';
 import { formatWinReason } from '../utils/format';
 import './Replay.css';
 
@@ -28,8 +30,50 @@ export function Replay() {
   const winReason = useReplayStore((s) => s.winReason);
   const speed = useReplayStore((s) => s.speed);
 
+  const isPlaying = useReplayStore((s) => s.isPlaying);
+  const pieces = useReplayStore((s) => s.pieces);
+  const currentTick = useReplayStore((s) => s.currentTick);
+  const totalTicks = useReplayStore((s) => s.totalTicks);
+
   const connect = useReplayStore((s) => s.connect);
   const disconnect = useReplayStore((s) => s.disconnect);
+
+  // Audio management
+  // Use currentTick >= totalTicks for isFinished (not winner, which is set at start from metadata)
+  const replayEnded = totalTicks > 0 && currentTick >= totalTicks;
+  const {
+    musicVolume,
+    soundVolume,
+    setMusicVolume,
+    setSoundVolume,
+    playCaptureSound,
+  } = useAudio({
+    isPlaying: isPlaying,
+    isFinished: replayEnded,
+  });
+
+  // Track captures by watching pieces that become captured
+  const prevCapturedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentCapturedIds = new Set(
+      pieces.filter((p) => p.captured).map((p) => p.id)
+    );
+
+    // Find newly captured pieces
+    let newCaptures = 0;
+    currentCapturedIds.forEach((id) => {
+      if (!prevCapturedIdsRef.current.has(id)) {
+        newCaptures++;
+      }
+    });
+
+    // Play capture sound for each new capture
+    for (let i = 0; i < newCaptures; i++) {
+      playCaptureSound();
+    }
+
+    prevCapturedIdsRef.current = currentCapturedIds;
+  }, [pieces, playCaptureSound]);
 
   // Connect to replay on mount
   useEffect(() => {
@@ -129,6 +173,13 @@ export function Replay() {
           </div>
 
           <ReplayControls />
+
+          <AudioControls
+            musicVolume={musicVolume}
+            soundVolume={soundVolume}
+            onMusicVolumeChange={setMusicVolume}
+            onSoundVolumeChange={setSoundVolume}
+          />
 
           <button className="replay-back-button" onClick={() => navigate('/')}>
             Back to Home

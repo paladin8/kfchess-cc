@@ -182,8 +182,8 @@ export const useReplayStore = create<ReplayStore>((set, get) => ({
             winner: message.winner,
             winReason: message.win_reason,
           });
-          // Auto-play when replay loads
-          get().play();
+          // Don't auto-play - require user to click play
+          // This ensures user interaction before audio plays (browser autoplay policy)
           break;
 
         case 'state':

@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from kfchess.ws.protocol import (
+    CountdownMessage,
     ErrorMessage,
     GameOverMessage,
     GameStartedMessage,
@@ -23,10 +24,16 @@ from kfchess.ws.protocol import (
     parse_client_message,
 )
 
+# Countdown duration in seconds before game starts
+COUNTDOWN_SECONDS = 3
+
 logger = logging.getLogger(__name__)
 
 # Lock for game loop startup to prevent race conditions
 _game_loop_locks: dict[str, asyncio.Lock] = {}
+
+# Track games currently in countdown phase (moves rejected during countdown)
+_games_in_countdown: set[str] = set()
 
 
 def _has_state_changed(
@@ -409,6 +416,16 @@ async def _handle_move(
         )
         return
 
+    # Reject moves during countdown period
+    if game_id in _games_in_countdown:
+        await websocket.send_text(
+            MoveRejectedMessage(
+                piece_id=message.piece_id,
+                reason="countdown_active",
+            ).model_dump_json()
+        )
+        return
+
     # Get player key from service
     managed_game = service.get_managed_game(game_id)
     if managed_game is None:
@@ -649,6 +666,39 @@ async def _run_game_loop(game_id: str) -> None:
     logger.info(f"Starting game loop for game {game_id}")
 
     try:
+        # === Countdown phase (before any ticks) ===
+        _games_in_countdown.add(game_id)
+        logger.info(f"Game {game_id} starting {COUNTDOWN_SECONDS}s countdown")
+
+        for seconds_remaining in range(COUNTDOWN_SECONDS, 0, -1):
+            # Check if game still exists and has connections
+            managed_game = service.get_managed_game(game_id)
+            if managed_game is None:
+                logger.info(f"Game {game_id} not found during countdown, stopping")
+                return
+
+            if not connection_manager.has_connections(game_id):
+                logger.info(f"No connections for game {game_id} during countdown, stopping")
+                return
+
+            # Broadcast countdown
+            await connection_manager.broadcast(
+                game_id,
+                CountdownMessage(seconds=seconds_remaining).model_dump(),
+            )
+
+            # Wait 1 second
+            await asyncio.sleep(1.0)
+
+        # Countdown complete - remove from countdown set and broadcast game_started
+        _games_in_countdown.discard(game_id)
+        await connection_manager.broadcast(
+            game_id,
+            GameStartedMessage(tick=0).model_dump(),
+        )
+        logger.info(f"Game {game_id} countdown complete, game started")
+
+        # === Main game loop ===
         while True:
             tick_start_time = time.monotonic()
 
@@ -814,7 +864,8 @@ async def _run_game_loop(game_id: str) -> None:
         logger.info(f"Game loop for {game_id} was cancelled")
         raise
     finally:
-        # Clean up the game loop lock
+        # Clean up
+        _games_in_countdown.discard(game_id)
         if game_id in _game_loop_locks:
             del _game_loop_locks[game_id]
         logger.info(f"Game loop ended for game {game_id}")

@@ -26,7 +26,6 @@ export function Game() {
   const storeGameId = useGameStore((s) => s.gameId);
   const boardType = useGameStore((s) => s.boardType);
   const status = useGameStore((s) => s.status);
-  const currentTick = useGameStore((s) => s.currentTick);
   const connectionState = useGameStore((s) => s.connectionState);
   const countdown = useGameStore((s) => s.countdown);
   const captureCount = useGameStore((s) => s.captureCount);
@@ -67,10 +66,6 @@ export function Game() {
 
   const doJoinGame = useCallback((gId: string, pKey?: string) => {
     return useGameStore.getState().joinGame(gId, pKey);
-  }, []);
-
-  const doStartCountdown = useCallback(() => {
-    useGameStore.getState().startCountdown();
   }, []);
 
   // Initialize game on mount
@@ -140,25 +135,6 @@ export function Game() {
       doConnect();
     }
   }, [connectionState, storeGameId, status, doConnect]);
-
-  // Start countdown when connected and waiting (only once)
-  // Also check currentTick === 0 to prevent countdown on rejoin of in-progress games
-  const countdownStartedRef = useRef(false);
-  useEffect(() => {
-    if (
-      connectionState === 'connected' &&
-      status === 'waiting' &&
-      currentTick === 0 &&
-      !countdownStartedRef.current
-    ) {
-      countdownStartedRef.current = true;
-      doStartCountdown();
-    }
-    // Reset if game finishes and we reconnect
-    if (status === 'finished') {
-      countdownStartedRef.current = false;
-    }
-  }, [connectionState, status, currentTick, doStartCountdown]);
 
   // Don't render until we have game data
   if (!storeGameId) {

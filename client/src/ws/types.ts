@@ -67,6 +67,11 @@ export interface StateUpdateMessage {
   time_since_tick?: number; // Milliseconds since tick started (0-100), optional for backwards compatibility
 }
 
+export interface CountdownMessage {
+  type: 'countdown';
+  seconds: number; // Seconds remaining (3, 2, 1)
+}
+
 export interface GameStartedMessage {
   type: 'game_started';
   tick: number;
@@ -109,6 +114,7 @@ export interface ErrorMessage {
 export type ServerMessage =
   | JoinedMessage
   | StateUpdateMessage
+  | CountdownMessage
   | GameStartedMessage
   | GameOverMessage
   | RatingUpdateMessage
@@ -148,6 +154,7 @@ export interface WebSocketClientOptions {
   playerKey?: string;
   onJoined?: (msg: JoinedMessage) => void;
   onStateUpdate?: (msg: StateUpdateMessage) => void;
+  onCountdown?: (msg: CountdownMessage) => void;
   onGameStarted?: (msg: GameStartedMessage) => void;
   onGameOver?: (msg: GameOverMessage) => void;
   onRatingUpdate?: (msg: RatingUpdateMessage) => void;

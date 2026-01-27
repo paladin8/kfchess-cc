@@ -12,6 +12,7 @@ import type {
   ConnectionState,
   JoinedMessage,
   StateUpdateMessage,
+  CountdownMessage,
   GameStartedMessage,
   GameOverMessage,
   RatingUpdateMessage,
@@ -96,7 +97,6 @@ interface GameActions {
   connect: () => void;
   disconnect: () => void;
   markReady: () => void;
-  startCountdown: () => void;
   resyncState: () => Promise<void>;
 
   // Gameplay
@@ -106,6 +106,7 @@ interface GameActions {
   // Internal updates
   updateFromStateMessage: (msg: StateUpdateMessage) => void;
   handleJoined: (msg: JoinedMessage) => void;
+  handleCountdown: (msg: CountdownMessage) => void;
   handleGameStarted: (msg: GameStartedMessage) => void;
   handleGameOver: (msg: GameOverMessage) => void;
   handleRatingUpdate: (msg: RatingUpdateMessage) => void;
@@ -314,6 +315,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       playerKey: playerKey ?? undefined,
       onStateUpdate: (msg) => get().updateFromStateMessage(msg),
       onJoined: (msg) => get().handleJoined(msg),
+      onCountdown: (msg) => get().handleCountdown(msg),
       onGameStarted: (msg) => get().handleGameStarted(msg),
       onGameOver: (msg) => get().handleGameOver(msg),
       onRatingUpdate: (msg) => get().handleRatingUpdate(msg),
@@ -353,6 +355,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         cooldowns: gameState.cooldowns.map(convertApiCooldown),
         // Clear any stale UI state
         selectedPieceId: null,
+        countdown: null, // No countdown on rejoin - game already started
       });
     } catch (error) {
       console.error('Failed to resync state:', error);
@@ -366,48 +369,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  startCountdown: () => {
-    const { status, playerNumber, countdown } = get();
-
-    // Only start countdown if waiting and is a player (not spectator)
-    if (status !== 'waiting' || playerNumber === 0 || countdown !== null) {
-      return;
-    }
-
-    set({ countdown: 3 });
-
-    const tick = () => {
-      const { countdown: currentCountdown, status: currentStatus } = get();
-
-      // Stop if game already started or countdown was cancelled
-      if (currentStatus !== 'waiting' || currentCountdown === null) {
-        return;
-      }
-
-      if (currentCountdown <= 1) {
-        // Countdown finished, mark ready
-        set({ countdown: null });
-        get().markReady();
-      } else {
-        // Continue countdown
-        set({ countdown: currentCountdown - 1 });
-        setTimeout(tick, 1000);
-      }
-    };
-
-    setTimeout(tick, 1000);
-  },
 
   selectPiece: (pieceId) => {
-    const { pieces, playerNumber, status } = get();
+    const { pieces, playerNumber, status, countdown } = get();
 
     if (!pieceId) {
       set({ selectedPieceId: null });
       return;
     }
 
-    // Can't select pieces if not playing or if spectator
-    if (status !== 'playing' || playerNumber === 0) {
+    // Can't select pieces if not playing, during countdown, or if spectator
+    if (status !== 'playing' || playerNumber === 0 || countdown !== null) {
       return;
     }
 
@@ -427,9 +399,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   makeMove: (toRow, toCol) => {
-    const { wsClient, selectedPieceId } = get();
+    const { wsClient, selectedPieceId, countdown } = get();
 
-    if (!wsClient || !selectedPieceId) {
+    // Can't move during countdown
+    if (!wsClient || !selectedPieceId || countdown !== null) {
       return;
     }
 
@@ -492,11 +465,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
 
+  handleCountdown: (msg) => {
+    // Server sends countdown seconds (3, 2, 1)
+    set({ countdown: msg.seconds });
+  },
+
   handleGameStarted: (msg) => {
+    // Clear countdown when game actually starts
     set({
       status: 'playing',
       currentTick: msg.tick,
       lastTickTime: performance.now(),
+      countdown: null,
     });
   },
 

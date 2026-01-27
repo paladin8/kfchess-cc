@@ -163,6 +163,9 @@ export class GameWebSocketClient {
       case 'state':
         this.options.onStateUpdate?.(data);
         break;
+      case 'countdown':
+        this.options.onCountdown?.(data);
+        break;
       case 'game_started':
         this.options.onGameStarted?.(data);
         break;

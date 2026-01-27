@@ -22,36 +22,73 @@ export function ReplayControls() {
   const animationRef = useRef<number | null>(null);
 
   // Store latest values in ref for animation loop
-  const stateRef = useRef({ currentTick, lastTickTime, timeSinceTick, isPlaying, totalTicks });
-  stateRef.current = { currentTick, lastTickTime, timeSinceTick, isPlaying, totalTicks };
+  const stateRef = useRef({ currentTick, lastTickTime, timeSinceTick, totalTicks });
+  stateRef.current = { currentTick, lastTickTime, timeSinceTick, totalTicks };
 
-  // Animation loop to interpolate visual tick
+  // Animation loop - only runs while playing
   useEffect(() => {
+    if (!isPlaying) {
+      // Not playing - stop animation loop, keep visualTick frozen at current value
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      return;
+    }
+
+    // Starting playback - reset timing to now for clean interpolation
+    const playbackStartTime = performance.now();
+
     const animate = () => {
       const state = stateRef.current;
+      const now = performance.now();
 
-      if (state.isPlaying) {
-        const now = performance.now();
-        const timeSinceLastTick = now - state.lastTickTime;
-        const totalElapsed = Math.max(0, timeSinceLastTick + state.timeSinceTick);
-        const tickFraction = Math.min(totalElapsed / TIMING.TICK_PERIOD_MS, 100.0);
-        const interpolated = Math.min(state.currentTick + tickFraction, state.totalTicks);
-        setVisualTick(interpolated);
-      } else {
-        setVisualTick(state.currentTick);
-      }
+      // Use the later of lastTickTime or playbackStartTime
+      // This prevents jumps from stale lastTickTime when resuming
+      const effectiveLastTickTime = Math.max(state.lastTickTime, playbackStartTime);
+
+      const timeSinceLastTick = now - effectiveLastTickTime;
+      const totalElapsed = Math.max(0, timeSinceLastTick + state.timeSinceTick);
+      const tickFraction = totalElapsed / TIMING.TICK_PERIOD_MS;
+      // Cap at totalTicks to not go past end of replay
+      const interpolated = Math.min(state.currentTick + tickFraction, state.totalTicks);
+      setVisualTick(interpolated);
 
       animationRef.current = requestAnimationFrame(animate);
     };
 
-    animate();
+    animationRef.current = requestAnimationFrame(animate);
 
     return () => {
-      if (animationRef.current) {
+      if (animationRef.current !== null) {
         cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
       }
     };
-  }, []); // Run once, uses refs for state
+  }, [isPlaying]); // Only restart animation when play/pause changes, not on every tick update
+
+  // Track previous values to detect transitions
+  const prevIsPlayingRef = useRef(isPlaying);
+  const prevCurrentTickRef = useRef(currentTick);
+
+  // Sync visual tick when seeking while paused (but not on pause transition)
+  useEffect(() => {
+    const justPaused = prevIsPlayingRef.current && !isPlaying;
+    const tickChanged = prevCurrentTickRef.current !== currentTick;
+
+    prevIsPlayingRef.current = isPlaying;
+    prevCurrentTickRef.current = currentTick;
+
+    // If we just paused, don't update - keep visual frozen
+    if (justPaused) {
+      return;
+    }
+
+    // If paused and tick changed, this is a seek - update visual
+    if (!isPlaying && tickChanged) {
+      setVisualTick(currentTick);
+    }
+  }, [currentTick, isPlaying]);
 
   const play = useReplayStore((s) => s.play);
   const pause = useReplayStore((s) => s.pause);
@@ -148,7 +185,7 @@ export function ReplayControls() {
           onMouseUp={handleSliderMouseUp}
           disabled={!isConnected}
           style={{
-            background: `linear-gradient(to right, var(--color-primary) ${progress}%, var(--color-surface-light) ${progress}%)`,
+            background: `linear-gradient(to right, var(--color-primary) ${progress}%, var(--color-border) ${progress}%)`,
           }}
         />
         <span className="replay-time">{formattedTotalTime}</span>

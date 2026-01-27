@@ -11,6 +11,7 @@ class ServerMessageType(Enum):
 
     JOINED = "joined"
     STATE = "state"
+    COUNTDOWN = "countdown"
     GAME_STARTED = "game_started"
     GAME_OVER = "game_over"
     RATING_UPDATE = "rating_update"
@@ -54,8 +55,15 @@ class StateUpdateMessage(BaseModel):
     time_since_tick: float = 0.0  # Milliseconds since tick started (0-100)
 
 
+class CountdownMessage(BaseModel):
+    """Sent during pre-game countdown (first 3 seconds)."""
+
+    type: str = "countdown"
+    seconds: int  # Seconds remaining (3, 2, 1)
+
+
 class GameStartedMessage(BaseModel):
-    """Sent when game starts."""
+    """Sent when game starts (after countdown completes)."""
 
     type: str = "game_started"
     tick: int = 0
