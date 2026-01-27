@@ -16,6 +16,8 @@ from kfchess.ws.protocol import (
     MoveMessage,
     MoveRejectedMessage,
     PongMessage,
+    RatingChangeData,
+    RatingUpdateMessage,
     ReadyMessage,
     StateUpdateMessage,
     parse_client_message,
@@ -529,6 +531,93 @@ async def _notify_lobby_game_ended(game_id: str, winner: int | None, reason: str
         logger.exception(f"Error notifying lobby of game end for {game_id}: {e}")
 
 
+async def _update_ratings(
+    game_id: str,
+    state: Any,
+) -> dict[int, Any] | None:
+    """Update ratings after a ranked game completes.
+
+    Args:
+        game_id: The game ID
+        state: The finished game state
+
+    Returns:
+        Dict of {player_num: RatingChange} or None if not eligible
+    """
+    from kfchess.db.session import async_session_factory
+    from kfchess.lobby.manager import get_lobby_manager
+    from kfchess.services.rating_service import RatingService
+
+    try:
+        manager = get_lobby_manager()
+        lobby_code = manager.find_lobby_by_game(game_id)
+
+        if lobby_code is None:
+            logger.debug(f"Game {game_id}: No lobby found for rating update")
+            return None
+
+        lobby = manager.get_lobby(lobby_code)
+        if lobby is None:
+            logger.debug(f"Game {game_id}: Lobby {lobby_code} not found for rating update")
+            return None
+
+        # Build player_num -> user_id mapping
+        player_user_ids: dict[int, int] = {}
+        for player in lobby.players.values():
+            if player.user_id is not None:
+                player_user_ids[player.slot] = player.user_id
+
+        if not player_user_ids:
+            logger.debug(f"Game {game_id}: No user IDs found for rating update")
+            return None
+
+        async with async_session_factory() as session:
+            try:
+                rating_service = RatingService(session)
+                rating_changes = await rating_service.update_ratings_for_game(
+                    game_id, state, lobby, player_user_ids
+                )
+                await session.commit()
+                return rating_changes
+            except Exception as e:
+                await session.rollback()
+                logger.exception(f"Failed to update ratings for game {game_id}: {e}")
+                return None
+
+    except Exception as e:
+        logger.exception(f"Error updating ratings for game {game_id}: {e}")
+        return None
+
+
+async def _broadcast_rating_update(
+    game_id: str,
+    rating_changes: dict[int, Any],
+) -> None:
+    """Send rating update message to all connected players.
+
+    Args:
+        game_id: The game ID
+        rating_changes: Dict of {player_num: RatingChange}
+    """
+    try:
+        ratings_data: dict[str, RatingChangeData] = {}
+        for player_num, change in rating_changes.items():
+            ratings_data[str(player_num)] = RatingChangeData(
+                old_rating=change.old_rating,
+                new_rating=change.new_rating,
+                old_belt=change.old_belt,
+                new_belt=change.new_belt,
+                belt_changed=change.belt_changed,
+            )
+
+        message = RatingUpdateMessage(ratings=ratings_data)
+        await connection_manager.broadcast(game_id, message.model_dump())
+        logger.info(f"Broadcast rating update for game {game_id}")
+
+    except Exception as e:
+        logger.exception(f"Error broadcasting rating update for {game_id}: {e}")
+
+
 async def _run_game_loop(game_id: str) -> None:
     """Run the game tick loop.
 
@@ -705,6 +794,11 @@ async def _run_game_loop(game_id: str) -> None:
 
                 # Save replay to database
                 await _save_replay(game_id, service)
+
+                # Update ratings for ranked games
+                rating_changes = await _update_ratings(game_id, state)
+                if rating_changes:
+                    await _broadcast_rating_update(game_id, rating_changes)
 
                 # Notify lobby that game ended (for return-to-lobby flow)
                 await _notify_lobby_game_ended(game_id, state.winner, reason)

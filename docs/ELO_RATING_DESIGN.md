@@ -940,27 +940,27 @@ async def get_lobby_by_game_id(self, game_id: str) -> Lobby | None:
 
 ## Implementation Tasks
 
-### Phase 1: Database & Core Rating System
-1. [ ] Create Alembic migration for:
+### Phase 1: Database & Core Rating System (COMPLETE)
+1. [x] Create Alembic migration for:
    - New `ratings` JSONB schema with nested stats
    - Functional indexes for leaderboard queries
-2. [ ] Create `server/src/kfchess/game/elo.py` with:
+2. [x] Create `server/src/kfchess/game/elo.py` with:
    - ELO calculation functions
    - Belt thresholds and `get_belt()` function
    - `RatingChange` and `UserRatingStats` dataclasses
-3. [ ] Create `server/src/kfchess/services/rating_service.py` with:
+3. [x] Create `server/src/kfchess/services/rating_service.py` with:
    - `RatingService` class with transaction handling
    - Race condition protection via `SELECT FOR UPDATE`
 4. [ ] Upload belt icons to S3
 
-### Phase 2: Backend Integration
-5. [ ] Add `RatingUpdateMessage` to `ws/protocol.py`
-6. [ ] Add `_update_ratings()` and `_broadcast_rating_update()` to `ws/handler.py`
-7. [ ] Integrate rating updates into game loop (after `_save_replay()`)
-8. [ ] Add leaderboard API endpoints:
+### Phase 2: Backend Integration (COMPLETE)
+5. [x] Add `RatingUpdateMessage` to `ws/protocol.py`
+6. [x] Add `_update_ratings()` and `_broadcast_rating_update()` to `ws/handler.py`
+7. [x] Integrate rating updates into game loop (after `_save_replay()`)
+8. [x] Add leaderboard API endpoints:
    - `GET /api/leaderboard`
    - `GET /api/leaderboard/me`
-9. [ ] Add user ratings to profile API response
+9. [x] Add user ratings to profile API response (via `UserRead` schema)
 
 ### Phase 3: Frontend Integration
 10. [ ] Add `ratingChange` to game store

@@ -13,6 +13,7 @@ class ServerMessageType(Enum):
     STATE = "state"
     GAME_STARTED = "game_started"
     GAME_OVER = "game_over"
+    RATING_UPDATE = "rating_update"
     MOVE_REJECTED = "move_rejected"
     PONG = "pong"
     ERROR = "error"
@@ -66,6 +67,23 @@ class GameOverMessage(BaseModel):
     type: str = "game_over"
     winner: int  # 0 for draw, 1-4 for player number
     reason: str  # "king_captured" | "draw_timeout" | "resignation"
+
+
+class RatingChangeData(BaseModel):
+    """Rating change data for a single player."""
+
+    old_rating: int
+    new_rating: int
+    old_belt: str
+    new_belt: str
+    belt_changed: bool = False
+
+
+class RatingUpdateMessage(BaseModel):
+    """Sent after a ranked game to report rating changes."""
+
+    type: str = "rating_update"
+    ratings: dict[str, RatingChangeData]  # player_num (as string) -> rating change
 
 
 class MoveRejectedMessage(BaseModel):
