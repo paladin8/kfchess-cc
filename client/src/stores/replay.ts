@@ -9,6 +9,7 @@
 import { create } from 'zustand';
 import type { Piece, ActiveMove, Cooldown, BoardType, GameSpeed } from './game';
 import type { ConnectionState } from '../ws/types';
+import { TIMING } from '../game';
 
 // ============================================
 // Types
@@ -27,11 +28,12 @@ interface ReplayState {
   totalTicks: number;
   winner: number | null;
   winReason: string | null;
+  tickRateHz: number; // Tick rate used when replay was recorded (for backwards compat)
 
   // Playback state (from server)
   currentTick: number;
   lastTickTime: number; // timestamp when currentTick was last updated
-  timeSinceTick: number; // milliseconds since tick started, from server (0-100)
+  timeSinceTick: number; // milliseconds since tick started, from server
   isPlaying: boolean;
 
   // Game state (from server, same as live game)
@@ -79,6 +81,7 @@ const initialState: ReplayState = {
   totalTicks: 0,
   winner: null,
   winReason: null,
+  tickRateHz: 10, // Default to 10 Hz for old replays
   currentTick: 0,
   lastTickTime: 0,
   timeSinceTick: 0,
@@ -181,6 +184,7 @@ export const useReplayStore = create<ReplayStore>((set, get) => ({
             totalTicks: message.total_ticks,
             winner: message.winner,
             winReason: message.win_reason,
+            tickRateHz: message.tick_rate_hz ?? 10, // Default to 10 Hz for old replays
           });
           // Don't auto-play - require user to click play
           // This ensures user interaction before audio plays (browser autoplay policy)
@@ -299,14 +303,18 @@ export const selectReplayProgress = (state: ReplayStore) => {
 };
 
 export const selectFormattedTime = (state: ReplayStore) => {
-  const seconds = Math.floor(state.currentTick / 10);
+  // Use the replay's tick rate for accurate time display
+  const ticksPerSecond = state.tickRateHz || TIMING.TICKS_PER_SECOND;
+  const seconds = Math.floor(state.currentTick / ticksPerSecond);
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
 export const selectFormattedTotalTime = (state: ReplayStore) => {
-  const seconds = Math.floor(state.totalTicks / 10);
+  // Use the replay's tick rate for accurate time display
+  const ticksPerSecond = state.tickRateHz || TIMING.TICKS_PER_SECOND;
+  const seconds = Math.floor(state.totalTicks / ticksPerSecond);
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;

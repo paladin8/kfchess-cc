@@ -55,6 +55,7 @@ export type WsGameEvent = WsCaptureEvent | WsPromotionEvent;
 export interface JoinedMessage {
   type: 'joined';
   player_number: number; // 0 = spectator, 1-4 = player
+  tick_rate_hz: number; // Server tick rate for client synchronization
 }
 
 export interface StateUpdateMessage {

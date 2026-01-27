@@ -206,3 +206,4 @@ class GameReplay(Base):
         DateTime, default=func.now(), nullable=False
     )
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tick_rate_hz: Mapped[int] = mapped_column(Integer, default=10, nullable=False)

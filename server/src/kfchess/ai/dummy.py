@@ -7,14 +7,13 @@ import random
 
 from kfchess.ai.base import AIPlayer
 from kfchess.game.engine import GameEngine
-from kfchess.game.state import GameState, Speed
+from kfchess.game.state import TICK_RATE_HZ, GameState, Speed
 
 # Move intervals in seconds for each speed
 MOVE_INTERVAL_SECONDS = {
     Speed.STANDARD: 4.0,  # 1 move every 4 seconds
     Speed.LIGHTNING: 2.0,  # 1 move every 2 seconds
 }
-TICKS_PER_SECOND = 10
 
 
 class DummyAI(AIPlayer):
@@ -29,7 +28,7 @@ class DummyAI(AIPlayer):
                    Lightning: ~1 move every 2 seconds
         """
         interval = MOVE_INTERVAL_SECONDS.get(speed, 4.0)
-        ticks_between_moves = interval * TICKS_PER_SECOND
+        ticks_between_moves = interval * TICK_RATE_HZ
         self.move_probability = 1.0 / ticks_between_moves
 
     def should_move(self, state: GameState, player: int, current_tick: int) -> bool:

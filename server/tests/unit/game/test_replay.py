@@ -6,7 +6,7 @@ from kfchess.game.board import Board, BoardType
 from kfchess.game.engine import GameEngine
 from kfchess.game.pieces import Piece, PieceType
 from kfchess.game.replay import Replay, ReplayEngine, _convert_v1_to_v2
-from kfchess.game.state import GameStatus, ReplayMove, Speed, WinReason
+from kfchess.game.state import SPEED_CONFIGS, GameStatus, ReplayMove, Speed, WinReason
 
 
 class TestReplayDataclass:
@@ -310,6 +310,10 @@ class TestReplayEngine:
 
     def test_get_state_at_tick_after_move_complete(self):
         """Test getting state at a tick after a move completed."""
+        config = SPEED_CONFIGS[Speed.STANDARD]
+        # 2-square move needs 2 * ticks_per_square ticks to complete
+        move_completion_tick = 2 * config.ticks_per_square + 10  # Add buffer
+
         replay = Replay(
             version=2,
             speed=Speed.STANDARD,
@@ -318,7 +322,7 @@ class TestReplayEngine:
             moves=[
                 ReplayMove(tick=0, piece_id="P:1:6:4", to_row=4, to_col=4, player=1),
             ],
-            total_ticks=100,
+            total_ticks=move_completion_tick + 50,
             winner=None,
             win_reason=None,
             created_at=None,
@@ -326,9 +330,9 @@ class TestReplayEngine:
 
         engine = ReplayEngine(replay)
 
-        # Get state at tick 30 (2 squares * 10 ticks = 20, so move should be done)
-        state = engine.get_state_at_tick(30)
-        assert state.current_tick == 30
+        # Get state at a tick after the move should be complete
+        state = engine.get_state_at_tick(move_completion_tick)
+        assert state.current_tick == move_completion_tick
 
         # The move should be completed
         assert len(state.active_moves) == 0

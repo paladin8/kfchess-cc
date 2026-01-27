@@ -35,6 +35,7 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
   const playerNumber = useGameStore((s) => s.playerNumber);
   const status = useGameStore((s) => s.status);
   const speed = useGameStore((s) => s.speed);
+  const tickRateHz = useGameStore((s) => s.tickRateHz);
 
   const selectPiece = useGameStore((s) => s.selectPiece);
   const makeMove = useGameStore((s) => s.makeMove);
@@ -50,6 +51,7 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
     timeSinceTick,
     selectedPieceId,
     speed,
+    tickRateHz,
     legalMoveTargets: [] as [number, number][],
   });
   // Update ref on every render (this doesn't cause re-renders)
@@ -62,6 +64,7 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
     timeSinceTick,
     selectedPieceId,
     speed,
+    tickRateHz,
     legalMoveTargets: gameStateRef.current.legalMoveTargets, // Will be updated below
   };
 
@@ -246,9 +249,12 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
       // Combine client-side elapsed time with server's time_since_tick offset
       // Guard against negative values (can happen briefly after state updates)
       const totalElapsed = Math.max(0, timeSinceLastTick + state.timeSinceTick);
-      // Allow interpolation up to 100 ticks (10 seconds) to handle sparse updates
-      // This covers even the longest possible moves (7 squares at 10 ticks/square = 70 ticks)
-      const tickFraction = Math.min(totalElapsed / TIMING.TICK_PERIOD_MS, 100.0);
+      // Allow interpolation up to 10 seconds to handle sparse updates
+      // This covers even the longest possible moves (7 squares at 1 sec/square = 7 seconds)
+      // Use server's tick rate for accurate interpolation
+      const tickPeriodMs = 1000 / state.tickRateHz;
+      const maxInterpolationTicks = 10 * state.tickRateHz;
+      const tickFraction = Math.min(totalElapsed / tickPeriodMs, maxInterpolationTicks);
       const visualTick = state.currentTick + tickFraction;
 
       // Convert pieces to renderer format

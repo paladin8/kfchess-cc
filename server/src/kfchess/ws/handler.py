@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from kfchess.game.state import TICK_RATE_HZ
 from kfchess.ws.protocol import (
     CountdownMessage,
     ErrorMessage,
@@ -332,9 +333,12 @@ async def handle_websocket(
     # Connect
     await connection_manager.connect(game_id, websocket, player)
 
-    # Send joined message with player number (0 for spectators)
+    # Send joined message with player number (0 for spectators) and tick rate
     await websocket.send_text(
-        JoinedMessage(player_number=player if player is not None else 0).model_dump_json()
+        JoinedMessage(
+            player_number=player if player is not None else 0,
+            tick_rate_hz=TICK_RATE_HZ,
+        ).model_dump_json()
     )
 
     # Send initial state to the connecting client
@@ -638,7 +642,7 @@ async def _broadcast_rating_update(
 async def _run_game_loop(game_id: str) -> None:
     """Run the game tick loop.
 
-    This runs at 10 ticks/second (100ms per tick) and broadcasts
+    This runs at TICK_RATE_HZ ticks/second and broadcasts
     state updates to all connected clients only when state changes.
 
     The optimization reduces bandwidth and CPU by only sending updates when:
@@ -651,12 +655,13 @@ async def _run_game_loop(game_id: str) -> None:
         is_piece_moving,
         is_piece_on_cooldown,
     )
-    from kfchess.game.state import GameStatus
+    from kfchess.game.state import TICK_RATE_HZ, GameStatus
     from kfchess.services.game_service import get_game_service
 
     service = get_game_service()
-    tick_interval = 0.1  # 100ms
-    tick_interval_ms = 100.0  # For time_since_tick calculation
+    # Derive tick timing from global tick rate
+    tick_interval = 1.0 / TICK_RATE_HZ
+    tick_interval_ms = 1000.0 / TICK_RATE_HZ
 
     # Track previous state for change detection
     prev_active_move_ids: set[str] = set()

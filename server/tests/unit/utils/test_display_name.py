@@ -1,6 +1,5 @@
 """Tests for display name utilities."""
 
-import pytest
 
 from kfchess.utils.display_name import (
     extract_user_ids,

@@ -2,6 +2,8 @@
  * Formatting utilities for display
  */
 
+import { TIMING } from '../game/constants';
+
 /**
  * Format a win reason for display.
  *
@@ -29,11 +31,11 @@ export function formatWinReason(reason: string | null): string {
 /**
  * Format ticks as a time string (MM:SS).
  *
- * @param ticks - Number of ticks (assuming 10 ticks/second)
+ * @param ticks - Number of ticks
  * @returns Formatted time string
  */
 export function formatDuration(ticks: number): string {
-  const seconds = Math.floor(ticks / 10);
+  const seconds = Math.floor(ticks / TIMING.TICKS_PER_SECOND);
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;

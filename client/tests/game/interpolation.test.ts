@@ -161,19 +161,20 @@ describe('interpolatePiecePosition', () => {
   describe('lightning speed', () => {
     const basePosition: Position = { row: 0, col: 0 };
     const path: [number, number][] = [[0, 0], [0, 1]];
-    const ticksPerSquare = TIMING.LIGHTNING_TICKS_PER_SQUARE; // 2
+    const ticksPerSquare = TIMING.LIGHTNING_TICKS_PER_SQUARE;
 
     it('moves faster with lightning speed', () => {
       const move = createActiveMove('p1', path, 0);
 
-      // At tick 1, should be 50% through (1/2 ticks)
-      const result = interpolatePiecePosition(basePosition, move, 1, ticksPerSquare);
+      // At half the ticks, should be 50% through
+      const halfTicks = ticksPerSquare / 2;
+      const result = interpolatePiecePosition(basePosition, move, halfTicks, ticksPerSquare);
       expect(result).toEqual({ row: 0, col: 0.5 });
     });
 
-    it('completes in 2 ticks', () => {
+    it('completes in LIGHTNING_TICKS_PER_SQUARE ticks', () => {
       const move = createActiveMove('p1', path, 0);
-      const result = interpolatePiecePosition(basePosition, move, 2, ticksPerSquare);
+      const result = interpolatePiecePosition(basePosition, move, ticksPerSquare, ticksPerSquare);
       expect(result).toEqual({ row: 0, col: 1 });
     });
   });
@@ -239,24 +240,28 @@ describe('calculateCooldownProgress', () => {
   });
 
   describe('default total cooldown', () => {
-    it('uses STANDARD_COOLDOWN_TICKS (100) as default', () => {
-      // At 50 remaining out of 100 default, should be 0.5
-      const result = calculateCooldownProgress(50);
+    it('uses STANDARD_COOLDOWN_TICKS as default', () => {
+      // At half remaining, should be 0.5
+      const halfTicks = TIMING.STANDARD_COOLDOWN_TICKS / 2;
+      const result = calculateCooldownProgress(halfTicks);
       expect(result).toBe(0.5);
     });
   });
 
   describe('lightning speed cooldown', () => {
-    const lightningCooldown = TIMING.LIGHTNING_COOLDOWN_TICKS; // 20
+    const lightningCooldown = TIMING.LIGHTNING_COOLDOWN_TICKS;
 
     it('calculates correctly for lightning cooldown', () => {
-      const result = calculateCooldownProgress(10, lightningCooldown);
+      // Half remaining = 50% complete
+      const halfTicks = lightningCooldown / 2;
+      const result = calculateCooldownProgress(halfTicks, lightningCooldown);
       expect(result).toBe(0.5);
     });
 
     it('completes faster with lightning cooldown', () => {
-      // 5 ticks remaining out of 20 = 75% complete
-      const result = calculateCooldownProgress(5, lightningCooldown);
+      // 25% remaining = 75% complete
+      const quarterTicks = lightningCooldown / 4;
+      const result = calculateCooldownProgress(quarterTicks, lightningCooldown);
       expect(result).toBe(0.75);
     });
   });

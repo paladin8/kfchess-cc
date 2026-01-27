@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from kfchess.game.board import BoardType
-from kfchess.game.state import GameStatus, ReplayMove, Speed
+from kfchess.game.state import TICK_RATE_HZ, GameStatus, ReplayMove, Speed
 
 if TYPE_CHECKING:
     from kfchess.game.state import GameState
@@ -35,6 +35,7 @@ class Replay:
         winner: Winner (0=draw, 1-4=player number, None=unknown)
         win_reason: Reason for game end
         created_at: When the game was completed
+        tick_rate_hz: Tick rate used when recording (for backwards compatibility)
     """
 
     version: int
@@ -46,6 +47,7 @@ class Replay:
     winner: int | None
     win_reason: str | None
     created_at: datetime | None
+    tick_rate_hz: int = 10  # Default to 10 Hz for old replays
 
     @staticmethod
     def from_game_state(state: "GameState") -> "Replay":
@@ -60,6 +62,7 @@ class Replay:
             winner=state.winner,
             win_reason=state.win_reason.value if state.win_reason else None,
             created_at=state.finished_at,
+            tick_rate_hz=TICK_RATE_HZ,  # Store current tick rate for playback
         )
 
     @staticmethod
@@ -95,6 +98,7 @@ class Replay:
             "winner": self.winner,
             "win_reason": self.win_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "tick_rate_hz": self.tick_rate_hz,
         }
 
     def get_moves_at_tick(self, tick: int) -> list[ReplayMove]:
@@ -146,6 +150,7 @@ def _convert_v1_to_v2(data: dict[str, Any]) -> Replay:
         winner=None,  # Original format didn't store winner
         win_reason=None,
         created_at=None,
+        tick_rate_hz=10,  # V1 replays were always 10 Hz
     )
 
 
@@ -183,6 +188,7 @@ def _parse_v2(data: dict[str, Any]) -> Replay:
         winner=data.get("winner"),
         win_reason=data.get("win_reason"),
         created_at=created_at,
+        tick_rate_hz=data.get("tick_rate_hz", 10),  # Default to 10 Hz for old replays
     )
 
 

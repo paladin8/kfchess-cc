@@ -63,6 +63,7 @@ interface GameState {
   connectionState: ConnectionState;
   boardType: BoardType;
   speed: GameSpeed;
+  tickRateHz: number; // Server tick rate for interpolation
 
   // Game state (from server)
   status: GameStatus;
@@ -129,6 +130,7 @@ const initialState: GameState = {
   connectionState: 'disconnected',
   boardType: 'standard',
   speed: 'standard',
+  tickRateHz: 30, // Default, will be overwritten by server
   status: 'waiting',
   currentTick: 0,
   lastTickTime: 0,
@@ -462,6 +464,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   handleJoined: (msg) => {
     set({
       playerNumber: msg.player_number,
+      tickRateHz: msg.tick_rate_hz ?? 30,
     });
   },
 

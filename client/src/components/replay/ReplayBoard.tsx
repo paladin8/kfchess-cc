@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useReplayStore } from '../../stores/replay';
-import { GameRenderer, type BoardType, TIMING } from '../../game';
+import { GameRenderer, type BoardType } from '../../game';
 
 interface ReplayBoardProps {
   boardType: BoardType;
@@ -29,6 +29,7 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
   const timeSinceTick = useReplayStore((s) => s.timeSinceTick);
   const isPlaying = useReplayStore((s) => s.isPlaying);
   const speed = useReplayStore((s) => s.speed);
+  const tickRateHz = useReplayStore((s) => s.tickRateHz);
 
   // Store latest values in refs so the render loop can access them without restarting
   const replayStateRef = useRef({
@@ -40,6 +41,7 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
     timeSinceTick,
     isPlaying,
     speed,
+    tickRateHz,
   });
   // Update ref on every render
   replayStateRef.current = {
@@ -51,6 +53,7 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
     timeSinceTick,
     isPlaying,
     speed,
+    tickRateHz,
   };
 
   // Initialize renderer
@@ -100,10 +103,13 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
       // Read latest state from ref (avoids effect restart on state change)
       const state = replayStateRef.current;
 
-      // Get timing constants based on speed
-      const ticksPerSquare = state.speed === 'lightning'
-        ? TIMING.LIGHTNING_TICKS_PER_SQUARE
-        : TIMING.STANDARD_TICKS_PER_SQUARE;
+      // Get timing constants based on speed and replay's tick rate
+      // The ticksPerSquare must match the replay's tick rate for correct animation
+      const replayTickRate = state.tickRateHz || 10;
+      const tickPeriodMs = 1000 / replayTickRate;
+      // Scale ticks per square based on replay's tick rate
+      const baseTicksPerSquare = state.speed === 'lightning' ? 0.2 : 1.0; // seconds
+      const ticksPerSquare = baseTicksPerSquare * replayTickRate;
 
       // Calculate visual tick for smooth animation
       // Only interpolate if playing
@@ -115,9 +121,10 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
         // Combine client-side elapsed time with server's time_since_tick offset
         // Guard against negative values (can happen briefly after seeks or state updates)
         const totalElapsed = Math.max(0, timeSinceLastTick + state.timeSinceTick);
-        // Allow interpolation up to 100 ticks (10 seconds) to handle sparse updates
+        // Allow interpolation up to 10 seconds to handle sparse updates
         // This covers even the longest possible moves
-        tickFraction = Math.min(totalElapsed / TIMING.TICK_PERIOD_MS, 100.0);
+        const maxInterpolationTicks = 10 * replayTickRate;
+        tickFraction = Math.min(totalElapsed / tickPeriodMs, maxInterpolationTicks);
         visualTick = state.currentTick + tickFraction;
       }
 

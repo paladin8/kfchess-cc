@@ -3,7 +3,7 @@
 
 from kfchess.ai.dummy import DummyAI
 from kfchess.game.board import BoardType
-from kfchess.game.state import GameStatus, Speed
+from kfchess.game.state import SPEED_CONFIGS, GameStatus, Speed
 from kfchess.services.game_service import GameService
 
 
@@ -366,8 +366,9 @@ class TestGameService:
         )
         assert result.success is True
 
-        # Advance ticks until move completes (1 square = 10 ticks)
-        for _ in range(12):
+        # Advance ticks until move completes
+        config = SPEED_CONFIGS[Speed.STANDARD]
+        for _ in range(config.ticks_per_square + 2):
             service.tick(game_id)
 
         # Piece should now be on cooldown
@@ -436,9 +437,15 @@ class TestGameService:
 class TestDummyAI:
     """Tests for DummyAI."""
 
-    def test_dummy_ai_never_moves(self) -> None:
-        """Test that dummy AI never wants to move."""
+    def test_dummy_ai_probabilistic_move(self) -> None:
+        """Test that dummy AI makes moves probabilistically."""
+        import random
+
         from kfchess.game.engine import GameEngine
+        from kfchess.game.state import GameStatus
+
+        # Set seed for deterministic testing
+        random.seed(42)
 
         ai = DummyAI()
         state = GameEngine.create_game(
@@ -446,10 +453,20 @@ class TestDummyAI:
             players={1: "u:test", 2: "bot:dummy"},
             board_type=BoardType.STANDARD,
         )
+        # Set status to PLAYING so moves can be validated
+        state.status = GameStatus.PLAYING
 
-        # Should never want to move
-        assert ai.should_move(state, 2, 0) is False
-        assert ai.should_move(state, 2, 100) is False
+        # With standard speed, probability is 1/40 = 2.5% per tick
+        # Over many ticks, we should see some True and some False
+        results = [ai.should_move(state, 2, tick) for tick in range(200)]
+        assert any(results), "AI should decide to move at least once in 200 ticks"
+        assert not all(results), "AI should not move every single tick"
 
-        # Should always return None for move
-        assert ai.get_move(state, 2) is None
+        # Reset seed and test get_move returns valid moves
+        random.seed(42)
+        move = ai.get_move(state, 2)
+        assert move is not None, "AI should return a valid move"
+        piece_id, to_row, to_col = move
+        assert isinstance(piece_id, str)
+        assert isinstance(to_row, int)
+        assert isinstance(to_col, int)

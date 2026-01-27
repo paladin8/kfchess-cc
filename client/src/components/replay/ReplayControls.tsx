@@ -6,7 +6,6 @@
 
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useReplayStore, selectFormattedTotalTime } from '../../stores/replay';
-import { TIMING } from '../../game';
 import './ReplayControls.css';
 
 export function ReplayControls() {
@@ -16,14 +15,19 @@ export function ReplayControls() {
   const totalTicks = useReplayStore((s) => s.totalTicks);
   const isPlaying = useReplayStore((s) => s.isPlaying);
   const connectionState = useReplayStore((s) => s.connectionState);
+  const tickRateHz = useReplayStore((s) => s.tickRateHz);
+
+  // Derive timing from replay's tick rate for backwards compatibility
+  const tickPeriodMs = 1000 / tickRateHz;
+  const ticksPerSecond = tickRateHz;
 
   // Interpolated visual tick for smooth progress bar
   const [visualTick, setVisualTick] = useState(0);
   const animationRef = useRef<number | null>(null);
 
   // Store latest values in ref for animation loop
-  const stateRef = useRef({ currentTick, lastTickTime, timeSinceTick, totalTicks });
-  stateRef.current = { currentTick, lastTickTime, timeSinceTick, totalTicks };
+  const stateRef = useRef({ currentTick, lastTickTime, timeSinceTick, totalTicks, tickPeriodMs });
+  stateRef.current = { currentTick, lastTickTime, timeSinceTick, totalTicks, tickPeriodMs };
 
   // Animation loop - only runs while playing
   useEffect(() => {
@@ -49,7 +53,7 @@ export function ReplayControls() {
 
       const timeSinceLastTick = now - effectiveLastTickTime;
       const totalElapsed = Math.max(0, timeSinceLastTick + state.timeSinceTick);
-      const tickFraction = totalElapsed / TIMING.TICK_PERIOD_MS;
+      const tickFraction = totalElapsed / state.tickPeriodMs;
       // Cap at totalTicks to not go past end of replay
       const interpolated = Math.min(state.currentTick + tickFraction, state.totalTicks);
       setVisualTick(interpolated);
@@ -96,9 +100,9 @@ export function ReplayControls() {
 
   const formattedTotalTime = useReplayStore(selectFormattedTotalTime);
 
-  // Format time from visual tick
+  // Format time from visual tick using replay's tick rate
   const formatTime = (ticks: number) => {
-    const seconds = Math.floor(ticks / 10);
+    const seconds = Math.floor(ticks / ticksPerSecond);
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
@@ -152,14 +156,16 @@ export function ReplayControls() {
   }, [isDragging, dragTick, seek]);
 
   const handleSkipBackward = useCallback(() => {
-    // Skip back 5 seconds (50 ticks at 10 ticks/second)
-    seek(Math.max(0, currentTick - 50));
-  }, [currentTick, seek]);
+    // Skip back 5 seconds using replay's tick rate
+    const skipTicks = 5 * ticksPerSecond;
+    seek(Math.max(0, currentTick - skipTicks));
+  }, [currentTick, ticksPerSecond, seek]);
 
   const handleSkipForward = useCallback(() => {
-    // Skip forward 5 seconds (50 ticks)
-    seek(Math.min(totalTicks, currentTick + 50));
-  }, [currentTick, totalTicks, seek]);
+    // Skip forward 5 seconds using replay's tick rate
+    const skipTicks = 5 * ticksPerSecond;
+    seek(Math.min(totalTicks, currentTick + skipTicks));
+  }, [currentTick, totalTicks, ticksPerSecond, seek]);
 
   const handleRestart = useCallback(() => {
     seek(0);

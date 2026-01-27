@@ -21,13 +21,36 @@ export const BOARD_DIMENSIONS = {
   four_player: { width: 12, height: 12 },
 } as const;
 
-// Timing constants (ticks)
+// Tick rate - single source of truth
+// Changing this value automatically adjusts all tick-based timing
+const TICK_RATE_HZ = 30;
+
+// Timing defined in real-world units (seconds), with derived tick values
 export const TIMING = {
-  TICK_PERIOD_MS: 100, // 10 ticks per second
-  STANDARD_TICKS_PER_SQUARE: 10, // 1 second per square
-  LIGHTNING_TICKS_PER_SQUARE: 2, // 0.2 seconds per square
-  STANDARD_COOLDOWN_TICKS: 100, // 10 seconds
-  LIGHTNING_COOLDOWN_TICKS: 20, // 2 seconds
+  // Core tick rate
+  TICK_RATE_HZ,
+  TICK_PERIOD_MS: 1000 / TICK_RATE_HZ,
+  TICKS_PER_SECOND: TICK_RATE_HZ,
+
+  // Speed-specific timing (in seconds)
+  STANDARD_SECONDS_PER_SQUARE: 1.0,
+  LIGHTNING_SECONDS_PER_SQUARE: 0.2,
+  STANDARD_COOLDOWN_SECONDS: 10.0,
+  LIGHTNING_COOLDOWN_SECONDS: 2.0,
+
+  // Derived tick values (computed from seconds * tick rate)
+  get STANDARD_TICKS_PER_SQUARE() {
+    return Math.round(this.STANDARD_SECONDS_PER_SQUARE * TICK_RATE_HZ);
+  },
+  get LIGHTNING_TICKS_PER_SQUARE() {
+    return Math.round(this.LIGHTNING_SECONDS_PER_SQUARE * TICK_RATE_HZ);
+  },
+  get STANDARD_COOLDOWN_TICKS() {
+    return Math.round(this.STANDARD_COOLDOWN_SECONDS * TICK_RATE_HZ);
+  },
+  get LIGHTNING_COOLDOWN_TICKS() {
+    return Math.round(this.LIGHTNING_COOLDOWN_SECONDS * TICK_RATE_HZ);
+  },
 } as const;
 
 // Default render settings

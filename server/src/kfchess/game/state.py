@@ -43,44 +43,84 @@ class WinReason(Enum):
         return self in (WinReason.KING_CAPTURED, WinReason.DRAW, WinReason.RESIGNATION)
 
 
+# Global tick rate - single source of truth
+# Changing this value automatically adjusts all tick-based timing
+TICK_RATE_HZ: int = 30
+
+
 @dataclass
 class SpeedConfig:
     """Configuration for a game speed.
 
+    Timing is defined in real-world units (seconds). Tick counts are derived
+    from these values using the global TICK_RATE_HZ, making it easy to change
+    the tick rate without updating individual timing values.
+
     Attributes:
-        tick_period_ms: Milliseconds per tick (typically 100ms = 10 ticks/sec)
-        ticks_per_square: Ticks to move one square
-        cooldown_ticks: Cooldown duration after completing a move
-        draw_no_move_ticks: Draw if no moves for this many ticks
-        draw_no_capture_ticks: Draw if no captures for this many ticks
-        min_draw_ticks: Minimum game length before draw conditions are checked
+        seconds_per_square: Time to move one square
+        cooldown_seconds: Cooldown duration after completing a move
+        draw_no_move_seconds: Draw if no moves for this many seconds
+        draw_no_capture_seconds: Draw if no captures for this many seconds
+        min_draw_seconds: Minimum game length before draw conditions are checked
     """
 
-    tick_period_ms: int
-    ticks_per_square: int
-    cooldown_ticks: int
-    draw_no_move_ticks: int
-    draw_no_capture_ticks: int
-    min_draw_ticks: int
+    seconds_per_square: float
+    cooldown_seconds: float
+    draw_no_move_seconds: float
+    draw_no_capture_seconds: float
+    min_draw_seconds: float
+
+    @property
+    def tick_rate_hz(self) -> int:
+        """Get the tick rate in Hz."""
+        return TICK_RATE_HZ
+
+    @property
+    def tick_period_ms(self) -> float:
+        """Get milliseconds per tick."""
+        return 1000.0 / TICK_RATE_HZ
+
+    @property
+    def ticks_per_square(self) -> int:
+        """Get ticks to move one square."""
+        return int(self.seconds_per_square * TICK_RATE_HZ)
+
+    @property
+    def cooldown_ticks(self) -> int:
+        """Get cooldown duration in ticks."""
+        return int(self.cooldown_seconds * TICK_RATE_HZ)
+
+    @property
+    def draw_no_move_ticks(self) -> int:
+        """Get ticks before draw if no moves."""
+        return int(self.draw_no_move_seconds * TICK_RATE_HZ)
+
+    @property
+    def draw_no_capture_ticks(self) -> int:
+        """Get ticks before draw if no captures."""
+        return int(self.draw_no_capture_seconds * TICK_RATE_HZ)
+
+    @property
+    def min_draw_ticks(self) -> int:
+        """Get minimum ticks before draw conditions are checked."""
+        return int(self.min_draw_seconds * TICK_RATE_HZ)
 
 
-# Speed configurations
+# Speed configurations - defined in real-world time units
 SPEED_CONFIGS: dict[Speed, SpeedConfig] = {
     Speed.STANDARD: SpeedConfig(
-        tick_period_ms=100,  # 10 ticks per second
-        ticks_per_square=10,  # 1 second per square
-        cooldown_ticks=100,  # 10 second cooldown
-        draw_no_move_ticks=1200,  # 2 minutes
-        draw_no_capture_ticks=1800,  # 3 minutes
-        min_draw_ticks=3600,  # 6 minutes minimum before draw
+        seconds_per_square=1.0,  # 1 second per square
+        cooldown_seconds=10.0,  # 10 second cooldown
+        draw_no_move_seconds=120.0,  # 2 minutes
+        draw_no_capture_seconds=180.0,  # 3 minutes
+        min_draw_seconds=360.0,  # 6 minutes minimum before draw
     ),
     Speed.LIGHTNING: SpeedConfig(
-        tick_period_ms=100,  # 10 ticks per second
-        ticks_per_square=2,  # 0.2 seconds per square
-        cooldown_ticks=20,  # 2 second cooldown
-        draw_no_move_ticks=300,  # 30 seconds
-        draw_no_capture_ticks=450,  # 45 seconds
-        min_draw_ticks=900,  # 90 seconds minimum before draw
+        seconds_per_square=0.2,  # 0.2 seconds per square
+        cooldown_seconds=2.0,  # 2 second cooldown
+        draw_no_move_seconds=30.0,  # 30 seconds
+        draw_no_capture_seconds=45.0,  # 45 seconds
+        min_draw_seconds=90.0,  # 90 seconds minimum before draw
     ),
 }
 

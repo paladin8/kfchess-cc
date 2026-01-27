@@ -34,7 +34,7 @@ from kfchess.game.collision import (
     is_piece_on_cooldown,
 )
 from kfchess.game.replay import Replay, ReplayEngine
-from kfchess.game.state import SPEED_CONFIGS, GameState
+from kfchess.game.state import GameState
 
 logger = logging.getLogger(__name__)
 
@@ -230,16 +230,18 @@ class ReplaySession:
     async def _playback_loop(self) -> None:
         """Main playback loop - advances tick and sends state.
 
-        Runs at the configured tick rate (typically 10 ticks/second).
+        Runs at the tick rate the replay was recorded at (for backwards compatibility).
         Stops when reaching the end or when paused.
 
         Only sends state updates when state changes (active moves or cooldowns changed).
         """
         import time
 
-        config = SPEED_CONFIGS[self.replay.speed]
-        tick_interval = config.tick_period_ms / 1000.0
-        tick_interval_ms = float(config.tick_period_ms)
+        # Use the tick rate the replay was recorded at for accurate playback
+        # Old replays default to 10 Hz, new replays use current tick rate
+        tick_rate_hz = self.replay.tick_rate_hz
+        tick_interval = 1.0 / tick_rate_hz
+        tick_interval_ms = 1000.0 / tick_rate_hz
 
         try:
             while True:
@@ -521,6 +523,7 @@ class ReplaySession:
                 "total_ticks": self.replay.total_ticks,
                 "winner": self.replay.winner,
                 "win_reason": self.replay.win_reason,
+                "tick_rate_hz": self.replay.tick_rate_hz,
             }
         )
 

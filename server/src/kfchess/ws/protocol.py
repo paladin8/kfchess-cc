@@ -36,6 +36,7 @@ class JoinedMessage(BaseModel):
 
     type: str = "joined"
     player_number: int  # 0 = spectator, 1-4 = player
+    tick_rate_hz: int  # Server tick rate for client synchronization
 
 
 class StateUpdateMessage(BaseModel):
@@ -52,7 +53,7 @@ class StateUpdateMessage(BaseModel):
     active_moves: list[dict[str, Any]]
     cooldowns: list[dict[str, Any]]
     events: list[dict[str, Any]]
-    time_since_tick: float = 0.0  # Milliseconds since tick started (0-100)
+    time_since_tick: float = 0.0  # Milliseconds since tick started (0 to tick_period_ms)
 
 
 class CountdownMessage(BaseModel):

@@ -5,7 +5,7 @@ from kfchess.game.board import Board
 from kfchess.game.engine import GameEngine, GameEventType
 from kfchess.game.moves import Cooldown, Move
 from kfchess.game.pieces import Piece, PieceType
-from kfchess.game.state import GameStatus, Speed, WinReason
+from kfchess.game.state import SPEED_CONFIGS, GameStatus, Speed, WinReason
 
 
 class TestCreateGame:
@@ -35,8 +35,10 @@ class TestCreateGame:
         )
 
         assert state.speed == Speed.LIGHTNING
-        assert state.config.ticks_per_square == 2
-        assert state.config.cooldown_ticks == 20
+        # Verify lightning speed uses correct timing (0.2s/square, 2s cooldown)
+        config = SPEED_CONFIGS[Speed.LIGHTNING]
+        assert state.config.ticks_per_square == config.ticks_per_square
+        assert state.config.cooldown_ticks == config.cooldown_ticks
 
     def test_create_game_custom_id(self):
         """Test creating a game with custom ID."""
@@ -351,14 +353,15 @@ class TestTick:
         state, _ = GameEngine.set_player_ready(state, 1)
         state, _ = GameEngine.set_player_ready(state, 2)
 
-        # Make a move (1 square = 10 ticks for STANDARD)
-        # Move starts on NEXT tick (tick 1), so needs 11 total ticks to complete
+        # Make a move (1 square = ticks_per_square ticks)
+        # Move starts on NEXT tick (tick 1), so needs ticks_per_square + 1 total ticks to complete
+        config = SPEED_CONFIGS[Speed.STANDARD]
         pawn = state.board.get_piece_at(6, 4)
         move = GameEngine.validate_move(state, 1, pawn.id, 5, 4)
         state, _ = GameEngine.apply_move(state, move)
 
-        # Tick 11 times (move starts at tick 1, completes after 10 more ticks)
-        for _ in range(11):
+        # Tick until move completes (move starts at tick 1, completes after ticks_per_square ticks)
+        for _ in range(config.ticks_per_square + 1):
             state, events = GameEngine.tick(state)
 
         # Move should be completed
@@ -390,13 +393,14 @@ class TestTick:
         state, _ = GameEngine.set_player_ready(state, 2)
 
         # Move pawn to promotion square (1 square move)
-        # Move starts on NEXT tick, so needs 11 total ticks
+        # Move starts on NEXT tick, so needs ticks_per_square + 1 total ticks
+        config = SPEED_CONFIGS[Speed.STANDARD]
         move = GameEngine.validate_move(state, 1, pawn.id, 0, 4)
         state, _ = GameEngine.apply_move(state, move)
 
         # Tick until move completes
         promotion_event = None
-        for _ in range(11):
+        for _ in range(config.ticks_per_square + 1):
             state, events = GameEngine.tick(state)
             for e in events:
                 if e.type == GameEventType.PROMOTION:
@@ -546,12 +550,14 @@ class TestGetPieceState:
         state, _ = GameEngine.set_player_ready(state, 1)
         state, _ = GameEngine.set_player_ready(state, 2)
 
+        config = SPEED_CONFIGS[Speed.STANDARD]
         pawn = state.board.get_piece_at(6, 4)
         move = GameEngine.validate_move(state, 1, pawn.id, 5, 4)
         state, _ = GameEngine.apply_move(state, move)
 
         # Tick halfway through the move
-        for _ in range(5):
+        halfway_ticks = config.ticks_per_square // 2
+        for _ in range(halfway_ticks):
             state, _ = GameEngine.tick(state)
 
         piece_state = GameEngine.get_piece_state(state, pawn.id)
@@ -601,9 +607,10 @@ class TestCaptureFlow:
         assert move is not None
         state, _ = GameEngine.apply_move(state, move)
 
-        # Tick until queen reaches pawn
+        # Tick until queen reaches pawn (3 square move)
+        config = SPEED_CONFIGS[Speed.STANDARD]
         capture_event = None
-        for _ in range(50):
+        for _ in range(3 * config.ticks_per_square + 10):
             state, events = GameEngine.tick(state)
             for e in events:
                 if e.type == GameEventType.CAPTURE:
@@ -653,9 +660,10 @@ class TestCaptureFlow:
         # Both moves should have same start tick
         assert white_move.start_tick == black_move.start_tick
 
-        # Tick until collision (they meet in the middle around col 3.5)
+        # Tick until collision (they meet in the middle around col 3.5, ~3.5 squares each)
+        config = SPEED_CONFIGS[Speed.STANDARD]
         capture_events = []
-        for _ in range(50):
+        for _ in range(4 * config.ticks_per_square + 10):
             state, events = GameEngine.tick(state)
             for e in events:
                 if e.type == GameEventType.CAPTURE:

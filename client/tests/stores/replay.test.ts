@@ -521,14 +521,16 @@ describe('Replay Selectors', () => {
     it('formats 0 ticks as 0:00', () => {
       const state = {
         currentTick: 0,
+        tickRateHz: 10,
       } as Parameters<typeof selectFormattedTime>[0];
 
       expect(selectFormattedTime(state)).toBe('0:00');
     });
 
-    it('formats ticks correctly (10 ticks = 1 second)', () => {
+    it('formats ticks correctly (10 ticks = 1 second at 10Hz)', () => {
       const state = {
-        currentTick: 100, // 10 seconds
+        currentTick: 100, // 10 seconds at 10Hz
+        tickRateHz: 10,
       } as Parameters<typeof selectFormattedTime>[0];
 
       expect(selectFormattedTime(state)).toBe('0:10');
@@ -536,7 +538,8 @@ describe('Replay Selectors', () => {
 
     it('formats minutes correctly', () => {
       const state = {
-        currentTick: 650, // 65 seconds = 1:05
+        currentTick: 650, // 65 seconds at 10Hz = 1:05
+        tickRateHz: 10,
       } as Parameters<typeof selectFormattedTime>[0];
 
       expect(selectFormattedTime(state)).toBe('1:05');
@@ -544,7 +547,8 @@ describe('Replay Selectors', () => {
 
     it('pads seconds with leading zero', () => {
       const state = {
-        currentTick: 610, // 61 seconds = 1:01
+        currentTick: 610, // 61 seconds at 10Hz = 1:01
+        tickRateHz: 10,
       } as Parameters<typeof selectFormattedTime>[0];
 
       expect(selectFormattedTime(state)).toBe('1:01');
@@ -555,6 +559,7 @@ describe('Replay Selectors', () => {
     it('formats 0 ticks as 0:00', () => {
       const state = {
         totalTicks: 0,
+        tickRateHz: 10,
       } as Parameters<typeof selectFormattedTotalTime>[0];
 
       expect(selectFormattedTotalTime(state)).toBe('0:00');
@@ -562,7 +567,8 @@ describe('Replay Selectors', () => {
 
     it('formats total ticks correctly', () => {
       const state = {
-        totalTicks: 6000, // 600 seconds = 10 minutes
+        totalTicks: 6000, // 600 seconds at 10Hz = 10 minutes
+        tickRateHz: 10,
       } as Parameters<typeof selectFormattedTotalTime>[0];
 
       expect(selectFormattedTotalTime(state)).toBe('10:00');
@@ -570,7 +576,8 @@ describe('Replay Selectors', () => {
 
     it('handles long games', () => {
       const state = {
-        totalTicks: 36000, // 3600 seconds = 60 minutes
+        totalTicks: 36000, // 3600 seconds at 10Hz = 60 minutes
+        tickRateHz: 10,
       } as Parameters<typeof selectFormattedTotalTime>[0];
 
       expect(selectFormattedTotalTime(state)).toBe('60:00');

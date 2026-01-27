@@ -11,7 +11,7 @@ from kfchess.game.moves import (
     should_promote_pawn,
 )
 from kfchess.game.pieces import Piece, PieceType
-from kfchess.game.state import GameStatus, Speed, WinReason
+from kfchess.game.state import SPEED_CONFIGS, GameStatus, Speed, WinReason
 
 
 class TestBoard4Player:
@@ -482,9 +482,10 @@ class TestGameEngine4Player:
         assert move is not None
         state, _ = GameEngine.apply_move(state, move)
 
-        # Tick until move completes
+        # Tick until move completes (1 square move)
+        config = SPEED_CONFIGS[Speed.STANDARD]
         promotion_event = None
-        for _ in range(15):
+        for _ in range(config.ticks_per_square + 5):
             state, events = GameEngine.tick(state)
             for e in events:
                 if e.type == GameEventType.PROMOTION:
@@ -525,9 +526,10 @@ class TestCollisionDetection4Player:
         assert move is not None
         state, _ = GameEngine.apply_move(state, move)
 
-        # Tick until collision
+        # Tick until collision (4 square move)
+        config = SPEED_CONFIGS[Speed.STANDARD]
         capture_event = None
-        for _ in range(60):
+        for _ in range(4 * config.ticks_per_square + 10):
             state, events = GameEngine.tick(state)
             for e in events:
                 if e.type == GameEventType.CAPTURE:

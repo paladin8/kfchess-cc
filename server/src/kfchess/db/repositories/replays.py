@@ -79,6 +79,7 @@ class ReplayRepository:
             win_reason=replay.win_reason,
             created_at=created_at,
             is_public=True,
+            tick_rate_hz=replay.tick_rate_hz,
         )
 
         self.session.add(record)
@@ -219,6 +220,8 @@ class ReplayRepository:
                 ) from e
 
         try:
+            # Get tick_rate_hz with default of 10 for old replays without this field
+            tick_rate_hz = getattr(record, "tick_rate_hz", 10) or 10
             return Replay(
                 version=2,
                 speed=Speed(record.speed),
@@ -229,6 +232,7 @@ class ReplayRepository:
                 winner=record.winner,
                 win_reason=record.win_reason,
                 created_at=record.created_at,
+                tick_rate_hz=tick_rate_hz,
             )
         except ValueError as e:
             logger.error(f"Invalid enum value in replay {record.id}: {e}")
