@@ -1,0 +1,248 @@
+/**
+ * Leaderboard Component Styles
+ */
+
+.leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.leaderboard-header {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.mode-selector {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  min-width: 180px;
+}
+
+.mode-selector:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* My Rank Card */
+.my-rank-card {
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-surface-light) 100%);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
+}
+
+.my-rank-header {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.my-rank-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.my-rank-belt {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.my-rank-info {
+  flex: 1;
+}
+
+.my-rank-rating {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.my-rank-position {
+  font-size: 1rem;
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.my-rank-percentile {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.my-rank-unranked {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.my-rank-stats {
+  text-align: right;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+/* Leaderboard Table */
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.leaderboard-table thead {
+  background-color: var(--color-surface-light);
+}
+
+.leaderboard-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.leaderboard-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.leaderboard-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.leaderboard-table tbody tr:hover {
+  background-color: var(--color-surface-light);
+}
+
+.leaderboard-table tbody tr.highlight-row {
+  background-color: rgba(var(--color-primary-rgb, 59, 130, 246), 0.1);
+}
+
+.leaderboard-table tbody tr.highlight-row:hover {
+  background-color: rgba(var(--color-primary-rgb, 59, 130, 246), 0.15);
+}
+
+/* Column widths */
+.col-rank {
+  width: 60px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.col-belt {
+  width: 48px;
+  padding: 0.5rem !important;
+}
+
+.col-player {
+  min-width: 150px;
+}
+
+.col-rating {
+  width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.col-record {
+  width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.belt-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+/* States */
+.leaderboard-loading,
+.leaderboard-error,
+.leaderboard-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.leaderboard-error p,
+.leaderboard-empty p {
+  margin: 0 0 0.5rem;
+}
+
+.leaderboard-error .btn,
+.leaderboard-empty .btn {
+  margin-top: 1rem;
+}
+
+/* Pagination */
+.leaderboard-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+
+.page-info {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .my-rank-content {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .my-rank-stats {
+    width: 100%;
+    display: flex;
+    justify-content: space-around;
+    text-align: center;
+  }
+
+  .leaderboard-table th,
+  .leaderboard-table td {
+    padding: 0.5rem;
+  }
+
+  .col-player {
+    min-width: auto;
+  }
+
+  .col-record {
+    display: none;
+  }
+
+  .belt-icon {
+    width: 24px;
+    height: 24px;
+  }
+}

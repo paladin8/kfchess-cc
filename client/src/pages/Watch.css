@@ -1,0 +1,285 @@
+/**
+ * Watch Page Styles
+ */
+
+.watch-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.watch-page h1 {
+  margin: 0 0 1.5rem;
+  font-size: 1.75rem;
+  color: var(--color-text);
+}
+
+/* Tab Navigation */
+.watch-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 1.5rem;
+}
+
+.tab-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-button:hover {
+  color: var(--color-text);
+}
+
+.tab-button.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* Tab Content */
+.watch-content {
+  min-height: 400px;
+}
+
+/* Common Tab States */
+.tab-loading,
+.tab-error,
+.tab-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.tab-error p,
+.tab-empty p {
+  margin: 0 0 0.5rem;
+}
+
+.tab-error .btn,
+.tab-empty .btn {
+  margin-top: 1rem;
+}
+
+/* Live Games Tab */
+.live-games-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.games-section h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.games-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.game-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--color-text);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.game-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-light);
+}
+
+.game-card.active {
+  border-left: 3px solid #22c55e;
+}
+
+.game-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.game-card-host {
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+.game-card-details {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.detail-badge {
+  text-transform: capitalize;
+}
+
+.ranked-badge {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.game-card-status {
+  font-size: 0.875rem;
+}
+
+.status-live {
+  color: #22c55e;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-live::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background-color: #22c55e;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.status-waiting {
+  color: var(--color-text-muted);
+}
+
+/* Replays Tab - reuses styles from Replays.css */
+.replays-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Replay cards within Watch page */
+.watch-page .replay-card {
+  display: block;
+  padding: 1rem 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--color-text);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.watch-page .replay-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-light);
+}
+
+.watch-page .replay-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.watch-page .replay-card-date {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.watch-page .replay-card-speed {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--color-surface-light);
+  border-radius: 4px;
+  text-transform: capitalize;
+}
+
+.watch-page .replay-card-players {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.watch-page .replay-card-player {
+  font-weight: 500;
+}
+
+.watch-page .replay-card-player.winner {
+  color: #4ade80;
+}
+
+.watch-page .replay-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.watch-page .replay-card-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.watch-page .replay-card-result {
+  font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .watch-page {
+    padding: 1rem;
+  }
+
+  .watch-tabs {
+    overflow-x: auto;
+  }
+
+  .tab-button {
+    padding: 0.5rem 1rem;
+    white-space: nowrap;
+  }
+
+  .game-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .game-card-status {
+    align-self: flex-end;
+  }
+
+  .watch-page .replay-card-players {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+}

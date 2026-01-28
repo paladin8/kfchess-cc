@@ -305,3 +305,36 @@ export interface LobbyListResponse {
 export interface GetLobbyResponse {
   lobby: Lobby;
 }
+
+// ============================================
+// Leaderboard Types
+// ============================================
+
+// Single entry in the leaderboard
+export interface LeaderboardEntry {
+  rank: number;
+  user_id: number;
+  username: string;
+  rating: number;
+  belt: string;
+  games_played: number;
+  wins: number;
+}
+
+// Response for leaderboard queries
+export interface LeaderboardResponse {
+  mode: string;
+  entries: LeaderboardEntry[];
+  total_count: number;
+}
+
+// Response for user's own rank
+export interface MyRankResponse {
+  mode: string;
+  rank: number | null;
+  rating: number;
+  belt: string;
+  games_played: number;
+  wins: number;
+  percentile: number | null;
+}

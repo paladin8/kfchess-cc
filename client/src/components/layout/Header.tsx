@@ -107,7 +107,7 @@ function Header() {
               <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Home</NavLink>
               <NavLink to="/lobbies" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Lobbies</NavLink>
               <NavLink to="/campaign" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Campaign</NavLink>
-              <NavLink to="/replays" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Watch</NavLink>
+              <NavLink to="/watch" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Watch</NavLink>
               <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" className="nav-secondary">Reddit</a>
               <NavLink to="/about" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>About</NavLink>
               <NavLink to="/privacy" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>Privacy</NavLink>

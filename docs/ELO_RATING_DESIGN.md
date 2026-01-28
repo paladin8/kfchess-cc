@@ -962,26 +962,26 @@ async def get_lobby_by_game_id(self, game_id: str) -> Lobby | None:
    - `GET /api/leaderboard/me`
 9. [x] Add user ratings to profile API response (via `UserRead` schema)
 
-### Phase 3: Frontend Integration
-10. [ ] Add `ratingChange` to game store
-11. [ ] Handle `rating_update` WebSocket message
-12. [ ] Add rating change display to game over overlay
-13. [ ] Update profile page with ratings display and belt icons
+### Phase 3: Frontend Integration (COMPLETE)
+10. [x] Add `ratingChange` to game store
+11. [x] Handle `rating_update` WebSocket message
+12. [x] Add rating change display to game over overlay
+13. [x] Update profile page with ratings display and belt icons
 14. [ ] Add belt display next to usernames in game UI
 
-### Phase 4: Watch Page & Leaderboard
-15. [ ] Create `/watch` route with tabbed layout
-16. [ ] Implement Live Games tab (refactor existing lobbies)
-17. [ ] Implement Replays tab (refactor from Replays.tsx)
-18. [ ] Implement Leaderboard component with mode selector
+### Phase 4: Watch Page & Leaderboard (COMPLETE)
+15. [x] Create `/watch` route with tabbed layout
+16. [x] Implement Live Games tab (refactor existing lobbies)
+17. [x] Implement Replays tab (refactor from Replays.tsx)
+18. [x] Implement Leaderboard component with mode selector
 
-### Phase 5: Testing
-19. [ ] Unit tests for ELO calculations (2p and 4p)
-20. [ ] Unit tests for belt thresholds
-21. [ ] Integration tests for rating updates with mocked DB
-22. [ ] Integration tests for race condition handling
-23. [ ] E2E tests for leaderboard API
-24. [ ] Frontend tests for rating display components
+### Phase 5: Testing (MOSTLY COMPLETE)
+19. [x] Unit tests for ELO calculations (2p and 4p) - `tests/unit/game/test_elo.py`
+20. [x] Unit tests for belt thresholds - `tests/unit/game/test_elo.py`
+21. [x] Integration tests for rating updates with mocked DB - `tests/integration/test_rating_service.py`
+22. [x] Integration tests for race condition handling - `tests/integration/test_rating_service.py`
+23. [x] E2E tests for leaderboard API - `tests/unit/api/test_leaderboard.py`
+24. [x] Frontend tests for rating display components - `tests/utils/ratings.test.ts`
 
 ---
 

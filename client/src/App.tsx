@@ -1,10 +1,10 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import AuthProvider from './components/AuthProvider';
 import Home from './pages/Home';
 import { Game } from './pages/Game';
 import { Replay } from './pages/Replay';
-import { Replays } from './pages/Replays';
+import { Watch } from './pages/Watch';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import GoogleCallback from './pages/GoogleCallback';
@@ -25,7 +25,8 @@ function App() {
           <Route index element={<Home />} />
           <Route path="game/:gameId" element={<Game />} />
           <Route path="replay/:replayId" element={<Replay />} />
-          <Route path="replays" element={<Replays />} />
+          <Route path="watch" element={<Watch />} />
+          <Route path="replays" element={<Navigate to="/watch?tab=replays" replace />} />
           <Route path="login" element={<Login />} />
           <Route path="register" element={<Register />} />
           <Route path="auth/google/callback" element={<GoogleCallback />} />
