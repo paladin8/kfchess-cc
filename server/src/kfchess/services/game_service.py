@@ -340,7 +340,8 @@ class GameService:
         """
         if bot_name in self._DIFFICULTY_MAP:
             level = self._DIFFICULTY_MAP[bot_name]
-            return KungFuAI(level=level, speed=speed)
+            noise = bot_name != "campaign"
+            return KungFuAI(level=level, speed=speed, noise=noise)
         if bot_name == "dummy":
             return DummyAI(speed=speed)
         # Default to novice

@@ -419,8 +419,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
-    // Can't select captured, moving, or on-cooldown pieces
-    if (piece.captured || piece.moving || piece.onCooldown) {
+    // Can't select captured or moving pieces
+    if (piece.captured || piece.moving) {
       return;
     }
 
@@ -595,7 +595,6 @@ export const selectCanSelectPiece = (pieceId: string) => (state: GameStore) => {
     piece.player === state.playerNumber &&
     !piece.captured &&
     !piece.moving &&
-    !piece.onCooldown &&
     state.status === 'playing'
   );
 };

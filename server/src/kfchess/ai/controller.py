@@ -29,13 +29,17 @@ THINK_DELAYS: dict[int, dict[Speed, tuple[float, float]]] = {
 MAX_PIECES: dict[int, int] = {1: 4, 2: 8, 3: 16}
 MAX_CANDIDATES_PER_PIECE: dict[int, int] = {1: 4, 2: 8, 3: 12}
 
+# Minimum delay after cooldown expires before AI can move the piece (100ms)
+COOLDOWN_BUFFER_TICKS = int(0.1 * TICK_RATE_HZ)
+
 
 class AIController:
     """Orchestrates AI decision-making pipeline."""
 
-    def __init__(self, level: int = 1, speed: Speed = Speed.STANDARD):
+    def __init__(self, level: int = 1, speed: Speed = Speed.STANDARD, noise: bool = True):
         self.level = min(max(level, 1), 3)
         self.speed = speed
+        self.noise = noise
         self.last_move_tick: int = -9999  # Tick of last move
         self.think_delay_ticks: int = 0  # Current think delay in ticks
         self._cached_ai_state: AIState | None = None
@@ -50,18 +54,24 @@ class AIController:
             return False
 
         # Quick check: any idle pieces? Avoids full state extraction.
+        moving_ids = {m.piece_id for m in state.active_moves}
+        cooldown_ids = {c.piece_id for c in state.cooldowns}
         has_idle = any(
             not p.captured
             and p.player == player
-            and p.id not in state.active_moves
-            and p.id not in state.cooldowns
+            and p.id not in moving_ids
+            and p.id not in cooldown_ids
+            and (p.cooldown_end_tick == 0
+                 or current_tick - p.cooldown_end_tick >= COOLDOWN_BUFFER_TICKS)
             for p in state.board.pieces
         )
         if not has_idle:
             return False
 
         # Extract state and cache it for get_move()
-        ai_state = StateExtractor.extract(state, player)
+        ai_state = StateExtractor.extract(
+            state, player, cooldown_buffer_ticks=COOLDOWN_BUFFER_TICKS,
+        )
         self._cached_ai_state = ai_state
         self._cached_tick = current_tick
         return len(ai_state.get_movable_pieces()) > 0
@@ -82,7 +92,9 @@ class AIController:
             ai_state = self._cached_ai_state
             self._cached_ai_state = None
         else:
-            ai_state = StateExtractor.extract(state, player)
+            ai_state = StateExtractor.extract(
+                state, player, cooldown_buffer_ticks=COOLDOWN_BUFFER_TICKS,
+            )
 
         # Compute enemy escape moves for L3 dodgeability
         if self.level >= 3:
@@ -117,14 +129,18 @@ class AIController:
 
         # Score and select
         scored = Eval.score_candidates(
-            candidates, ai_state, noise=True,
+            candidates, ai_state, noise=self.noise,
             level=self.level, arrival_data=arrival_data,
         )
 
         if not scored:
             return None
 
-        best_move, _score = scored[0]
+        best_move, best_score = scored[0]
+
+        # Skip if all options are net-negative (better to wait)
+        if best_score < 0:
+            return None
 
         # Record move timing
         self.last_move_tick = state.current_tick

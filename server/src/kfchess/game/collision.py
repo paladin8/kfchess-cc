@@ -111,9 +111,8 @@ def get_knight_position(
 ) -> tuple[float, float] | None:
     """Get knight's position for collision detection.
 
-    Knights are special: they "jump" and are invisible for the first 85% of
-    their move. During the jump, they return None to indicate they're airborne.
-    When they become visible at 85%, they can also capture (symmetric behavior).
+    Knights are capturable in the first 15% and last 15% of their move.
+    Between 15% and 85%, they are airborne (invisible/uncapturable).
 
     Knight move takes 2 * ticks_per_square (path has 3 points: start, mid, end).
 
@@ -145,17 +144,17 @@ def get_knight_position(
     # Knight move takes 2 segments * ticks_per_square
     total_ticks = 2 * ticks_per_square
 
-    # Knights are airborne (invisible) for first 85% of move
-    # This matches the capture threshold so visibility and capture ability are symmetric
-    if ticks_elapsed < total_ticks * 0.85:
-        return None
-
-    # Last 15%: visible, interpolating toward destination
     if ticks_elapsed >= total_ticks:
         return (float(active_move.path[-1][0]), float(active_move.path[-1][1]))
 
-    # Simple linear interpolation from start to end based on overall progress
     progress = ticks_elapsed / total_ticks
+
+    # Airborne (invisible) between 15% and 85% of move
+    if 0.15 < progress < 0.85:
+        return None
+
+    # First 15%: near origin, interpolate from start
+    # Last 15%: near destination, interpolate toward end
     start_row, start_col = active_move.path[0]
     end_row, end_col = active_move.path[-1]
 
@@ -172,12 +171,12 @@ def can_knight_capture(
 ) -> bool:
     """Check if a knight can capture at the current tick.
 
-    Knights can only capture when 85%+ through their move.
+    Knights can capture in the first 15% or last 15% of their move.
     """
     ticks_elapsed = current_tick - move.start_tick
     total_ticks = 2 * ticks_per_square
     progress = ticks_elapsed / total_ticks
-    return progress >= 0.85
+    return progress <= 0.15 or progress >= 0.85
 
 
 def detect_collisions(

@@ -14,10 +14,10 @@ class KungFuAI(AIPlayer):
     - Level 3 (Advanced): Dodgeability, recapture positioning
     """
 
-    def __init__(self, level: int = 1, speed: Speed = Speed.STANDARD):
+    def __init__(self, level: int = 1, speed: Speed = Speed.STANDARD, noise: bool = True):
         self.level = level
         self.speed = speed
-        self.controller = AIController(level=level, speed=speed)
+        self.controller = AIController(level=level, speed=speed, noise=noise)
 
     def should_move(self, state: GameState, player: int, current_tick: int) -> bool:
         """Check if AI should attempt a move this tick."""

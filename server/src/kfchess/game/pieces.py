@@ -39,6 +39,7 @@ class Piece:
     col: float
     captured: bool = False
     moved: bool = False
+    cooldown_end_tick: int = 0
 
     # Cache for grid_position to avoid repeated round() calls
     _grid_cache: tuple[int, int] | None = field(default=None, repr=False, compare=False)
@@ -67,6 +68,7 @@ class Piece:
             col=self.col,
             captured=self.captured,
             moved=self.moved,
+            cooldown_end_tick=self.cooldown_end_tick,
         )
 
     @property

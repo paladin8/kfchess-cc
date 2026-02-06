@@ -430,6 +430,27 @@ class TestTick:
         # Cooldown should be expired
         assert len(state.cooldowns) == 0
 
+    def test_tick_cooldown_records_end_tick_on_piece(self):
+        """When a cooldown expires, piece.cooldown_end_tick should be set."""
+        state = GameEngine.create_game(
+            speed=Speed.STANDARD,
+            players={1: "u:1", 2: "u:2"},
+        )
+        state, _ = GameEngine.set_player_ready(state, 1)
+        state, _ = GameEngine.set_player_ready(state, 2)
+
+        pawn = state.board.get_piece_at(6, 4)
+        assert pawn.cooldown_end_tick == 0  # Default
+
+        state.cooldowns.append(Cooldown(piece_id=pawn.id, start_tick=0, duration=5))
+
+        # Tick 5 times — cooldown expires on tick 5
+        for _ in range(5):
+            state, _ = GameEngine.tick(state)
+
+        assert len(state.cooldowns) == 0
+        assert pawn.cooldown_end_tick == state.current_tick
+
     def test_tick_not_playing(self):
         """Test tick does nothing when game not playing."""
         state = GameEngine.create_game(

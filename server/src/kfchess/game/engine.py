@@ -484,8 +484,16 @@ class GameEngine:
             # Remove completed move from active moves
             state.active_moves = [m for m in state.active_moves if m.piece_id != move.piece_id]
 
-        # 4. Remove expired cooldowns
-        state.cooldowns = [c for c in state.cooldowns if c.is_active(state.current_tick)]
+        # 4. Remove expired cooldowns (record end tick on piece for AI buffer)
+        active_cooldowns = []
+        for c in state.cooldowns:
+            if c.is_active(state.current_tick):
+                active_cooldowns.append(c)
+            else:
+                piece = state.board.get_piece_by_id(c.piece_id)
+                if piece is not None:
+                    piece.cooldown_end_tick = state.current_tick
+        state.cooldowns = active_cooldowns
 
         # 5. Check win/draw conditions
         winner, win_reason = GameEngine.check_winner(state)

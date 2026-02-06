@@ -137,13 +137,15 @@ class TestArrivalField:
         assert excl_time > 0
 
     def test_is_piece_at_risk_idle(self):
-        """Idle pieces are only at risk if enemy is within reaction time."""
+        """Idle pieces are at risk if enemy arrives before reaction + escape time."""
         state = _make_state()
         ai_state = StateExtractor.extract(state, 1)
         data = ArrivalField.compute(ai_state, state.config)
-        # Idle piece (cd=0): only at risk if enemy_t < reaction_ticks (3).
-        # Even near enemies, arrival >= 1 square = 30 ticks, so not at risk.
-        assert data.is_piece_at_risk(2, 4, cooldown_remaining=0) is False
+        # Threshold = reaction_ticks + tps = 30 + 30 = 60.
+        # (2, 4) is 1 square from enemy pawns (enemy_t=30): 30 < 60 → at risk
+        assert data.is_piece_at_risk(2, 4, cooldown_remaining=0) is True
+        # (3, 4) is 2 squares from nearest enemy (enemy_t=60): 60 < 60 → safe
+        assert data.is_piece_at_risk(3, 4, cooldown_remaining=0) is False
         # Enemy king sits at (0,4) with arrival time 0 — at risk
         assert data.is_piece_at_risk(0, 4, cooldown_remaining=0) is True
 
@@ -259,6 +261,133 @@ class TestArrivalField:
         # itself having low enemy arrival time means safety scoring will
         # penalize staying or moving along the same line.
         assert enemy_t <= 5 * tps, "Traveling rook should arrive at king in ~4*tps"
+
+
+class TestSliderCaptureArrival:
+    """Tests that sliders register arrival at opponent-occupied squares (captures)."""
+
+    def test_idle_queen_threatens_enemy_king_square(self):
+        """An idle queen pointing at the enemy king should register arrival
+        at the king's square — the slider ray should not stop before it."""
+        state = _make_state(Speed.LIGHTNING)
+        state.board.pieces = []
+
+        from kfchess.game.pieces import Piece
+
+        # Enemy queen at (4, 0) — diagonal ray toward (0, 4)
+        enemy_queen = Piece(
+            id="eq", type=PieceType.QUEEN, player=1,
+            row=4, col=0, captured=False, moved=True,
+        )
+        # AI king at (0, 4) — on the queen's diagonal
+        ai_king = Piece(
+            id="ak", type=PieceType.KING, player=2,
+            row=0, col=4, captured=False, moved=True,
+        )
+        # Other kings for game validity
+        human_king = Piece(
+            id="hk", type=PieceType.KING, player=1,
+            row=7, col=4, captured=False, moved=True,
+        )
+        state.board.pieces = [enemy_queen, ai_king, human_king]
+
+        ai_state = StateExtractor.extract(state, 2)
+        data = ArrivalField.compute(ai_state, state.config)
+        tps = state.config.ticks_per_square
+
+        # The queen at (4,0) should be able to reach (0,4) via diagonal
+        # in 4 squares = 4 * tps ticks
+        enemy_t = data.get_enemy_time(0, 4)
+        assert enemy_t == 4 * tps, (
+            f"Idle queen should reach enemy king square in 4*tps={4*tps}, "
+            f"got {enemy_t}"
+        )
+
+        # The king should be flagged as at risk
+        assert data.is_piece_at_risk(0, 4, cooldown_remaining=0, is_king=True), (
+            "King on queen's diagonal should be at risk"
+        )
+
+    def test_idle_rook_threatens_enemy_on_same_file(self):
+        """An idle rook should register arrival at an enemy piece's square
+        on the same file with no blockers in between."""
+        state = _make_state(Speed.STANDARD)
+        state.board.pieces = []
+
+        from kfchess.game.pieces import Piece
+
+        enemy_rook = Piece(
+            id="er", type=PieceType.ROOK, player=2,
+            row=0, col=3, captured=False, moved=False,
+        )
+        our_pawn = Piece(
+            id="op", type=PieceType.PAWN, player=1,
+            row=5, col=3, captured=False, moved=True,
+        )
+        our_king = Piece(
+            id="ok", type=PieceType.KING, player=1,
+            row=7, col=7, captured=False, moved=True,
+        )
+        enemy_king = Piece(
+            id="ek", type=PieceType.KING, player=2,
+            row=0, col=7, captured=False, moved=True,
+        )
+        state.board.pieces = [enemy_rook, our_pawn, our_king, enemy_king]
+
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+        tps = state.config.ticks_per_square
+
+        # Rook at (0,3) should reach our pawn at (5,3) in 5*tps
+        enemy_t = data.get_enemy_time(5, 3)
+        assert enemy_t == 5 * tps, (
+            f"Rook should reach enemy pawn in 5*tps={5*tps}, got {enemy_t}"
+        )
+
+        # But the rook should NOT reach past the pawn to (6,3)
+        enemy_t_past = data.get_enemy_time(6, 3)
+        assert enemy_t_past > 5 * tps, (
+            f"Rook should not reach past the enemy pawn, got {enemy_t_past}"
+        )
+
+    def test_slider_does_not_capture_own_piece(self):
+        """A slider should NOT register arrival at a friendly piece's square."""
+        state = _make_state(Speed.STANDARD)
+        state.board.pieces = []
+
+        from kfchess.game.pieces import Piece
+
+        our_rook = Piece(
+            id="or", type=PieceType.ROOK, player=1,
+            row=7, col=0, captured=False, moved=False,
+        )
+        our_pawn = Piece(
+            id="op", type=PieceType.PAWN, player=1,
+            row=5, col=0, captured=False, moved=True,
+        )
+        our_king = Piece(
+            id="ok", type=PieceType.KING, player=1,
+            row=7, col=4, captured=False, moved=True,
+        )
+        enemy_king = Piece(
+            id="ek", type=PieceType.KING, player=2,
+            row=0, col=4, captured=False, moved=True,
+        )
+        state.board.pieces = [our_rook, our_pawn, our_king, enemy_king]
+
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        # Rook at (7,0) should NOT reach its own pawn at (5,0) via the
+        # slider enumeration (can't capture own piece). Check the rook's
+        # per-piece arrival times — it should not register at or past (5,0).
+        rook_times = data.our_time_by_piece.get("or", {})
+        assert (5, 0) not in rook_times, (
+            "Rook should not register arrival at own pawn's square"
+        )
+        assert (4, 0) not in rook_times, (
+            "Rook should not reach past own pawn"
+        )
 
 
 class TestSelfBlockingFix:

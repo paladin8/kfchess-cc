@@ -112,7 +112,10 @@ class MoveGen:
             safe = []
             for p in shuffled:
                 pos = p.piece.grid_position
-                if arrival_data.is_piece_at_risk(pos[0], pos[1], p.cooldown_remaining):
+                if arrival_data.is_piece_at_risk(
+                    pos[0], pos[1], p.cooldown_remaining,
+                    is_king=p.piece.type == PieceType.KING,
+                ):
                     threatened.append(p)
                 else:
                     safe.append(p)
@@ -187,7 +190,10 @@ def _build_candidates(
     piece_threatened = False
     if arrival_data is not None:
         pos = ai_piece.piece.grid_position
-        piece_threatened = arrival_data.is_piece_at_risk(pos[0], pos[1], ai_piece.cooldown_remaining)
+        piece_threatened = arrival_data.is_piece_at_risk(
+            pos[0], pos[1], ai_piece.cooldown_remaining,
+            is_king=ai_piece.piece.type == PieceType.KING,
+        )
 
     for to_row, to_col in moves:
         dest = (to_row, to_col)
@@ -207,8 +213,13 @@ def _build_candidates(
             safety = arrival_data.post_arrival_safety(
                 to_row, to_col, travel, moving_from=from_pos,
             )
-            # Prune very unsafe non-capture moves
-            if dest not in enemy_positions and safety < -(arrival_data.cd_ticks // 2):
+            # Prune very unsafe non-capture moves (pawns exempt — eval
+            # handles their safety with a discount and support check)
+            if (
+                dest not in enemy_positions
+                and safety < -(arrival_data.cd_ticks // 2)
+                and ai_piece.piece.type != PieceType.PAWN
+            ):
                 continue
 
         is_capture = dest in enemy_positions

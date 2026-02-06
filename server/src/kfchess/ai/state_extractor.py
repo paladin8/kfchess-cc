@@ -23,12 +23,14 @@ class AIPiece:
     piece: Piece
     status: PieceStatus
     cooldown_remaining: int  # Ticks remaining on cooldown (0 if not on cooldown)
-    # For traveling pieces owned by AI: destination
+    # For traveling pieces: destination square
     destination: tuple[int, int] | None
     # For traveling enemy pieces: direction of travel (row_delta, col_delta)
     travel_direction: tuple[float, float] | None
     # Current position (interpolated for traveling pieces, grid_position otherwise)
     current_position: tuple[int, int] = (0, 0)
+    # For traveling pieces: ticks remaining until move completes
+    travel_remaining_ticks: int = 0
 
 
 @dataclass
@@ -76,12 +78,16 @@ class StateExtractor:
     """Converts GameState into AI-friendly structures."""
 
     @staticmethod
-    def extract(state: GameState, ai_player: int) -> AIState:
+    def extract(
+        state: GameState, ai_player: int, cooldown_buffer_ticks: int = 0,
+    ) -> AIState:
         """Extract AI state from game state.
 
         Args:
             state: Current game state
             ai_player: Player number the AI controls
+            cooldown_buffer_ticks: Extra ticks after cooldown expiry before
+                a piece is considered idle (simulates reaction time).
 
         Returns:
             AI-friendly state snapshot
@@ -112,9 +118,17 @@ class StateExtractor:
             move = move_by_piece.get(piece.id)
             cd = cooldown_by_piece.get(piece.id)
 
+            # Check if piece recently came off cooldown (within buffer window)
+            in_buffer = (
+                cooldown_buffer_ticks > 0
+                and piece.player == ai_player
+                and piece.cooldown_end_tick > 0
+                and state.current_tick - piece.cooldown_end_tick < cooldown_buffer_ticks
+            )
+
             if move is not None:
                 status = PieceStatus.TRAVELING
-            elif cd is not None:
+            elif cd is not None or in_buffer:
                 status = PieceStatus.COOLDOWN
             else:
                 status = PieceStatus.IDLE
@@ -128,12 +142,21 @@ class StateExtractor:
             # Travel info + interpolated position
             destination = None
             travel_direction = None
+            travel_remaining_ticks = 0
             current_position = piece.grid_position
             if move is not None:
                 end_row, end_col = move.end_position
+
                 if piece.player == ai_player:
                     destination = (int(end_row), int(end_col))
                 else:
+                    # Only expose destination for knights — their L-shaped
+                    # path can't be derived from the travel direction, so
+                    # the arrival field needs it explicitly.
+                    if piece.type == PieceType.KNIGHT:
+                        destination = (int(end_row), int(end_col))
+
+                if piece.player != ai_player:
                     start_row, start_col = move.start_position
                     dr = end_row - start_row
                     dc = end_col - start_col
@@ -146,7 +169,9 @@ class StateExtractor:
                 ticks_elapsed = state.current_tick - move.start_tick
                 path = move.path
                 total_squares = len(path) - 1
-                if total_squares > 0 and 0 <= ticks_elapsed < total_squares * tps:
+                total_travel_ticks = total_squares * tps
+                travel_remaining_ticks = max(0, total_travel_ticks - ticks_elapsed)
+                if total_squares > 0 and 0 <= ticks_elapsed < total_travel_ticks:
                     progress = ticks_elapsed / tps
                     seg = min(int(progress), total_squares - 1)
                     seg_frac = progress - seg
@@ -166,6 +191,7 @@ class StateExtractor:
                 destination=destination,
                 travel_direction=travel_direction,
                 current_position=current_position,
+                travel_remaining_ticks=travel_remaining_ticks,
             )
             pieces.append(ai_piece)
             pieces_by_id[piece.id] = ai_piece

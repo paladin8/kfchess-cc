@@ -121,7 +121,7 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
       }
 
       // If it's our piece and available, select it
-      if (piece.player === playerNumber && !piece.captured && !piece.moving && !piece.onCooldown) {
+      if (piece.player === playerNumber && !piece.captured && !piece.moving) {
         selectPiece(pieceId);
         return;
       }
