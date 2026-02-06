@@ -29,8 +29,8 @@ THINK_DELAYS: dict[int, dict[Speed, tuple[float, float]]] = {
 MAX_PIECES: dict[int, int] = {1: 4, 2: 8, 3: 16}
 MAX_CANDIDATES_PER_PIECE: dict[int, int] = {1: 4, 2: 8, 3: 12}
 
-# Minimum delay after cooldown expires before AI can move the piece (100ms)
-COOLDOWN_BUFFER_TICKS = int(0.1 * TICK_RATE_HZ)
+# Minimum delay after cooldown expires before AI can move the piece (~167ms)
+COOLDOWN_BUFFER_TICKS = 5
 
 
 class AIController:

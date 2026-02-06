@@ -240,6 +240,7 @@ class GameEngine:
             return None
 
         # Check for castling
+        config = state.config
         castling = check_castling(
             piece,
             state.board,
@@ -248,6 +249,7 @@ class GameEngine:
             state.active_moves,
             cooldowns=state.cooldowns,
             current_tick=state.current_tick,
+            ticks_per_square=config.ticks_per_square,
         )
         if castling is not None:
             king_move, rook_move = castling
@@ -258,7 +260,6 @@ class GameEngine:
             return king_move
 
         # Compute the move path
-        config = state.config
         path = compute_move_path(
             piece, state.board, to_row, to_col, state.active_moves,
             current_tick=state.current_tick,

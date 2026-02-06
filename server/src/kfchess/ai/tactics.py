@@ -57,6 +57,97 @@ def capture_value(
     return base_value
 
 
+def king_threat_capture_bonus(
+    candidate: CandidateMove,
+    ai_state: AIState,
+    arrival_data: ArrivalData,
+) -> float:
+    """Bonus for capturing an enemy piece that threatens our king.
+
+    If the captured piece can reach the king's square at all (finite
+    arrival time), returns the king's base value (10.0) as a flat bonus.
+
+    Returns 0.0 for non-captures or if the captured piece can't reach
+    the king.
+    """
+    if candidate.capture_type is None:
+        return 0.0
+
+    own_king = ai_state.get_own_king()
+    if own_king is None:
+        return 0.0
+
+    king_pos = own_king.piece.grid_position
+
+    # Find the captured piece's ID
+    dest = (candidate.to_row, candidate.to_col)
+    captured_id: str | None = None
+    for ep in ai_state.get_enemy_pieces():
+        if ep.piece.grid_position == dest:
+            captured_id = ep.piece.id
+            break
+    if captured_id is None:
+        return 0.0
+
+    # Check if this piece can reach our king at all
+    piece_times = arrival_data.enemy_time_by_piece.get(captured_id, {})
+    enemy_t = piece_times.get(king_pos, 999_999)
+
+    if enemy_t >= 999_999:
+        return 0.0  # Can't reach king — no threat
+
+    return PIECE_VALUES[PieceType.KING]
+
+
+def king_exposure_penalty(
+    candidate: CandidateMove,
+    ai_state: AIState,
+    arrival_data: ArrivalData,
+) -> float:
+    """Compute penalty for exposing the king by moving a defending piece.
+
+    Checks whether vacating this piece's square unblocks an enemy attack
+    line to our king. Returns a large negative value if the king becomes
+    threatened, scaled by how imminent the threat is.
+
+    Returns 0.0 if the king is not exposed, or if this IS the king moving.
+    """
+    if candidate.ai_piece is None:
+        return 0.0
+
+    piece = candidate.ai_piece.piece
+
+    # King moves are handled by their own safety evaluation
+    if piece.type == PieceType.KING:
+        return 0.0
+
+    own_king = ai_state.get_own_king()
+    if own_king is None:
+        return 0.0
+
+    king_pos = own_king.piece.grid_position
+    from_pos = piece.grid_position
+
+    # Check enemy arrival at king's position with our piece's square vacated
+    enemy_t_after = arrival_data._recompute_enemy_time(
+        king_pos[0], king_pos[1], from_pos,
+    )
+
+    # King can react: cooldown (if any) + reaction time + escape time
+    king_cd = own_king.cooldown_remaining
+    escape_time = king_cd + arrival_data.reaction_ticks + arrival_data.tps
+    margin = enemy_t_after - escape_time
+
+    if margin >= TICK_RATE_HZ:
+        return 0.0  # King has plenty of time — no exposure
+
+    # Scale penalty: immediate threat → full king value, marginal → reduced
+    # Use the game-ending king value since losing the king loses the game
+    threat_severity = max(0.0, min(1.0, 1.0 - margin / TICK_RATE_HZ))
+    king_value = PIECE_VALUES[PieceType.KING] + GAME_ENDING_KING_BONUS
+    return -threat_severity * king_value
+
+
 def dodge_probability(
     candidate: CandidateMove,
     ai_state: AIState,

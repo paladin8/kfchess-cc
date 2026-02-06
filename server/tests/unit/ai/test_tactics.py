@@ -8,11 +8,13 @@ from kfchess.ai.tactics import (
     PIECE_VALUES,
     capture_value,
     dodge_probability,
+    king_exposure_penalty,
+    king_threat_capture_bonus,
     move_safety,
     recapture_bonus,
     threaten_score,
 )
-from kfchess.game.board import BoardType
+from kfchess.game.board import Board, BoardType
 from kfchess.game.engine import GameEngine
 from kfchess.game.pieces import Piece, PieceType
 from kfchess.game.state import GameStatus, Speed
@@ -609,3 +611,152 @@ class TestThreatenScore:
 
         candidate = CandidateMove(piece_id="x", to_row=4, to_col=4)
         assert threaten_score(candidate, ai_state, data) == 0.0
+
+
+class TestKingExposurePenalty:
+    def _make_exposure_board(self):
+        """Create a board where a rook shields the king from an enemy queen.
+
+        Layout (row 7):
+          col 1: enemy queen
+          col 2: our rook (shielding king)
+          col 3: our king
+        Queen is only 2 squares from king — if rook moves off the rank,
+        the queen arrives in 60 ticks which matches the king's escape time,
+        triggering a penalty.
+        """
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 3))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        board.pieces.append(Piece.create(PieceType.ROOK, 1, 7, 2))  # shields king
+        board.pieces.append(Piece.create(PieceType.QUEEN, 2, 7, 1))  # threatens king
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        data = ArrivalField.compute(ai_state, state.config)
+        return ai_state, data
+
+    def test_moving_shielding_piece_penalized(self):
+        """Moving a piece that shields the king from attack yields a large penalty."""
+        ai_state, data = self._make_exposure_board()
+        rook = ai_state.pieces_by_id["R:1:7:2"]
+
+        # Move rook off the rank — exposes king to queen
+        candidate = CandidateMove(
+            piece_id=rook.piece.id, to_row=3, to_col=2, ai_piece=rook,
+        )
+        penalty = king_exposure_penalty(candidate, ai_state, data)
+        assert penalty < -50  # Should be a very large penalty
+
+    def test_moving_non_shielding_piece_no_penalty(self):
+        """Moving a piece that doesn't shield the king has no penalty."""
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        # Knight on a square that doesn't block any attack line to the king
+        board.pieces.append(Piece.create(PieceType.KNIGHT, 1, 7, 1))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        knight = ai_state.pieces_by_id["N:1:7:1"]
+        candidate = CandidateMove(
+            piece_id=knight.piece.id, to_row=5, to_col=2, ai_piece=knight,
+        )
+        penalty = king_exposure_penalty(candidate, ai_state, data)
+        assert penalty == 0.0
+
+    def test_king_move_no_penalty(self):
+        """Moving the king itself should not trigger exposure penalty."""
+        ai_state, data = self._make_exposure_board()
+        king = ai_state.pieces_by_id["K:1:7:3"]
+
+        candidate = CandidateMove(
+            piece_id=king.piece.id, to_row=6, to_col=3, ai_piece=king,
+        )
+        penalty = king_exposure_penalty(candidate, ai_state, data)
+        assert penalty == 0.0
+
+
+class TestKingThreatCaptureBonus:
+    def test_capturing_king_threatening_piece_gives_bonus(self):
+        """Capturing an enemy piece that threatens our king gives a large bonus."""
+        # Enemy rook at (7, 3) threatens king at (7, 4) — 1 square away
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        board.pieces.append(Piece.create(PieceType.ROOK, 2, 7, 3))  # threatens king
+        board.pieces.append(Piece.create(PieceType.KNIGHT, 1, 5, 2))  # can capture rook
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        knight = ai_state.pieces_by_id["N:1:5:2"]
+        candidate = CandidateMove(
+            piece_id=knight.piece.id, to_row=7, to_col=3,
+            capture_type=PieceType.ROOK, ai_piece=knight,
+        )
+        bonus = king_threat_capture_bonus(candidate, ai_state, data)
+        assert bonus == PIECE_VALUES[PieceType.KING]
+
+    def test_capturing_non_threatening_piece_no_bonus(self):
+        """Capturing an enemy piece far from our king gives no threat bonus."""
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        # Enemy pawn far from king, not threatening it
+        board.pieces.append(Piece.create(PieceType.PAWN, 2, 1, 0))
+        board.pieces.append(Piece.create(PieceType.ROOK, 1, 4, 0))  # can capture pawn
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        rook = ai_state.pieces_by_id["R:1:4:0"]
+        candidate = CandidateMove(
+            piece_id=rook.piece.id, to_row=1, to_col=0,
+            capture_type=PieceType.PAWN, ai_piece=rook,
+        )
+        bonus = king_threat_capture_bonus(candidate, ai_state, data)
+        assert bonus == 0.0
+
+    def test_non_capture_no_bonus(self):
+        """Non-capture moves get no king threat bonus."""
+        state = _make_state()
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        pawn = None
+        for ap in ai_state.get_own_pieces():
+            if ap.piece.type == PieceType.PAWN:
+                pawn = ap
+                break
+
+        candidate = CandidateMove(
+            piece_id=pawn.piece.id, to_row=5,
+            to_col=pawn.piece.grid_position[1], ai_piece=pawn,
+        )
+        bonus = king_threat_capture_bonus(candidate, ai_state, data)
+        assert bonus == 0.0

@@ -8,6 +8,9 @@ from kfchess.game.pieces import Piece, PieceType
 
 logger = logging.getLogger(__name__)
 
+# Slider piece types (move along lines/diagonals, can be blocked by same-line enemies)
+_SLIDER_TYPES = frozenset({PieceType.BISHOP, PieceType.ROOK, PieceType.QUEEN})
+
 # Path type: can be int or float (floats used for knight midpoint)
 PathPoint = tuple[float, float]
 
@@ -148,7 +151,7 @@ def compute_move_path(
 
     # Check for blocking pieces along the path (except knights which jump)
     if piece.type != PieceType.KNIGHT:
-        if not _is_path_clear(path, board, piece.player, active_moves, current_tick, ticks_per_square):
+        if not _is_path_clear(path, board, piece.player, active_moves, current_tick, ticks_per_square, piece.type):
             return None
     else:
         # Knights jump over pieces but still can't land on own pieces
@@ -235,18 +238,21 @@ def _compute_pawn_path_standard(
         # Single square forward
         if row_diff == direction:
             # Can't capture when moving straight - destination must be empty
+            # (moving pieces have vacated their origin square)
             target = board.get_piece_at(to_row, to_col)
-            if target is not None:
+            if target is not None and not _is_piece_moving(target.id, active_moves):
                 return None
             return [(float(from_row), float(from_col)), (float(to_row), float(to_col))]
 
         # Double square forward from starting position
         if row_diff == 2 * direction and from_row == start_row:
-            # Check both squares are empty
+            # Check both squares are empty (moving pieces count as vacated)
             mid_row = from_row + direction
-            if board.get_piece_at(mid_row, from_col) is not None:
+            mid_piece = board.get_piece_at(mid_row, from_col)
+            if mid_piece is not None and not _is_piece_moving(mid_piece.id, active_moves):
                 return None
-            if board.get_piece_at(to_row, to_col) is not None:
+            dest_piece = board.get_piece_at(to_row, to_col)
+            if dest_piece is not None and not _is_piece_moving(dest_piece.id, active_moves):
                 return None
             return [
                 (float(from_row), float(from_col)),
@@ -311,18 +317,22 @@ def _compute_pawn_path_4player(
     if lateral_diff == 0:
         # Single square forward
         if forward_diff == forward_dir:
+            # Destination must be empty (moving pieces count as vacated)
             target = board.get_piece_at(to_row, to_col)
-            if target is not None:
+            if target is not None and not _is_piece_moving(target.id, active_moves):
                 return None
             return [(float(from_row), float(from_col)), (float(to_row), float(to_col))]
 
         # Double square forward from starting position
         if forward_diff == 2 * forward_dir and is_at_start:
+            # Check both squares are empty (moving pieces count as vacated)
             mid_row = from_row + fwd_row
             mid_col = from_col + fwd_col
-            if board.get_piece_at(mid_row, mid_col) is not None:
+            mid_piece = board.get_piece_at(mid_row, mid_col)
+            if mid_piece is not None and not _is_piece_moving(mid_piece.id, active_moves):
                 return None
-            if board.get_piece_at(to_row, to_col) is not None:
+            dest_piece = board.get_piece_at(to_row, to_col)
+            if dest_piece is not None and not _is_piece_moving(dest_piece.id, active_moves):
                 return None
             return [
                 (float(from_row), float(from_col)),
@@ -514,6 +524,7 @@ def _is_path_clear(
     active_moves: list[Move],
     current_tick: int = 0,
     ticks_per_square: int = 30,
+    piece_type: PieceType | None = None,
 ) -> bool:
     """Check if a path is clear of blocking pieces.
 
@@ -522,6 +533,7 @@ def _is_path_clear(
     - Own moving pieces' forward path (not yet traversed) blocks own pieces
     - Own moving pieces' already-traversed path does NOT block
     - Enemy moving pieces do NOT block (neither their start nor path)
+    - Exception: enemy slider moving on the same line blocks slider pieces
     - Cannot capture moving enemies (destination with moving enemy = blocked)
     """
     # Build set of forward path squares for own moving pieces
@@ -532,6 +544,42 @@ def _is_path_clear(
             # Calculate which squares are in the forward path (not yet reached)
             forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
             own_forward_path.update(forward_squares)
+
+    # Build set of same-line blocking squares from enemy sliders
+    enemy_same_line_path: set[tuple[int, int]] = set()
+    if piece_type is not None and piece_type in _SLIDER_TYPES and len(path) >= 2:
+        # Compute direction of the proposed move
+        my_dr = int(path[1][0] - path[0][0])
+        my_dc = int(path[1][1] - path[0][1])
+        my_start_r, my_start_c = int(path[0][0]), int(path[0][1])
+
+        for move in active_moves:
+            moving_piece = board.get_piece_by_id(move.piece_id)
+            if moving_piece is None or moving_piece.player == player:
+                continue
+            if moving_piece.type not in _SLIDER_TYPES:
+                continue
+            if len(move.path) < 2:
+                continue
+
+            # Get enemy move direction
+            e_dr = int(move.path[1][0] - move.path[0][0])
+            e_dc = int(move.path[1][1] - move.path[0][1])
+
+            # Check if directions are parallel (cross product == 0)
+            if my_dr * e_dc != my_dc * e_dr:
+                continue
+
+            # Check if on the same geometric line
+            e_start_r, e_start_c = int(move.path[0][0]), int(move.path[0][1])
+            diff_r = e_start_r - my_start_r
+            diff_c = e_start_c - my_start_c
+            if diff_r * my_dc != diff_c * my_dr:
+                continue
+
+            # Enemy slider is on the same line - its forward path blocks us
+            forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
+            enemy_same_line_path.update(forward_squares)
 
     # Check intermediate squares (excluding start and destination)
     for row, col in path[1:-1]:
@@ -554,6 +602,10 @@ def _is_path_clear(
         if (int_row, int_col) in own_forward_path:
             return False  # Can't move through own piece's forward path
 
+        # Check for enemy same-line slider blocking
+        if (int_row, int_col) in enemy_same_line_path:
+            return False
+
     # Check destination square
     if len(path) >= 2:
         dest_row, dest_col = path[-1]
@@ -574,6 +626,10 @@ def _is_path_clear(
         # Check for own moving piece's forward path at destination
         if (int_row, int_col) in own_forward_path:
             return False  # Can't move to own piece's forward path
+
+        # Check for enemy same-line slider blocking at destination
+        if (int_row, int_col) in enemy_same_line_path:
+            return False
 
     return True
 
@@ -663,6 +719,59 @@ def _is_knight_destination_valid(
     return True
 
 
+def _enemy_slider_blocks_castling_path(
+    board: Board,
+    player: int,
+    active_moves: list[Move],
+    current_tick: int,
+    ticks_per_square: int,
+    fixed_row: int | None,
+    fixed_col: int | None,
+    range_min: int,
+    range_max: int,
+) -> bool:
+    """Check if an enemy slider moving along the same rank/file blocks the castling path.
+
+    For horizontal castling: fixed_row is set, fixed_col is None.
+    For vertical castling: fixed_col is set, fixed_row is None.
+    range_min..range_max (exclusive) defines the castling path range.
+    """
+    for move in active_moves:
+        moving_piece = board.get_piece_by_id(move.piece_id)
+        if moving_piece is None or moving_piece.player == player:
+            continue
+        if moving_piece.type not in _SLIDER_TYPES:
+            continue
+        if len(move.path) < 2:
+            continue
+
+        e_dr = int(move.path[1][0] - move.path[0][0])
+        e_dc = int(move.path[1][1] - move.path[0][1])
+
+        if fixed_row is not None:
+            # Horizontal castling path on this row
+            # Enemy must be moving horizontally (e_dr == 0) on the same row
+            if e_dr != 0:
+                continue
+            if int(move.path[0][0]) != fixed_row:
+                continue
+            for r, c in _get_forward_path(move, current_tick, ticks_per_square):
+                if r == fixed_row and range_min <= c < range_max:
+                    return True
+        else:
+            # Vertical castling path on this column
+            # Enemy must be moving vertically (e_dc == 0) on the same column
+            if e_dc != 0:
+                continue
+            if int(move.path[0][1]) != fixed_col:
+                continue
+            for r, c in _get_forward_path(move, current_tick, ticks_per_square):
+                if c == fixed_col and range_min <= r < range_max:
+                    return True
+
+    return False
+
+
 def check_castling(
     piece: Piece,
     board: Board,
@@ -671,6 +780,7 @@ def check_castling(
     active_moves: list[Move],
     cooldowns: list[Cooldown] | None = None,
     current_tick: int = 0,
+    ticks_per_square: int = 30,
 ) -> tuple[Move, Move] | None:
     """Check if this is a valid castling move.
 
@@ -688,16 +798,15 @@ def check_castling(
         return None
 
     if piece.moved:
-        logger.warning(f"Castling rejected: king {piece.id} has moved={piece.moved}")
         return None
 
     if board.board_type == BoardType.STANDARD:
         return _check_castling_standard(
-            piece, board, to_row, to_col, active_moves, cooldowns, current_tick
+            piece, board, to_row, to_col, active_moves, cooldowns, current_tick, ticks_per_square
         )
     else:
         return _check_castling_4player(
-            piece, board, to_row, to_col, active_moves, cooldowns, current_tick
+            piece, board, to_row, to_col, active_moves, cooldowns, current_tick, ticks_per_square
         )
 
 
@@ -709,6 +818,7 @@ def _check_castling_standard(
     active_moves: list[Move],
     cooldowns: list[Cooldown] | None,
     current_tick: int,
+    ticks_per_square: int = 30,
 ) -> tuple[Move, Move] | None:
     """Check castling for standard 2-player board (horizontal castling)."""
     from_row, from_col = piece.grid_position
@@ -771,6 +881,13 @@ def _check_castling_standard(
             logger.warning(f"Castling rejected: piece {move.piece_id} moving into castling path")
             return None
 
+    # Check for enemy sliders moving along the same rank (same-line blocking)
+    if _enemy_slider_blocks_castling_path(
+        board, piece.player, active_moves, current_tick, ticks_per_square,
+        fixed_row=from_row, fixed_col=None, range_min=start_col, range_max=end_col,
+    ):
+        return None
+
     # Create the moves
     king_path: list[PathPoint] = [(float(from_row), float(from_col))]
     king_step = 1 if col_diff > 0 else -1
@@ -800,6 +917,7 @@ def _check_castling_4player(
     active_moves: list[Move],
     cooldowns: list[Cooldown] | None,
     current_tick: int,
+    ticks_per_square: int = 30,
 ) -> tuple[Move, Move] | None:
     """Check castling for 4-player board.
 
@@ -814,12 +932,12 @@ def _check_castling_4player(
     if orient.axis == "row":
         # Horizontal players (2, 4) - castling is horizontal
         return _check_castling_horizontal(
-            piece, board, from_row, from_col, to_row, to_col, active_moves, cooldowns, current_tick
+            piece, board, from_row, from_col, to_row, to_col, active_moves, cooldowns, current_tick, ticks_per_square
         )
     else:
         # Vertical players (1, 3) - castling is vertical
         return _check_castling_vertical(
-            piece, board, from_row, from_col, to_row, to_col, active_moves, cooldowns, current_tick
+            piece, board, from_row, from_col, to_row, to_col, active_moves, cooldowns, current_tick, ticks_per_square
         )
 
 
@@ -833,6 +951,7 @@ def _check_castling_horizontal(
     active_moves: list[Move],
     cooldowns: list[Cooldown] | None,
     current_tick: int,
+    ticks_per_square: int = 30,
 ) -> tuple[Move, Move] | None:
     """Check horizontal castling (for players 2 and 4 in 4-player mode)."""
     # King must stay on same row
@@ -882,6 +1001,13 @@ def _check_castling_horizontal(
         if int(move_end_row) == from_row and start_col <= int(move_end_col) < end_col:
             return None
 
+    # Check for enemy sliders moving along the same rank (same-line blocking)
+    if _enemy_slider_blocks_castling_path(
+        board, piece.player, active_moves, current_tick, ticks_per_square,
+        fixed_row=from_row, fixed_col=None, range_min=start_col, range_max=end_col,
+    ):
+        return None
+
     # Create moves
     king_path: list[PathPoint] = [(float(from_row), float(from_col))]
     king_step = 1 if col_diff > 0 else -1
@@ -912,6 +1038,7 @@ def _check_castling_vertical(
     active_moves: list[Move],
     cooldowns: list[Cooldown] | None,
     current_tick: int,
+    ticks_per_square: int = 30,
 ) -> tuple[Move, Move] | None:
     """Check vertical castling (for players 1 and 3 in 4-player mode)."""
     # King must stay on same column
@@ -960,6 +1087,13 @@ def _check_castling_vertical(
         move_end_row, move_end_col = move.end_position
         if int(move_end_col) == from_col and start_row <= int(move_end_row) < end_row:
             return None
+
+    # Check for enemy sliders moving along the same file (same-line blocking)
+    if _enemy_slider_blocks_castling_path(
+        board, piece.player, active_moves, current_tick, ticks_per_square,
+        fixed_row=None, fixed_col=from_col, range_min=start_row, range_max=end_row,
+    ):
+        return None
 
     # Create moves
     king_path: list[PathPoint] = [(float(from_row), float(from_col))]

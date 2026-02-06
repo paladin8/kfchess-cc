@@ -382,14 +382,14 @@ describe('isLegalMove - moving piece interactions', () => {
     expect(isLegalMove([piece, movingPiece], activeMoves, CURRENT_TICK, TICKS_PER_SQUARE, piece, 4, 2)).toBe(false);
   });
 
-  it('allows capture of moving enemy pieces at destination', () => {
-    const piece = createPiece('p1', 'R', 1, 4, 4);
+  it('allows capture of moving enemy pieces at destination (perpendicular)', () => {
+    const piece = createPiece('p1', 'R', 1, 0, 2);
     const movingEnemy = createPiece('e1', 'R', 2, 4, 0, { moving: true });
     const activeMoves = [
       createActiveMove('e1', [[4, 0], [4, 1], [4, 2]], 0),
     ];
 
-    // Enemy is moving through our destination, should be able to move there
+    // Enemy is moving through our destination on a perpendicular line
     expect(isLegalMove([piece, movingEnemy], activeMoves, CURRENT_TICK, TICKS_PER_SQUARE, piece, 4, 2)).toBe(true);
   });
 
@@ -514,6 +514,109 @@ describe('isLegalMove - path blocking rules', () => {
     // Rook tries to move from (0,5) to (5,5) - knight's path should not block
     // because knight midpoints are not integer coordinates and don't block
     expect(isLegalMove([knight, rook], activeMoves, 0, TICKS_PER_SQUARE, rook, 5, 5)).toBe(true);
+  });
+});
+
+// ============================================
+// Same-Line Slider Blocking Tests
+// ============================================
+
+describe('isLegalMove - same-line slider blocking', () => {
+  it('rook blocked by enemy rook moving along same rank', () => {
+    const ownRook = createPiece('r1', 'R', 1, 4, 0);
+    const enemyRook = createPiece('e1', 'R', 2, 4, 7);
+    const activeMoves = [
+      // Enemy rook moving left along row 4
+      createActiveMove('e1', [[4, 7], [4, 6], [4, 5], [4, 4]], 0),
+    ];
+
+    // Own rook tries to move right - enemy forward path {(4,6),(4,5),(4,4)} blocks
+    expect(isLegalMove([ownRook, enemyRook], activeMoves, 0, TICKS_PER_SQUARE, ownRook, 4, 5)).toBe(false);
+  });
+
+  it('rook blocked by enemy rook moving along same file', () => {
+    const ownRook = createPiece('r1', 'R', 1, 7, 4);
+    const enemyRook = createPiece('e1', 'R', 2, 0, 4);
+    const activeMoves = [
+      // Enemy rook moving down along col 4
+      createActiveMove('e1', [[0, 4], [1, 4], [2, 4], [3, 4]], 0),
+    ];
+
+    // Own rook tries to move up along same file - blocked
+    expect(isLegalMove([ownRook, enemyRook], activeMoves, 0, TICKS_PER_SQUARE, ownRook, 3, 4)).toBe(false);
+  });
+
+  it('bishop blocked by enemy queen on same diagonal', () => {
+    const ownBishop = createPiece('b1', 'B', 1, 7, 0);
+    const enemyQueen = createPiece('e1', 'Q', 2, 3, 4);
+    const activeMoves = [
+      // Enemy queen moving down-left along same anti-diagonal (row+col=7)
+      createActiveMove('e1', [[3, 4], [4, 3], [5, 2], [6, 1]], 0),
+    ];
+
+    // Bishop tries to move up-right - enemy forward path blocks at (6,1) and (5,2)
+    expect(isLegalMove([ownBishop, enemyQueen], activeMoves, 0, TICKS_PER_SQUARE, ownBishop, 4, 3)).toBe(false);
+  });
+
+  it('rook NOT blocked by enemy rook on different rank', () => {
+    const ownRook = createPiece('r1', 'R', 1, 4, 0);
+    const enemyRook = createPiece('e1', 'R', 2, 3, 4);
+    const activeMoves = [
+      // Enemy rook moving along row 3 (different rank)
+      createActiveMove('e1', [[3, 4], [3, 3], [3, 2], [3, 1]], 0),
+    ];
+
+    // Own rook moves along row 4 - different rank, not blocked
+    expect(isLegalMove([ownRook, enemyRook], activeMoves, 0, TICKS_PER_SQUARE, ownRook, 4, 7)).toBe(true);
+  });
+
+  it('rook NOT blocked by enemy knight on same rank', () => {
+    const ownRook = createPiece('r1', 'R', 1, 4, 0);
+    const enemyKnight = createPiece('e1', 'N', 2, 4, 6);
+    const activeMoves = [
+      // Knight moving away
+      createActiveMove('e1', [[4, 6], [3, 6.5], [2, 7]], 0),
+    ];
+
+    // Rook can move through - knight is not a slider
+    expect(isLegalMove([ownRook, enemyKnight], activeMoves, 0, TICKS_PER_SQUARE, ownRook, 4, 7)).toBe(true);
+  });
+
+  it('perpendicular enemy rook does not trigger same-line blocking', () => {
+    const ownRook = createPiece('r1', 'R', 1, 4, 0);
+    const enemyRook = createPiece('e1', 'R', 2, 0, 4);
+    const activeMoves = [
+      // Enemy rook moving vertically on col 4
+      createActiveMove('e1', [[0, 4], [1, 4], [2, 4], [3, 4], [4, 4]], 0),
+    ];
+
+    // Own rook moves horizontally on row 4 - perpendicular, not same-line
+    expect(isLegalMove([ownRook, enemyRook], activeMoves, 0, TICKS_PER_SQUARE, ownRook, 4, 7)).toBe(true);
+  });
+
+  it('enemy slider completed move does not block', () => {
+    const ownRook = createPiece('r1', 'R', 1, 4, 0);
+    const enemyRook = createPiece('e1', 'R', 2, 4, 7);
+    const activeMoves = [
+      // Enemy rook was moving left along row 4 (3 segments)
+      createActiveMove('e1', [[4, 7], [4, 6], [4, 5], [4, 4]], 0),
+    ];
+
+    // At tick 30 (3 segments * TICKS_PER_SQUARE=10), enemy has completed the move
+    expect(isLegalMove([ownRook, enemyRook], activeMoves, 30, TICKS_PER_SQUARE, ownRook, 4, 5)).toBe(true);
+  });
+
+  it('rook can move short behind enemy moving away on same line', () => {
+    const ownRook = createPiece('r1', 'R', 1, 4, 0);
+    const enemyRook = createPiece('e1', 'R', 2, 4, 3);
+    const activeMoves = [
+      // Enemy rook moving right (away from us) along row 4
+      createActiveMove('e1', [[4, 3], [4, 4], [4, 5], [4, 6], [4, 7]], 0),
+    ];
+
+    // At tick 20 (2 segments), enemy forward path is {(4,5),(4,6),(4,7)}
+    // Own rook moves to (4,2) - behind enemy, no overlap with forward path
+    expect(isLegalMove([ownRook, enemyRook], activeMoves, 20, TICKS_PER_SQUARE, ownRook, 4, 2)).toBe(true);
   });
 });
 

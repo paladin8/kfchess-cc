@@ -12,6 +12,8 @@ from kfchess.ai.tactics import (
     PIECE_VALUES,
     capture_value,
     dodge_probability,
+    king_exposure_penalty,
+    king_threat_capture_bonus,
     move_safety,
     recapture_bonus,
     threaten_score,
@@ -25,7 +27,7 @@ if TYPE_CHECKING:
 MATERIAL_WEIGHT = 10.0
 CENTER_CONTROL_WEIGHT = 1.0
 DEVELOPMENT_WEIGHT = 0.8
-PAWN_ADVANCE_WEIGHT = 1.5
+PAWN_ADVANCE_WEIGHT = 1.0
 
 # Level 2 weights
 SAFETY_WEIGHT = MATERIAL_WEIGHT
@@ -36,6 +38,15 @@ THREATEN_WEIGHT = 0.1 * MATERIAL_WEIGHT
 # Level 3 weights
 DODGE_FAILURE_COST = 0.9  # Fraction of our piece value lost if target dodges
 RECAPTURE_WEIGHT = 0.4 * MATERIAL_WEIGHT
+
+# Development urgency (opening phase)
+DEVELOPMENT_URGENCY_SCALE = 3.0  # At full urgency, dev weight: 0.8 * (1+3) = 3.2
+PAWN_ADVANCE_URGENCY_DAMPEN = 0.5  # At full urgency, pawn advance weight: 1.5 * 0.5
+FIRST_MOVE_BONUS = 1.0  # Bonus for moving an undeveloped minor piece for the first time
+
+# Pawn structure
+PAWN_CHAIN_BONUS = 0.8  # Per supporting pawn diagonal adjacency
+ISOLATED_PAWN_PENALTY = 0.5  # Penalty for pawn with no friendly pawns on adjacent files
 
 # Selection weights by rank position per level.
 # The AI picks a move from the sorted list using these as relative weights.
@@ -82,12 +93,19 @@ class Eval:
         max_dist = _euclidean_distance((0, 0), (center_r, center_c))
         tps = ai_state.speed_config.ticks_per_square if ai_state.speed_config else 30
 
+        # Pre-compute development urgency and pawn structure data
+        dev_urgency = _compute_development_urgency(ai_state)
+        pawn_positions, pawn_files = _compute_pawn_data(ai_state)
+
         scored: list[tuple[CandidateMove, float]] = []
         for candidate in candidates:
             score = _score_move(
                 candidate, ai_state,
                 center_r, center_c, max_dist,
                 level=level, arrival_data=arrival_data, tps=tps,
+                development_urgency=dev_urgency,
+                friendly_pawn_positions=pawn_positions,
+                friendly_pawn_files=pawn_files,
             )
             scored.append((candidate, score))
 
@@ -135,6 +153,9 @@ def _score_move(
     level: int = 1,
     arrival_data: ArrivalData | None = None,
     tps: int = 30,
+    development_urgency: float = 0.0,
+    friendly_pawn_positions: set[tuple[int, int]] | None = None,
+    friendly_pawn_files: set[int] | None = None,
 ) -> float:
     """Compute deterministic score for a move."""
     score = 0.0
@@ -167,16 +188,33 @@ def _score_move(
         piece = ai_piece.piece
 
         # Development: bonus for moving minor pieces off back rank
+        # Scaled by urgency — much stronger when pieces are undeveloped
         if piece.type in (PieceType.KNIGHT, PieceType.BISHOP):
             if _is_on_back_rank(piece.grid_position, ai_state):
-                score += DEVELOPMENT_WEIGHT
+                urgency_multiplier = 1.0 + DEVELOPMENT_URGENCY_SCALE * development_urgency
+                score += DEVELOPMENT_WEIGHT * urgency_multiplier
+            # First-move bonus: prefer developing a new piece over shuffling
+            if not piece.moved:
+                score += FIRST_MOVE_BONUS
 
         # Pawn advancement: reward pawns moving toward promotion
+        # Dampened during opening to prioritize piece development
         if piece.type == PieceType.PAWN:
             advancement = _pawn_advancement(
                 candidate.to_row, candidate.to_col, ai_state,
             )
-            score += advancement * PAWN_ADVANCE_WEIGHT
+            dampen = 1.0 - PAWN_ADVANCE_URGENCY_DAMPEN * development_urgency
+            score += advancement * PAWN_ADVANCE_WEIGHT * dampen
+
+            # Pawn structure: chain bonus and isolated penalty
+            if friendly_pawn_positions is not None and friendly_pawn_files is not None:
+                support = _count_pawn_support(
+                    candidate.to_row, candidate.to_col, ai_state, friendly_pawn_positions,
+                )
+                score += support * PAWN_CHAIN_BONUS
+                pawn_file = _get_pawn_file(candidate.to_row, candidate.to_col, ai_state)
+                if _is_isolated_pawn(pawn_file, friendly_pawn_files):
+                    score -= ISOLATED_PAWN_PENALTY
 
         # Safety: expected material loss from recapture (L2+)
         if arrival_data is not None and level >= 2:
@@ -193,6 +231,13 @@ def _score_move(
                     safety_cost *= 0.25
 
             score += safety_cost * SAFETY_WEIGHT
+
+            # King exposure: penalize moving pieces that shield the king
+            score += king_exposure_penalty(candidate, ai_state, arrival_data)
+
+            # King threat capture: bonus for capturing pieces threatening our king
+            if candidate.capture_type is not None:
+                score += king_threat_capture_bonus(candidate, ai_state, arrival_data)
 
             # Commitment penalty: penalize long-distance moves (non-captures)
             if candidate.capture_type is None:
@@ -282,3 +327,89 @@ def _pawn_advancement(
         elif player == 2:
             return to_row        # Top→down
     return 0.0
+
+
+def _compute_development_urgency(ai_state: AIState) -> float:
+    """Compute how urgently minor pieces need development (0.0-1.0).
+
+    Returns ratio of undeveloped (on back rank) minor pieces to total minor pieces.
+    """
+    total_minor = 0
+    undeveloped = 0
+    for ap in ai_state.get_own_pieces():
+        if ap.piece.type in (PieceType.KNIGHT, PieceType.BISHOP):
+            total_minor += 1
+            if _is_on_back_rank(ap.piece.grid_position, ai_state):
+                undeveloped += 1
+    if total_minor == 0:
+        return 0.0
+    return undeveloped / total_minor
+
+
+def _compute_pawn_data(
+    ai_state: AIState,
+) -> tuple[set[tuple[int, int]], set[int]]:
+    """Compute friendly pawn positions and file set.
+
+    Returns:
+        (pawn_positions, pawn_files) where pawn_files uses the axis
+        perpendicular to the pawn's advance direction.
+    """
+    positions: set[tuple[int, int]] = set()
+    files: set[int] = set()
+    for ap in ai_state.get_own_pieces():
+        if ap.piece.type == PieceType.PAWN:
+            pos = ap.piece.grid_position
+            positions.add(pos)
+            files.add(_get_pawn_file(pos[0], pos[1], ai_state))
+    return positions, files
+
+
+def _get_pawn_file(row: int, col: int, ai_state: AIState) -> int:
+    """Get the 'file' for a pawn — the axis perpendicular to advance direction."""
+    player = ai_state.ai_player
+    is_4p = ai_state.board_width > 8
+    if is_4p:
+        if player in (1, 3):
+            return row  # E/W advance along columns, file = row
+        return col  # N/S advance along rows, file = col
+    return col  # 2P: file = column
+
+
+def _count_pawn_support(
+    to_row: int, to_col: int, ai_state: AIState,
+    friendly_pawn_positions: set[tuple[int, int]],
+) -> int:
+    """Count friendly pawns diagonally supporting a destination square.
+
+    Checks the two diagonal-backward squares (where supporting pawns sit
+    in a pawn chain).
+    """
+    player = ai_state.ai_player
+    is_4p = ai_state.board_width > 8
+    # Determine backward direction (opposite of advance)
+    if is_4p:
+        if player == 1:
+            deltas = [(1, 1), (-1, 1)]   # East advances left (col-), backward = col+
+        elif player == 2:
+            deltas = [(1, 1), (1, -1)]   # South advances up (row-), backward = row+
+        elif player == 3:
+            deltas = [(1, -1), (-1, -1)]  # West advances right (col+), backward = col-
+        else:
+            deltas = [(-1, 1), (-1, -1)]  # North advances down (row+), backward = row-
+    else:
+        if player == 1:
+            deltas = [(1, -1), (1, 1)]  # Bottom→up, backward = row+1
+        else:
+            deltas = [(-1, -1), (-1, 1)]  # Top→down, backward = row-1
+
+    count = 0
+    for dr, dc in deltas:
+        if (to_row + dr, to_col + dc) in friendly_pawn_positions:
+            count += 1
+    return count
+
+
+def _is_isolated_pawn(pawn_file: int, friendly_pawn_files: set[int]) -> bool:
+    """Check if a pawn is isolated (no friendly pawns on adjacent files)."""
+    return (pawn_file - 1) not in friendly_pawn_files and (pawn_file + 1) not in friendly_pawn_files

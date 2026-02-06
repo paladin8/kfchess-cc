@@ -8,6 +8,9 @@
 import type { Piece, ActiveMove, BoardType } from '../stores/game';
 import { isValidSquare } from './constants';
 
+// Slider piece types (move along lines/diagonals, can be blocked by same-line enemies)
+const SLIDER_TYPES = new Set(['B', 'R', 'Q']);
+
 // Board dimensions by type
 const BOARD_SIZES: Record<BoardType, number> = {
   standard: 8,
@@ -114,6 +117,7 @@ function getForwardPath(
  * - Own moving pieces' forward path (not yet traversed) blocks own pieces
  * - Own moving pieces' already-traversed path does NOT block
  * - Enemy moving pieces do NOT block (neither their start nor path)
+ * - Exception: enemy slider moving on the same line blocks slider pieces
  * - Moving pieces have "vacated" their start position (treated as empty)
  */
 function isLegalMoveNoCross(
@@ -135,6 +139,35 @@ function isLegalMoveNoCross(
       const forwardSquares = getForwardPath(move, currentTick, ticksPerSquare);
       for (const [r, c] of forwardSquares) {
         ownForwardPath.add(`${r},${c}`);
+      }
+    }
+  }
+
+  // Build set of same-line blocking squares from enemy sliders
+  const enemySameLinePath = new Set<string>();
+  if (SLIDER_TYPES.has(piece.type)) {
+    for (const move of activeMoves) {
+      const movingPiece = pieces.find((p) => p.id === move.pieceId);
+      if (!movingPiece || movingPiece.player === piece.player) continue;
+      if (!SLIDER_TYPES.has(movingPiece.type)) continue;
+      if (move.path.length < 2) continue;
+
+      // Get enemy move direction
+      const eDr = move.path[1][0] - move.path[0][0];
+      const eDc = move.path[1][1] - move.path[0][1];
+
+      // Check if directions are parallel (cross product == 0)
+      if (rowDir * eDc !== colDir * eDr) continue;
+
+      // Check if on the same geometric line
+      const diffR = move.path[0][0] - piece.row;
+      const diffC = move.path[0][1] - piece.col;
+      if (diffR * colDir !== diffC * rowDir) continue;
+
+      // Enemy slider is on the same line - its forward path blocks us
+      const forwardSquares = getForwardPath(move, currentTick, ticksPerSquare);
+      for (const [r, c] of forwardSquares) {
+        enemySameLinePath.add(`${r},${c}`);
       }
     }
   }
@@ -169,6 +202,11 @@ function isLegalMoveNoCross(
     // Check for own moving piece's forward path
     if (ownForwardPath.has(`${iRow},${iCol}`)) {
       return false; // Can't move through/to own piece's forward path
+    }
+
+    // Check for enemy same-line slider blocking
+    if (enemySameLinePath.has(`${iRow},${iCol}`)) {
+      return false;
     }
   }
 

@@ -247,6 +247,7 @@ export function Lobby() {
 
   // Derived state
   const isHost = useLobbyStore(selectIsHost);
+  const isConnected = connectionState === 'connected';
   const myPlayer = useLobbyStore(selectMyPlayer);
   const canStart = useLobbyStore(selectCanStart);
   const isFull = useLobbyStore(selectIsFull);
@@ -484,7 +485,7 @@ export function Lobby() {
         <LobbySettings
           settings={lobby.settings}
           isHost={isHost}
-          disabled={lobby.status !== 'waiting'}
+          disabled={lobby.status !== 'waiting' || !isConnected}
           canEnableRated={canEnableRated}
           onUpdate={updateSettings}
         />
@@ -496,7 +497,7 @@ export function Lobby() {
               <button
                 className="btn btn-sm btn-secondary"
                 onClick={() => addAi('bot:novice')}
-                disabled={isFull}
+                disabled={isFull || !isConnected}
               >
                 Add AI
               </button>
@@ -510,9 +511,9 @@ export function Lobby() {
                 player={lobby.players[slot]}
                 isHost={slot === lobby.hostSlot}
                 isMe={slot === mySlot}
-                canKick={isHost && slot !== mySlot && !!lobby.players[slot]}
+                canKick={isHost && isConnected && slot !== mySlot && !!lobby.players[slot]}
                 onKick={handleKick}
-                onChangeAiDifficulty={isHost ? changeAiDifficulty : undefined}
+                onChangeAiDifficulty={isHost && isConnected ? changeAiDifficulty : undefined}
               />
             ))}
           </div>
@@ -521,20 +522,20 @@ export function Lobby() {
         <div className="lobby-actions">
           {/* Non-host players can toggle their ready status */}
           {myPlayer && !isHost && !myPlayer.isReady && (
-            <button className="btn btn-primary" onClick={() => setReady(true)}>
+            <button className="btn btn-primary" onClick={() => setReady(true)} disabled={!isConnected}>
               Ready
             </button>
           )}
 
           {myPlayer?.isReady && !isHost && (
-            <button className="btn btn-secondary" onClick={() => setReady(false)}>
+            <button className="btn btn-secondary" onClick={() => setReady(false)} disabled={!isConnected}>
               Cancel Ready
             </button>
           )}
 
           {/* Host is always ready and just clicks Start Game */}
           {isHost && (
-            <button className="btn btn-primary" onClick={startGame} disabled={!canStart}>
+            <button className="btn btn-primary" onClick={startGame} disabled={!canStart || !isConnected}>
               Start Game
             </button>
           )}

@@ -806,10 +806,11 @@ class TestCastlingCapture:
         board = Board.create_empty()
         king = Piece.create(PieceType.KING, player=1, row=7, col=4)
         rook = Piece.create(PieceType.ROOK, player=1, row=7, col=7)
-        # Enemy rook on row 7, will collide with king during castling
-        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=7, col=0)
+        # Enemy rook approaches from perpendicular direction (file, not rank)
+        # to avoid same-line slider blocking with the castling rook on rank 7
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=0, col=5)
         # Enemy king required for move validation (far from action)
-        enemy_king = Piece.create(PieceType.KING, player=2, row=0, col=4)
+        enemy_king = Piece.create(PieceType.KING, player=2, row=0, col=0)
         board.add_piece(king)
         board.add_piece(rook)
         board.add_piece(enemy_rook)
@@ -837,19 +838,17 @@ class TestCastlingCapture:
         assert any(m.piece_id == king.id for m in state.active_moves)
         assert any(m.piece_id == rook.id for m in state.active_moves)
 
-        # Enemy rook moves toward king's path
+        # Enemy rook moves down file 5 toward king's path on rank 7
         enemy_move = GameEngine.validate_move(state, 2, enemy_rook.id, 7, 5)
         assert enemy_move is not None
         state, _ = GameEngine.apply_move(state, enemy_move)
 
         # Advance ticks until collision occurs
-        # The enemy rook starts at col 0 and needs to reach col 5 (5 squares)
-        # King starts at col 4 and moves to col 6 (2 squares)
-        # With ticks_per_square = 4 (standard), king takes 8 ticks
-        # Enemy rook takes 20 ticks to reach col 5
+        # The enemy rook starts at row 0 and needs to reach row 7, col 5 (7 squares)
+        # King starts at col 4 and moves to col 6, passing through col 5
 
         # Fast forward to when collision might occur
-        for _ in range(config.ticks_per_square * 6):
+        for _ in range(config.ticks_per_square * 8):
             state, events = GameEngine.tick(state)
             # Check if king was captured
             if state.board.get_piece_by_id(king.id).captured:

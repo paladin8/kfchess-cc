@@ -732,3 +732,227 @@ class TestPathBlocking:
         # Moving to (6,5) would be blocked by knight's destination, but (5,5) should be allowed
         path = compute_move_path(rook, board, 5, 5, [knight_move], current_tick=0, ticks_per_square=30)
         assert path is not None  # Knight's midpoint doesn't block
+
+    def test_pawn_can_advance_to_vacating_own_square(self):
+        """Pawn can move forward to a square being vacated by a friendly piece."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=3)
+        knight = Piece.create(PieceType.KNIGHT, player=1, row=5, col=3)
+        board.add_piece(pawn)
+        board.add_piece(knight)
+
+        # Knight is moving away from (5,3)
+        knight_move = Move(
+            piece_id=knight.id,
+            path=[(5.0, 3.0), (4.0, 3.5), (3.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Pawn should be able to advance to (5,3) — knight has vacated
+        path = compute_move_path(pawn, board, 5, 3, [knight_move])
+        assert path is not None
+
+    def test_pawn_cannot_advance_to_own_stationary_piece(self):
+        """Pawn cannot move forward to a square occupied by a stationary friendly piece."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=3)
+        knight = Piece.create(PieceType.KNIGHT, player=1, row=5, col=3)
+        board.add_piece(pawn)
+        board.add_piece(knight)
+
+        # Knight is stationary — no active moves
+        path = compute_move_path(pawn, board, 5, 3, [])
+        assert path is None
+
+    def test_pawn_double_advance_through_vacating_square(self):
+        """Pawn can double-advance when the intermediate square is vacated."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=3)
+        # Knight on the intermediate square (5,3)
+        knight = Piece.create(PieceType.KNIGHT, player=1, row=5, col=3)
+        board.add_piece(pawn)
+        board.add_piece(knight)
+
+        # Knight is moving away from (5,3) to (3,4)
+        knight_move = Move(
+            piece_id=knight.id,
+            path=[(5.0, 3.0), (4.0, 3.5), (3.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Pawn should be able to double-advance through the vacated square
+        path = compute_move_path(pawn, board, 4, 3, [knight_move])
+        assert path is not None
+
+
+class TestSameLineSliderBlocking:
+    """Tests for same-line slider blocking of moving enemy pieces."""
+
+    def test_rook_blocked_by_enemy_rook_same_rank(self):
+        """Rook cannot move through enemy rook moving along same rank."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=4, col=7)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving left along row 4
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(4.0, 7.0), (4.0, 6.0), (4.0, 5.0), (4.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Own rook tries to move right along same row - blocked by enemy's forward path
+        path = compute_move_path(
+            own_rook, board, 4, 5, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None
+
+    def test_rook_blocked_by_enemy_rook_same_file(self):
+        """Rook cannot move through enemy rook moving along same file."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=7, col=4)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=0, col=4)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving down along col 4
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(0.0, 4.0), (1.0, 4.0), (2.0, 4.0), (3.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Own rook tries to move up along same file - blocked
+        path = compute_move_path(
+            own_rook, board, 3, 4, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None
+
+    def test_bishop_blocked_by_enemy_queen_same_diagonal(self):
+        """Bishop cannot move through enemy queen on same diagonal (opposite direction)."""
+        board = Board.create_empty()
+        own_bishop = Piece.create(PieceType.BISHOP, player=1, row=7, col=0)
+        enemy_queen = Piece.create(PieceType.QUEEN, player=2, row=3, col=4)
+        board.add_piece(own_bishop)
+        board.add_piece(enemy_queen)
+
+        # Enemy queen moving down-left along same anti-diagonal (row+col=7)
+        enemy_move = Move(
+            piece_id=enemy_queen.id,
+            path=[(3.0, 4.0), (4.0, 3.0), (5.0, 2.0), (6.0, 1.0)],
+            start_tick=0,
+        )
+
+        # Bishop tries to move up-right along same diagonal - blocked
+        path = compute_move_path(
+            own_bishop, board, 4, 3, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None
+
+    def test_rook_not_blocked_by_enemy_rook_different_rank(self):
+        """Rook CAN move when enemy rook is on a different rank (parallel but not same line)."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=3, col=4)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving along row 3 (different rank)
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(3.0, 4.0), (3.0, 3.0), (3.0, 2.0), (3.0, 1.0)],
+            start_tick=0,
+        )
+
+        # Own rook moves along row 4 - not blocked
+        path = compute_move_path(
+            own_rook, board, 4, 7, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is not None
+
+    def test_rook_not_blocked_by_enemy_knight(self):
+        """Rook NOT blocked by enemy knight (knight is not a slider)."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_knight = Piece.create(PieceType.KNIGHT, player=2, row=4, col=6)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_knight)
+
+        # Knight moving away
+        enemy_move = Move(
+            piece_id=enemy_knight.id,
+            path=[(4.0, 6.0), (3.0, 6.5), (2.0, 7.0)],
+            start_tick=0,
+        )
+
+        # Rook can move through - knight is not a slider
+        path = compute_move_path(
+            own_rook, board, 4, 7, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is not None
+
+    def test_perpendicular_enemy_rook_does_not_block(self):
+        """Enemy rook moving perpendicularly does not trigger same-line blocking."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=0, col=4)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving vertically on col 4
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(0.0, 4.0), (1.0, 4.0), (2.0, 4.0), (3.0, 4.0), (4.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Own rook moves horizontally on row 4 - perpendicular, not same-line
+        path = compute_move_path(
+            own_rook, board, 4, 7, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is not None
+
+    def test_enemy_slider_completed_move_does_not_block(self):
+        """Enemy slider whose move is complete (forward path empty) does not block."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=4, col=7)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook was moving left along row 4
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(4.0, 7.0), (4.0, 6.0), (4.0, 5.0), (4.0, 4.0)],
+            start_tick=0,
+        )
+
+        # At tick 90 (3 segments * 30 ticks), enemy has completed the move
+        path = compute_move_path(
+            own_rook, board, 4, 5, [enemy_move], current_tick=90, ticks_per_square=30
+        )
+        assert path is not None
+
+    def test_rook_can_move_short_behind_enemy_moving_away(self):
+        """Rook can move to a short destination behind enemy moving away on same line."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=4, col=3)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving right (away from us) along row 4
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(4.0, 3.0), (4.0, 4.0), (4.0, 5.0), (4.0, 6.0), (4.0, 7.0)],
+            start_tick=0,
+        )
+
+        # At tick 60 (2 segments), enemy has passed (4,5) and forward path is {(4,5),(4,6),(4,7)}
+        # Own rook moves to (4,2) - behind enemy, no overlap with forward path
+        path = compute_move_path(
+            own_rook, board, 4, 2, [enemy_move], current_tick=60, ticks_per_square=30
+        )
+        assert path is not None
