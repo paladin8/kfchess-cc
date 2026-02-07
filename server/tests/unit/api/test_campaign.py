@@ -162,9 +162,9 @@ class TestStartGameResponse:
 class TestLevelDefinitions:
     """Tests for level definitions used by API."""
 
-    def test_all_32_levels_defined(self) -> None:
-        """Test that all 32 levels are defined."""
-        assert len(LEVELS) == 32
+    def test_all_40_levels_defined(self) -> None:
+        """Test that all 40 levels are defined."""
+        assert len(LEVELS) == 40
 
     def test_get_level_returns_correct_level(self) -> None:
         """Test get_level returns the correct level."""
@@ -176,12 +176,12 @@ class TestLevelDefinitions:
     def test_get_level_returns_none_for_invalid(self) -> None:
         """Test get_level returns None for invalid level IDs."""
         assert get_level(-1) is None
-        assert get_level(32) is None
+        assert get_level(40) is None
         assert get_level(100) is None
 
-    def test_max_belt_is_4(self) -> None:
-        """Test MAX_BELT is 4 (currently implemented belts)."""
-        assert MAX_BELT == 4
+    def test_max_belt_is_5(self) -> None:
+        """Test MAX_BELT is 5 (currently implemented belts)."""
+        assert MAX_BELT == 5
 
     def test_belt_names_defined(self) -> None:
         """Test belt names are defined for all implemented belts."""
@@ -203,7 +203,12 @@ class TestLevelDefinitions:
             assert level is not None
             assert level.speed == "lightning", f"Level {i} should be lightning speed"
 
-    def test_all_current_levels_are_2_player(self) -> None:
-        """Test all 32 current levels are 2-player."""
-        for level in LEVELS:
+    def test_belt_1_to_4_levels_are_2_player(self) -> None:
+        """Test belts 1-4 levels are 2-player."""
+        for level in LEVELS[:32]:
             assert level.player_count == 2
+
+    def test_belt_5_levels_are_4_player(self) -> None:
+        """Test belt 5 levels are 4-player."""
+        for level in LEVELS[32:40]:
+            assert level.player_count == 4

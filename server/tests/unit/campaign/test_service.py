@@ -74,10 +74,13 @@ class TestCampaignProgressData:
         """Current belt is capped at MAX_BELT."""
         progress = CampaignProgressData(
             levels_completed={},
-            belts_completed={"1": True, "2": True, "3": True, "4": True, "5": True},
+            belts_completed={
+                "1": True, "2": True, "3": True,
+                "4": True, "5": True, "6": True,
+            },
         )
-        # MAX_BELT is 4, so current_belt should be 4 (not 6)
-        assert progress.current_belt == 4
+        # MAX_BELT is 5, so current_belt should be 5 (not 7)
+        assert progress.current_belt == 5
 
 
 class TestCampaignService:

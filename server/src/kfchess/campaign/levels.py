@@ -4,6 +4,8 @@ Levels 0-31: Legacy 2-player levels (preserved from original kfchess)
 Levels 32+: Future 4-player levels (to be designed)
 """
 
+from kfchess.game.board import BoardType
+
 from .models import CampaignLevel
 
 # Belt names
@@ -13,14 +15,14 @@ BELT_NAMES = [
     "Yellow",  # 2: levels 8-15
     "Green",  # 3: levels 16-23
     "Purple",  # 4: levels 24-31
-    "Orange",  # 5: levels 32-39 (future)
+    "Orange",  # 5: levels 32-39
     "Blue",  # 6: levels 40-47 (future)
     "Brown",  # 7: levels 48-55 (future)
     "Red",  # 8: levels 56-63 (future)
     "Black",  # 9: levels 64-71 (future)
 ]
 
-MAX_BELT = 4  # Currently implemented belts
+MAX_BELT = 5  # Currently implemented belts
 
 
 LEVELS: list[CampaignLevel] = [
@@ -156,9 +158,9 @@ P1P1P10000P1P1P1
 0000000000000000
 0000000000000000
 0000000000000000
-00N10000K100N100
+00N1N100K1N1N100
 """,
-        title="The Two Horsemen",
+        title="The Four Horsemen",
         description="Knights capture only at the end of their path. Ride to victory!",
     ),
     # ========== Belt 2: Yellow ==========
@@ -561,8 +563,8 @@ N1N1Q1Q1K1Q1N1N1
         speed="standard",
         board_str="""
 Q2Q2Q2Q2K2Q2Q2Q2
-N2N2N2N2B2B2B2B2
-P2P2P2P2P2P2P2P2
+00N2N2N2B2B2B200
+0000P2P2P2P20000
 0000000000000000
 0000000000000000
 0000000000000000
@@ -572,8 +574,193 @@ R1R1B1B1K1B1R1R1
         title="Final Destination",
         description="No items, Fox only, Final Destination.",
     ),
-    # ========== Belt 5+: 4-Player (Future) ==========
-    # Levels 32+ will be designed later
+    # ========== Belt 5: Orange ==========
+    CampaignLevel(
+        level_id=32,
+        belt=5,
+        speed="standard",
+        board_str="""
+000000000000K40000000000
+000000000000000000000000
+000000000000000000000000
+000000000000000000000000
+0000000000000000000000R1
+0000000000000000000000K1
+K300000000000000000000Q1
+000000000000000000000000
+000000000000000000000000
+000000000000000000000000
+000000000000000000000000
+000000000000K20000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Welcome to the Arena",
+        description="Four kings enter, one leaves. Use your queen and rook to hunt them down!",
+    ),
+    CampaignLevel(
+        level_id=33,
+        belt=5,
+        speed="standard",
+        board_str="""
+0000000000Q4K40000000000
+000000000000000000000000
+0000000000000000000000R1
+000000000000000000000000
+0000000000000000000000B1
+000000000000000000000000
+K300000000000000000000K1
+Q300000000000000000000B1
+000000000000000000000000
+0000000000000000000000R1
+000000000000000000000000
+0000000000Q2K20000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Divide and Conquer",
+        description="The key to victory is focusing on one thing at a time.",
+    ),
+    CampaignLevel(
+        level_id=34,
+        belt=5,
+        speed="standard",
+        board_str="""
+000000000000K40000000000
+0000P4P4P4P4P4P4P4P40000
+00P300000000000000000000
+00P300000000000000000000
+00P3000000000000000000B1
+00P3000000000000000000Q1
+K3P3000000000000000000K1
+00P3000000000000000000B1
+00P300000000000000000000
+00P300000000000000000000
+0000P2P2P2P2P2P2P2P20000
+000000000000K20000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Trash Compactor",
+        description="The walls are closing in!",
+    ),
+    CampaignLevel(
+        level_id=35,
+        belt=5,
+        speed="standard",
+        board_str="""
+0000000000Q4K40000000000
+0000000000Q4000000000000
+000000000000000000000000
+000000000000000000000000
+000000000000000000000000
+Q3Q30000000000000000Q1Q1
+K300000000000000000000K1
+000000000000000000000000
+000000000000000000000000
+000000000000000000000000
+0000000000Q2000000000000
+0000000000Q2K20000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Queen's Gambit",
+        description="Become the queen of queens.",
+    ),
+    CampaignLevel(
+        level_id=36,
+        belt=5,
+        speed="standard",
+        board_str="""
+00000000B4B4K4B4B4000000
+000000000000000000000000
+000000000000000000000000
+000000000000000000000000
+B300000000000000000000B1
+B300000000000000000000B1
+K300000000000000000000K1
+B300000000000000000000B1
+B300000000000000000000B1
+000000000000000000000000
+000000000000000000000000
+00000000B2B2K2B2B2000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Crossfire",
+        description="Position carefully to avoid getting caught in the crossfire.",
+    ),
+    CampaignLevel(
+        level_id=37,
+        belt=5,
+        speed="standard",
+        board_str="""
+000000000000K40000000000
+000000B4B4B4B4B4B4000000
+000000000000000000000000
+00B30000000000000000R100
+00B30000000000000000R100
+00B30000000000000000R100
+K3B30000000000000000R1K1
+00B30000000000000000R100
+00B30000000000000000R100
+000000000000000000000000
+000000B2B2B2B2B2B2000000
+000000000000K20000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="The Great Wall",
+        description="Hold off the barbarians from your stone fortress!",
+    ),
+    CampaignLevel(
+        level_id=38,
+        belt=5,
+        speed="standard",
+        board_str="""
+0000R4N4B4Q4K4B4N4R40000
+0000P4P4P4P4P4P4P4P40000
+R3P300000000000000000000
+N3P300000000000000000000
+B3P30000Q1Q1Q1Q100000000
+Q3P30000Q1Q1Q1Q100000000
+K3P30000Q1Q1K1Q100000000
+B3P30000Q1Q1Q1Q100000000
+N3P300000000000000000000
+R3P300000000000000000000
+0000P2P2P2P2P2P2P2P20000
+0000R2N2B2Q2K2B2N2R20000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Domain Expansion",
+        description="Turn reality into your playground.",
+    ),
+    CampaignLevel(
+        level_id=39,
+        belt=5,
+        speed="standard",
+        board_str="""
+0000R4N4B4Q4K4B4N4R40000
+0000P4P4P4P4P4P4P4P40000
+R3P30000000000000000P1R1
+N3P30000000000000000P1N1
+B3P30000000000000000P1B1
+K3P30000000000000000P1Q1
+Q3P30000000000000000P1K1
+B3P30000000000000000P1B1
+N3P30000000000000000P1N1
+R3P30000000000000000P1R1
+0000P2P2P2P2P2P2P2P20000
+0000R2N2B2K2Q2B2N2R20000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Grand Melee",
+        description="A classic four-player battle. Full armies, no mercy.",
+    ),
+    # ========== Belt 6+: Future ==========
+    # Levels 40+ will be designed later
 ]
 
 
