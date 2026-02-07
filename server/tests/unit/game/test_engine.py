@@ -797,6 +797,61 @@ class TestWinnerCheck:
         assert win_reason == WinReason.KING_CAPTURED
 
 
+class TestAllBotsRemaining:
+    """Tests for ending game when only bots remain in multiplayer."""
+
+    def test_all_bots_remaining_ends_game(self):
+        """When all players with kings are bots, a random one wins."""
+        board = Board.create_empty()
+        for p, (r, c) in [(1, (7, 4)), (2, (0, 4)), (3, (4, 0)), (4, (4, 7))]:
+            board.add_piece(Piece.create(PieceType.KING, player=p, row=r, col=c))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "u:human1", 2: "bot:dummy", 3: "bot:dummy", 4: "bot:dummy"},
+            board=board,
+        )
+        state.board.get_king(1).captured = True
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner in (2, 3, 4)
+        assert win_reason == WinReason.KING_CAPTURED
+
+    def test_human_still_alive_continues(self):
+        """Game continues if at least one human still has a king."""
+        board = Board.create_empty()
+        for p, (r, c) in [(1, (7, 4)), (2, (0, 4)), (3, (4, 0)), (4, (4, 7))]:
+            board.add_piece(Piece.create(PieceType.KING, player=p, row=r, col=c))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "u:human1", 2: "u:human2", 3: "bot:dummy", 4: "bot:dummy"},
+            board=board,
+        )
+        # Eliminate one human — one human still alive
+        state.board.get_king(1).captured = True
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner is None
+        assert win_reason is None
+
+    def test_does_not_apply_to_2player(self):
+        """2-player games should not trigger the all-bots check."""
+        board = Board.create_empty()
+        board.add_piece(Piece.create(PieceType.KING, player=1, row=7, col=4))
+        board.add_piece(Piece.create(PieceType.KING, player=2, row=0, col=4))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:dummy", 2: "bot:dummy"},
+            board=board,
+        )
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner is None
+        assert win_reason is None
+
+
 class TestCastlingCapture:
     """Tests for castling-related capture scenarios."""
 

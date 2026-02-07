@@ -32,6 +32,9 @@ MAX_CANDIDATES_PER_PIECE: dict[int, int] = {1: 4, 2: 8, 3: 12}
 # Minimum delay after cooldown expires before AI can move the piece (~167ms)
 COOLDOWN_BUFFER_TICKS = 5
 
+# Enemy moves younger than this are invisible to the AI (~100ms reaction delay)
+REACTION_DELAY_TICKS = 3
+
 
 class AIController:
     """Orchestrates AI decision-making pipeline."""
@@ -70,7 +73,9 @@ class AIController:
 
         # Extract state and cache it for get_move()
         ai_state = StateExtractor.extract(
-            state, player, cooldown_buffer_ticks=COOLDOWN_BUFFER_TICKS,
+            state, player,
+            cooldown_buffer_ticks=COOLDOWN_BUFFER_TICKS,
+            reaction_delay_ticks=REACTION_DELAY_TICKS,
         )
         self._cached_ai_state = ai_state
         self._cached_tick = current_tick

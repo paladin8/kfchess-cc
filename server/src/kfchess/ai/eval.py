@@ -216,6 +216,11 @@ def _score_move(
                 if _is_isolated_pawn(pawn_file, friendly_pawn_files):
                     score -= ISOLATED_PAWN_PENALTY
 
+        # King safety applies at ALL levels — never walk into danger
+        if arrival_data is not None and piece.type == PieceType.KING and level < 2:
+            king_safety = move_safety(candidate, ai_state, arrival_data)
+            score += king_safety * SAFETY_WEIGHT
+
         # Safety: expected material loss from recapture (L2+)
         if arrival_data is not None and level >= 2:
             safety_cost = move_safety(candidate, ai_state, arrival_data)

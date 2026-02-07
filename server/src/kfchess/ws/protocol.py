@@ -40,6 +40,7 @@ class CampaignLevelInfo(BaseModel):
     level_id: int
     title: str
     description: str
+    has_next_level: bool
 
 
 class JoinedMessage(BaseModel):

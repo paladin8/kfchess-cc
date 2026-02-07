@@ -6,6 +6,7 @@ for performance. Use GameState.copy() if you need to preserve state
 """
 
 import logging
+import random
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -548,6 +549,15 @@ class GameEngine:
         # If no players have their king (simultaneous capture), it's a draw
         if len(players_with_king) == 0:
             return 0, WinReason.DRAW
+
+        # In multiplayer, if all remaining players are bots, end the game
+        if len(players_with_king) >= 2 and len(state.players) > 2:
+            all_bots = all(
+                state.players.get(p, "").startswith("bot:")
+                for p in players_with_king
+            )
+            if all_bots:
+                return random.choice(players_with_king), WinReason.KING_CAPTURED
 
         # Multiple players still have their kings - check draw conditions
         # Only check after minimum game length

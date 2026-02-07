@@ -379,11 +379,11 @@ def _is_pawn_moving_straight(piece: Piece, move: Move | None) -> bool:
     if len(move.path) < 2:
         return False
 
-    start_col = move.path[0][1]
-    end_col = move.path[-1][1]
+    start_row, start_col = move.path[0][0], move.path[0][1]
+    end_row, end_col = move.path[-1][0], move.path[-1][1]
 
-    # Straight move = same column
-    return start_col == end_col
+    # Straight move = same row (horizontal players) or same column (vertical players)
+    return start_row == end_row or start_col == end_col
 
 
 def _can_piece_capture(piece: Piece, move: Move | None) -> bool:

@@ -361,6 +361,7 @@ async def handle_websocket(
                 level_id=level.level_id,
                 title=level.title,
                 description=level.description,
+                has_next_level=get_level(level.level_id + 1) is not None,
             )
 
     # Send joined message with player number (0 for spectators) and tick rate

@@ -203,53 +203,61 @@ class TestPawnMovement4Player:
 class TestPawnPromotion4Player:
     """Tests for pawn promotion in 4-player mode."""
 
-    def test_player1_promotion_at_col2(self):
-        """Test Player 1 pawn promotes at column 2."""
+    def test_player1_promotion_at_col0(self):
+        """Test Player 1 pawn promotes at column 0 (true final rank)."""
+        board = Board.create_empty(BoardType.FOUR_PLAYER)
+        pawn = Piece.create(PieceType.PAWN, player=1, row=5, col=1)
+        board.add_piece(pawn)
+
+        # Not at promotion yet
+        assert not should_promote_pawn(pawn, board, 5, 1)
+
+        # At true final rank
+        assert should_promote_pawn(pawn, board, 5, 0)
+
+    def test_player1_no_promotion_at_col2(self):
+        """Test Player 1 pawn does NOT promote at column 2 (cutout edge)."""
         board = Board.create_empty(BoardType.FOUR_PLAYER)
         pawn = Piece.create(PieceType.PAWN, player=1, row=5, col=3)
         board.add_piece(pawn)
 
-        # Not at promotion yet
-        assert not should_promote_pawn(pawn, board, 5, 3)
+        assert not should_promote_pawn(pawn, board, 5, 2)
 
-        # At promotion column
-        assert should_promote_pawn(pawn, board, 5, 2)
-
-    def test_player2_promotion_at_row2(self):
-        """Test Player 2 pawn promotes at row 2."""
+    def test_player2_promotion_at_row0(self):
+        """Test Player 2 pawn promotes at row 0 (true final rank)."""
         board = Board.create_empty(BoardType.FOUR_PLAYER)
-        pawn = Piece.create(PieceType.PAWN, player=2, row=3, col=5)
+        pawn = Piece.create(PieceType.PAWN, player=2, row=1, col=5)
         board.add_piece(pawn)
 
         # Not at promotion yet
-        assert not should_promote_pawn(pawn, board, 3, 5)
+        assert not should_promote_pawn(pawn, board, 1, 5)
 
-        # At promotion row
-        assert should_promote_pawn(pawn, board, 2, 5)
+        # At true final rank
+        assert should_promote_pawn(pawn, board, 0, 5)
 
-    def test_player3_promotion_at_col9(self):
-        """Test Player 3 pawn promotes at column 9."""
+    def test_player3_promotion_at_col11(self):
+        """Test Player 3 pawn promotes at column 11 (true final rank)."""
         board = Board.create_empty(BoardType.FOUR_PLAYER)
-        pawn = Piece.create(PieceType.PAWN, player=3, row=5, col=8)
+        pawn = Piece.create(PieceType.PAWN, player=3, row=5, col=10)
         board.add_piece(pawn)
 
         # Not at promotion yet
-        assert not should_promote_pawn(pawn, board, 5, 8)
+        assert not should_promote_pawn(pawn, board, 5, 10)
 
-        # At promotion column
-        assert should_promote_pawn(pawn, board, 5, 9)
+        # At true final rank
+        assert should_promote_pawn(pawn, board, 5, 11)
 
-    def test_player4_promotion_at_row9(self):
-        """Test Player 4 pawn promotes at row 9."""
+    def test_player4_promotion_at_row11(self):
+        """Test Player 4 pawn promotes at row 11 (true final rank)."""
         board = Board.create_empty(BoardType.FOUR_PLAYER)
-        pawn = Piece.create(PieceType.PAWN, player=4, row=8, col=5)
+        pawn = Piece.create(PieceType.PAWN, player=4, row=10, col=5)
         board.add_piece(pawn)
 
         # Not at promotion yet
-        assert not should_promote_pawn(pawn, board, 8, 5)
+        assert not should_promote_pawn(pawn, board, 10, 5)
 
-        # At promotion row
-        assert should_promote_pawn(pawn, board, 9, 5)
+        # At true final rank
+        assert should_promote_pawn(pawn, board, 11, 5)
 
 
 class TestCastling4Player:
@@ -461,8 +469,8 @@ class TestGameEngine4Player:
     def test_4player_pawn_promotion_engine(self):
         """Test pawn promotion through the engine in 4-player mode."""
         board = Board.create_empty(BoardType.FOUR_PLAYER)
-        # Player 1 pawn about to promote (one square from col 2)
-        pawn = Piece.create(PieceType.PAWN, player=1, row=5, col=3)
+        # Player 1 pawn about to promote (one square from col 0)
+        pawn = Piece.create(PieceType.PAWN, player=1, row=5, col=1)
         king1 = Piece.create(PieceType.KING, player=1, row=5, col=11)
         king2 = Piece.create(PieceType.KING, player=2, row=11, col=5)
         board.add_piece(pawn)
@@ -477,8 +485,8 @@ class TestGameEngine4Player:
         state, _ = GameEngine.set_player_ready(state, 1)
         state, _ = GameEngine.set_player_ready(state, 2)
 
-        # Move pawn to promotion column
-        move = GameEngine.validate_move(state, 1, pawn.id, 5, 2)
+        # Move pawn to promotion column (true final rank)
+        move = GameEngine.validate_move(state, 1, pawn.id, 5, 0)
         assert move is not None
         state, _ = GameEngine.apply_move(state, move)
 
@@ -564,6 +572,57 @@ class TestCollisionDetection4Player:
         # Rook can't move through own pawn
         move = GameEngine.validate_move(state, 1, p1_rook.id, 5, 4)
         assert move is None, "Rook shouldn't move through own pawn"
+
+
+    def test_horizontal_pawn_forward_not_mutual_destruction(self):
+        """Player 1 pawn moving forward into queen should be captured, not mutual destruction."""
+        board = Board.create_empty(BoardType.FOUR_PLAYER)
+        # Player 1 pawn moving left (forward for East player)
+        pawn = Piece.create(PieceType.PAWN, player=1, row=5, col=8)
+        # Player 3 queen moving right toward the pawn
+        queen = Piece.create(PieceType.QUEEN, player=3, row=5, col=4)
+        king1 = Piece.create(PieceType.KING, player=1, row=2, col=11)
+        king3 = Piece.create(PieceType.KING, player=3, row=2, col=0)
+        board.add_piece(pawn)
+        board.add_piece(queen)
+        board.add_piece(king1)
+        board.add_piece(king3)
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "u:1", 3: "u:3"},
+            board=board,
+        )
+        state, _ = GameEngine.set_player_ready(state, 1)
+        state, _ = GameEngine.set_player_ready(state, 3)
+
+        # Move pawn forward (left) and queen toward pawn on the same tick
+        pawn_move = GameEngine.validate_move(state, 1, pawn.id, 5, 7)
+        queen_move = GameEngine.validate_move(state, 3, queen.id, 5, 8)
+        assert pawn_move is not None
+        assert queen_move is not None
+        state, _ = GameEngine.apply_move(state, pawn_move)
+        state, _ = GameEngine.apply_move(state, queen_move)
+
+        # Tick until collision
+        config = SPEED_CONFIGS[Speed.STANDARD]
+        captures = []
+        for _ in range(4 * config.ticks_per_square + 10):
+            state, events = GameEngine.tick(state)
+            for e in events:
+                if e.type == GameEventType.CAPTURE:
+                    captures.append(e)
+            if captures:
+                break
+
+        # Queen should capture pawn — no mutual destruction
+        assert len(captures) == 1
+        assert captures[0].data["captured_piece_id"] == pawn.id
+        assert captures[0].data["capturing_piece_id"] == queen.id
+
+        # Queen should still be alive
+        queen_piece = state.board.get_piece_by_id(queen.id)
+        assert not queen_piece.captured
 
 
 class TestPlayerOrientations:

@@ -35,22 +35,22 @@ class PlayerOrientation:
 
 
 # Player orientations for 4-player mode (12x12 board)
-# Player 1 (East): pieces on cols 10-11, moves left (toward col 2)
-# Player 2 (South): pieces on rows 10-11, moves up (toward row 2)
-# Player 3 (West): pieces on cols 0-1, moves right (toward col 9)
-# Player 4 (North): pieces on rows 0-1, moves down (toward row 9)
+# Player 1 (East): pieces on cols 10-11, moves left (toward col 0)
+# Player 2 (South): pieces on rows 10-11, moves up (toward row 0)
+# Player 3 (West): pieces on cols 0-1, moves right (toward col 11)
+# Player 4 (North): pieces on rows 0-1, moves down (toward row 11)
 FOUR_PLAYER_ORIENTATIONS: dict[int, PlayerOrientation] = {
     1: PlayerOrientation(
-        forward=(0, -1), pawn_home_axis=10, back_row_axis=11, promotion_axis=2, axis="col"
+        forward=(0, -1), pawn_home_axis=10, back_row_axis=11, promotion_axis=0, axis="col"
     ),
     2: PlayerOrientation(
-        forward=(-1, 0), pawn_home_axis=10, back_row_axis=11, promotion_axis=2, axis="row"
+        forward=(-1, 0), pawn_home_axis=10, back_row_axis=11, promotion_axis=0, axis="row"
     ),
     3: PlayerOrientation(
-        forward=(0, 1), pawn_home_axis=1, back_row_axis=0, promotion_axis=9, axis="col"
+        forward=(0, 1), pawn_home_axis=1, back_row_axis=0, promotion_axis=11, axis="col"
     ),
     4: PlayerOrientation(
-        forward=(1, 0), pawn_home_axis=1, back_row_axis=0, promotion_axis=9, axis="row"
+        forward=(1, 0), pawn_home_axis=1, back_row_axis=0, promotion_axis=11, axis="row"
     ),
 }
 

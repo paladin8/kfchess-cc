@@ -56,6 +56,7 @@ export interface CampaignLevelInfo {
   level_id: number;
   title: string;
   description: string;
+  has_next_level: boolean;
 }
 
 export interface JoinedMessage {

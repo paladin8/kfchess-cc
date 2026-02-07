@@ -79,7 +79,10 @@ class StateExtractor:
 
     @staticmethod
     def extract(
-        state: GameState, ai_player: int, cooldown_buffer_ticks: int = 0,
+        state: GameState,
+        ai_player: int,
+        cooldown_buffer_ticks: int = 0,
+        reaction_delay_ticks: int = 0,
     ) -> AIState:
         """Extract AI state from game state.
 
@@ -88,14 +91,25 @@ class StateExtractor:
             ai_player: Player number the AI controls
             cooldown_buffer_ticks: Extra ticks after cooldown expiry before
                 a piece is considered idle (simulates reaction time).
+            reaction_delay_ticks: Enemy moves younger than this many ticks
+                are invisible to the AI (piece appears idle at start position).
 
         Returns:
             AI-friendly state snapshot
         """
-        # Build lookup dicts once
-        move_by_piece: dict[str, Move] = {
-            m.piece_id: m for m in state.active_moves
-        }
+        # Build lookup dicts once, filtering out enemy moves the AI can't
+        # "see" yet (started fewer than reaction_delay_ticks ago)
+        move_by_piece: dict[str, Move] = {}
+        for m in state.active_moves:
+            if (
+                reaction_delay_ticks > 0
+                and state.current_tick - m.start_tick < reaction_delay_ticks
+            ):
+                # Check if this move belongs to an enemy piece
+                piece = state.board.get_piece_by_id(m.piece_id)
+                if piece is not None and piece.player != ai_player:
+                    continue  # AI hasn't seen this move yet
+            move_by_piece[m.piece_id] = m
         cooldown_by_piece: dict[str, Cooldown] = {
             c.piece_id: c
             for c in state.cooldowns

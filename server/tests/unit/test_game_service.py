@@ -546,16 +546,28 @@ class TestResign:
         result = service.resign(game_id, 2)
         assert result is False
 
+    def _create_4player_multi_human(self) -> tuple[GameService, str]:
+        """Helper: create a 4P lobby game with 2 humans + 2 bots."""
+        service = GameService()
+        player_keys = {1: "key1", 2: "key2"}
+        game_id = service.create_lobby_game(
+            speed=Speed.STANDARD,
+            board_type=BoardType.FOUR_PLAYER,
+            player_keys=player_keys,
+            ai_players_config={3: "dummy", 4: "dummy"},
+        )
+        return service, game_id
+
     def test_resign_4player_continues_game(self) -> None:
         """Resigning in 4-player should eliminate player but continue the game."""
-        service, game_id, _ = self._create_playing_game(BoardType.FOUR_PLAYER)
+        service, game_id = self._create_4player_multi_human()
 
         result = service.resign(game_id, 1)
         assert result is True
 
         state = service.get_game(game_id)
         assert state is not None
-        # Game should still be playing (3 players remain)
+        # Game should still be playing (human player 2 still alive)
         assert state.status == GameStatus.PLAYING
         assert state.winner is None
 
@@ -565,7 +577,7 @@ class TestResign:
 
     def test_resign_4player_sets_force_broadcast(self) -> None:
         """4-player resignation should set force_broadcast flag."""
-        service, game_id, _ = self._create_playing_game(BoardType.FOUR_PLAYER)
+        service, game_id = self._create_4player_multi_human()
 
         managed = service.get_managed_game(game_id)
         assert managed is not None
@@ -574,19 +586,44 @@ class TestResign:
         service.resign(game_id, 1)
         assert managed.force_broadcast is True
 
-    def test_resign_4player_last_two_ends_game(self) -> None:
-        """When 3rd player resigns in 4-player, game should end."""
-        service, game_id, _ = self._create_playing_game(BoardType.FOUR_PLAYER)
+    def test_resign_4player_last_human_ends_game(self) -> None:
+        """When the last human resigns in 4-player, game should end."""
+        service, game_id = self._create_4player_multi_human()
 
-        # Resign players 1, 2, 3 in sequence
+        # Resign both humans — only bots remain, game ends
         service.resign(game_id, 1)
         service.resign(game_id, 2)
-        service.resign(game_id, 3)
 
         state = service.get_game(game_id)
         assert state is not None
         assert state.status == GameStatus.FINISHED
-        assert state.winner == 4
+        assert state.winner in (3, 4)  # Random bot wins
+        assert state.win_reason == WinReason.RESIGNATION
+
+    def test_resign_4player_all_humans_gone_ends_game(self) -> None:
+        """When all humans resign in 4-player, game should end with a bot winner."""
+        service, game_id = self._create_4player_multi_human()
+
+        # Resign both human players
+        service.resign(game_id, 1)
+        service.resign(game_id, 2)
+
+        state = service.get_game(game_id)
+        assert state is not None
+        assert state.status == GameStatus.FINISHED
+        assert state.winner in (3, 4)  # Random bot wins
+        assert state.win_reason == WinReason.RESIGNATION
+
+    def test_resign_4player_sole_human_ends_game(self) -> None:
+        """When the only human resigns in 1H+3B 4-player, game ends immediately."""
+        service, game_id, _ = self._create_playing_game(BoardType.FOUR_PLAYER)
+
+        service.resign(game_id, 1)
+
+        state = service.get_game(game_id)
+        assert state is not None
+        assert state.status == GameStatus.FINISHED
+        assert state.winner in (2, 3, 4)  # Random bot wins
         assert state.win_reason == WinReason.RESIGNATION
 
 

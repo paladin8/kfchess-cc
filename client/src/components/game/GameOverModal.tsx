@@ -16,9 +16,6 @@ import {
 } from '../../utils/ratings';
 import BeltIcon from '../BeltIcon';
 
-// Total number of campaign levels (4 belts * 8 levels)
-const TOTAL_CAMPAIGN_LEVELS = 32;
-
 export function GameOverModal() {
   const navigate = useNavigate();
   const [isStartingNext, setIsStartingNext] = useState(false);
@@ -121,8 +118,8 @@ export function GameOverModal() {
 
   const handleNextLevel = async () => {
     if (!campaignLevel || isStartingNext) return;
+    if (!campaignLevel.has_next_level) return;
     const nextLevelId = campaignLevel.level_id + 1;
-    if (nextLevelId >= TOTAL_CAMPAIGN_LEVELS) return;
 
     setIsStartingNext(true);
     try {
@@ -158,7 +155,7 @@ export function GameOverModal() {
   // Check if this is a campaign game and player won/lost
   const isCampaignWin = campaignLevel && winner === playerNumber && playerNumber > 0;
   const isCampaignLoss = campaignLevel && winner !== playerNumber && playerNumber > 0;
-  const hasNextLevel = campaignLevel && campaignLevel.level_id + 1 < TOTAL_CAMPAIGN_LEVELS;
+  const hasNextLevel = campaignLevel?.has_next_level;
 
   return (
     <div className="game-over-overlay">

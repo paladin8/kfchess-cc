@@ -371,7 +371,12 @@ def move_safety(
         return 0.0
 
     dest = (candidate.to_row, candidate.to_col)
-    our_value = PIECE_VALUES.get(candidate.ai_piece.piece.type, 0)
+    piece_type = candidate.ai_piece.piece.type
+    our_value = PIECE_VALUES.get(piece_type, 0)
+
+    # King moves to threatened squares lose the game — use full game-ending value
+    if piece_type == PieceType.KING:
+        our_value += GAME_ENDING_KING_BONUS
 
     # Find captured piece ID for exclusion
     exclude_id: str | None = None
