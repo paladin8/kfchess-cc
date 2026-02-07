@@ -187,10 +187,10 @@ def _score_move(
     if ai_piece is not None:
         piece = ai_piece.piece
 
-        # Development: bonus for moving minor pieces off back rank
+        # Development: bonus for moving pieces off back rank
         # Scaled by urgency — much stronger when pieces are undeveloped
-        if piece.type in (PieceType.KNIGHT, PieceType.BISHOP):
-            if _is_on_back_rank(piece.grid_position, ai_state):
+        if piece.type in (PieceType.KNIGHT, PieceType.BISHOP, PieceType.QUEEN):
+            if _is_on_back_ranks(piece.grid_position, ai_state):
                 urgency_multiplier = 1.0 + DEVELOPMENT_URGENCY_SCALE * development_urgency
                 score += DEVELOPMENT_WEIGHT * urgency_multiplier
             # First-move bonus: prefer developing a new piece over shuffling
@@ -283,26 +283,26 @@ _BACK_RANKS: dict[int, tuple[str, int]] = {
 }
 
 
-def _is_on_back_rank(
+def _is_on_back_ranks(
     pos: tuple[int, int], ai_state: AIState,
 ) -> bool:
-    """Check if a piece is on its player's back rank."""
+    """Check if a piece is on its player's back two ranks."""
     player = ai_state.ai_player
     is_4p = ai_state.board_width > 8
     if is_4p:
         if player == 1:
-            return pos[1] == 11  # East: col 11
+            return pos[1] >= 10  # East: col 10-11
         elif player == 2:
-            return pos[0] == 11  # South: row 11
+            return pos[0] >= 10  # South: row 10-11
         elif player == 3:
-            return pos[1] == 0   # West: col 0
+            return pos[1] <= 1   # West: col 0-1
         elif player == 4:
-            return pos[0] == 0   # North: row 0
+            return pos[0] <= 1   # North: row 0-1
     else:
         if player == 1:
-            return pos[0] == 7
+            return pos[0] >= 6   # rows 6-7
         elif player == 2:
-            return pos[0] == 0
+            return pos[0] <= 1   # rows 0-1
     return False
 
 
@@ -330,16 +330,16 @@ def _pawn_advancement(
 
 
 def _compute_development_urgency(ai_state: AIState) -> float:
-    """Compute how urgently minor pieces need development (0.0-1.0).
+    """Compute how urgently pieces need development (0.0-1.0).
 
-    Returns ratio of undeveloped (on back rank) minor pieces to total minor pieces.
+    Returns ratio of undeveloped (on back rank) pieces to total developable pieces.
     """
     total_minor = 0
     undeveloped = 0
     for ap in ai_state.get_own_pieces():
-        if ap.piece.type in (PieceType.KNIGHT, PieceType.BISHOP):
+        if ap.piece.type in (PieceType.KNIGHT, PieceType.BISHOP, PieceType.QUEEN):
             total_minor += 1
-            if _is_on_back_rank(ap.piece.grid_position, ai_state):
+            if _is_on_back_ranks(ap.piece.grid_position, ai_state):
                 undeveloped += 1
     if total_minor == 0:
         return 0.0

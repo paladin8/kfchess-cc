@@ -1,5 +1,6 @@
 """Tests for Eval scoring function."""
 
+import pytest
 
 from kfchess.ai.arrival_field import ArrivalField
 from kfchess.ai.eval import (
@@ -138,28 +139,32 @@ def _make_opening_board() -> tuple:
 
 
 def _make_development_board(developed_count: int = 0) -> tuple:
-    """Create a board with some minor pieces developed.
+    """Create a board with some pieces developed.
 
     Args:
-        developed_count: Number of minor pieces already off back rank (0-4).
+        developed_count: Number of developable pieces already off back ranks (0-5).
     """
     board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
     # Always add kings
     board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
     board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
 
-    # Minor pieces: 2 knights + 2 bishops
-    minor_positions_back = [(7, 1), (7, 6), (7, 2), (7, 5)]  # back rank
-    minor_positions_dev = [(5, 2), (5, 5), (4, 3), (4, 4)]   # developed
-    minor_types = [PieceType.KNIGHT, PieceType.KNIGHT, PieceType.BISHOP, PieceType.BISHOP]
+    # Developable pieces: 2 knights + 2 bishops + 1 queen
+    dev_positions_back = [(7, 1), (7, 6), (7, 2), (7, 5), (7, 3)]  # back ranks
+    dev_positions_out = [(5, 2), (5, 5), (4, 3), (4, 4), (4, 6)]   # developed
+    dev_types = [
+        PieceType.KNIGHT, PieceType.KNIGHT,
+        PieceType.BISHOP, PieceType.BISHOP,
+        PieceType.QUEEN,
+    ]
 
-    for i, ptype in enumerate(minor_types):
+    for i, ptype in enumerate(dev_types):
         if i < developed_count:
-            r, c = minor_positions_dev[i]
+            r, c = dev_positions_out[i]
             p = Piece.create(ptype, 1, r, c)
             p.moved = True
         else:
-            r, c = minor_positions_back[i]
+            r, c = dev_positions_back[i]
             p = Piece.create(ptype, 1, r, c)
         board.pieces.append(p)
 
@@ -182,22 +187,22 @@ def _make_development_board(developed_count: int = 0) -> tuple:
 
 class TestDevelopmentUrgency:
     def test_full_urgency_when_all_undeveloped(self):
-        """All minor pieces on back rank → urgency = 1.0."""
+        """All developable pieces on back ranks → urgency = 1.0."""
         _, ai_state = _make_development_board(developed_count=0)
         assert _compute_development_urgency(ai_state) == 1.0
 
     def test_no_urgency_when_all_developed(self):
-        """All minor pieces off back rank → urgency = 0.0."""
-        _, ai_state = _make_development_board(developed_count=4)
+        """All developable pieces off back ranks → urgency = 0.0."""
+        _, ai_state = _make_development_board(developed_count=5)
         assert _compute_development_urgency(ai_state) == 0.0
 
     def test_partial_urgency(self):
-        """Half developed → urgency = 0.5."""
+        """2 of 5 developed → urgency = 3/5."""
         _, ai_state = _make_development_board(developed_count=2)
-        assert _compute_development_urgency(ai_state) == 0.5
+        assert _compute_development_urgency(ai_state) == pytest.approx(3 / 5)
 
-    def test_no_minor_pieces_zero_urgency(self):
-        """No minor pieces at all → urgency = 0.0."""
+    def test_no_developable_pieces_zero_urgency(self):
+        """No developable pieces at all → urgency = 0.0."""
         board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
         board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
         board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
@@ -231,7 +236,7 @@ class TestDevelopmentUrgency:
     def test_pawn_advance_dampened_in_opening(self):
         """Pawn advance score should be lower when urgency is high."""
         _, ai_state_opening = _make_development_board(developed_count=0)
-        _, ai_state_developed = _make_development_board(developed_count=4)
+        _, ai_state_developed = _make_development_board(developed_count=5)
 
         pawn_opening = ai_state_opening.pieces_by_id["P:1:6:4"]
         pawn_developed = ai_state_developed.pieces_by_id["P:1:6:4"]
