@@ -35,6 +35,9 @@ COOLDOWN_BUFFER_TICKS = 5
 # Enemy moves younger than this are invisible to the AI (~100ms reaction delay)
 REACTION_DELAY_TICKS = 3
 
+# AI cannot move before this many ticks into the game (~500ms grace period)
+GAME_START_DELAY_TICKS = 15
+
 
 class AIController:
     """Orchestrates AI decision-making pipeline."""
@@ -51,6 +54,10 @@ class AIController:
 
     def should_move(self, state: GameState, player: int, current_tick: int) -> bool:
         """Check if AI should attempt a move this tick."""
+        # Don't move in the first 500ms of the game
+        if current_tick < GAME_START_DELAY_TICKS:
+            return False
+
         # Check think delay (cheap, no allocations)
         ticks_since_last = current_tick - self.last_move_tick
         if ticks_since_last < self.think_delay_ticks:
@@ -143,8 +150,8 @@ class AIController:
 
         best_move, best_score = scored[0]
 
-        # Skip if all options are net-negative (better to wait)
-        if best_score < 0:
+        # Skip if all options are clearly negative (better to wait)
+        if best_score < -1:
             return None
 
         # Record move timing

@@ -438,6 +438,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     wsClient.sendMove(selectedPieceId, toRow, toCol);
 
+    // Clear any previous move error
+    if (get().lastError) {
+      set({ lastError: null });
+    }
+
     // Don't clear selection here - wait for move confirmation or rejection
     // Selection will be cleared in updateFromStateMessage when piece starts moving
   },

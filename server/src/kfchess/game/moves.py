@@ -533,7 +533,7 @@ def _is_path_clear(
     - Own moving pieces' forward path (not yet traversed) blocks own pieces
     - Own moving pieces' already-traversed path does NOT block
     - Enemy moving pieces do NOT block (neither their start nor path)
-    - Exception: enemy slider moving on the same line blocks slider pieces
+    - Exception: any enemy piece moving on the same line blocks slider pieces
     - Cannot capture moving enemies (destination with moving enemy = blocked)
     """
     # Build set of forward path squares for own moving pieces
@@ -545,7 +545,7 @@ def _is_path_clear(
             forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
             own_forward_path.update(forward_squares)
 
-    # Build set of same-line blocking squares from enemy sliders
+    # Build set of same-line blocking squares from enemy pieces moving on the same line
     enemy_same_line_path: set[tuple[int, int]] = set()
     if piece_type is not None and piece_type in _SLIDER_TYPES and len(path) >= 2:
         # Compute direction of the proposed move
@@ -556,8 +556,6 @@ def _is_path_clear(
         for move in active_moves:
             moving_piece = board.get_piece_by_id(move.piece_id)
             if moving_piece is None or moving_piece.player == player:
-                continue
-            if moving_piece.type not in _SLIDER_TYPES:
                 continue
             if len(move.path) < 2:
                 continue
@@ -577,7 +575,7 @@ def _is_path_clear(
             if diff_r * my_dc != diff_c * my_dr:
                 continue
 
-            # Enemy slider is on the same line - its forward path blocks us
+            # Enemy piece is on the same line - its forward path blocks us
             forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
             enemy_same_line_path.update(forward_squares)
 
@@ -730,7 +728,7 @@ def _enemy_slider_blocks_castling_path(
     range_min: int,
     range_max: int,
 ) -> bool:
-    """Check if an enemy slider moving along the same rank/file blocks the castling path.
+    """Check if an enemy piece moving along the same rank/file blocks the castling path.
 
     For horizontal castling: fixed_row is set, fixed_col is None.
     For vertical castling: fixed_col is set, fixed_row is None.
@@ -739,8 +737,6 @@ def _enemy_slider_blocks_castling_path(
     for move in active_moves:
         moving_piece = board.get_piece_by_id(move.piece_id)
         if moving_piece is None or moving_piece.player == player:
-            continue
-        if moving_piece.type not in _SLIDER_TYPES:
             continue
         if len(move.path) < 2:
             continue

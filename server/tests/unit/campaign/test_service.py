@@ -79,8 +79,8 @@ class TestCampaignProgressData:
                 "4": True, "5": True, "6": True,
             },
         )
-        # MAX_BELT is 5, so current_belt should be 5 (not 7)
-        assert progress.current_belt == 5
+        # MAX_BELT is 6, so current_belt should be 6 (not 7)
+        assert progress.current_belt == 6
 
 
 class TestCampaignService:

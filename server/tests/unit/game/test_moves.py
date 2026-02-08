@@ -873,25 +873,67 @@ class TestSameLineSliderBlocking:
         assert path is not None
 
     def test_rook_not_blocked_by_enemy_knight(self):
-        """Rook NOT blocked by enemy knight (knight is not a slider)."""
+        """Rook NOT blocked by enemy knight (knight moves in L-shape, not along a line)."""
         board = Board.create_empty()
         own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
         enemy_knight = Piece.create(PieceType.KNIGHT, player=2, row=4, col=6)
         board.add_piece(own_rook)
         board.add_piece(enemy_knight)
 
-        # Knight moving away
+        # Knight moving away in an L-shape (not along the rank)
         enemy_move = Move(
             piece_id=enemy_knight.id,
             path=[(4.0, 6.0), (3.0, 6.5), (2.0, 7.0)],
             start_tick=0,
         )
 
-        # Rook can move through - knight is not a slider
+        # Rook can move through - knight doesn't move along the same line
         path = compute_move_path(
             own_rook, board, 4, 7, [enemy_move], current_tick=0, ticks_per_square=30
         )
         assert path is not None
+
+    def test_rook_blocked_by_enemy_pawn_same_rank(self):
+        """Rook blocked by enemy pawn advancing along the same rank."""
+        board = Board.create_empty()
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_pawn = Piece.create(PieceType.PAWN, player=2, row=4, col=6)
+        board.add_piece(own_rook)
+        board.add_piece(enemy_pawn)
+
+        # Enemy pawn moving left along row 4 (e.g. 4-player board pawn)
+        enemy_move = Move(
+            piece_id=enemy_pawn.id,
+            path=[(4.0, 6.0), (4.0, 5.0)],
+            start_tick=0,
+        )
+
+        # Rook tries to move right along same row - blocked by pawn's forward path
+        path = compute_move_path(
+            own_rook, board, 4, 5, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None
+
+    def test_queen_blocked_by_enemy_king_same_file(self):
+        """Queen blocked by enemy king moving along the same file."""
+        board = Board.create_empty()
+        own_queen = Piece.create(PieceType.QUEEN, player=1, row=7, col=3)
+        enemy_king = Piece.create(PieceType.KING, player=2, row=2, col=3)
+        board.add_piece(own_queen)
+        board.add_piece(enemy_king)
+
+        # Enemy king moving down along col 3
+        enemy_move = Move(
+            piece_id=enemy_king.id,
+            path=[(2.0, 3.0), (3.0, 3.0)],
+            start_tick=0,
+        )
+
+        # Queen tries to move up along same file - blocked
+        path = compute_move_path(
+            own_queen, board, 3, 3, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None
 
     def test_perpendicular_enemy_rook_does_not_block(self):
         """Enemy rook moving perpendicularly does not trigger same-line blocking."""

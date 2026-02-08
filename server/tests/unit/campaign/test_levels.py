@@ -101,10 +101,10 @@ class TestGetLevel:
 
     def test_get_last_level(self) -> None:
         """Test getting the last defined level."""
-        level = get_level(39)
+        level = get_level(47)
         assert level is not None
-        assert level.level_id == 39
-        assert level.belt == 5
+        assert level.level_id == 47
+        assert level.belt == 6
 
     def test_get_invalid_level_returns_none(self) -> None:
         """Test getting invalid level returns None."""
@@ -149,10 +149,20 @@ class TestGetBeltLevels:
             assert level.belt == 5
             assert level.player_count == 4
 
+    def test_get_belt_6_levels(self) -> None:
+        """Test getting belt 6 (4-player lightning) levels."""
+        levels = get_belt_levels(6)
+        assert len(levels) == 8
+        for level in levels:
+            assert 40 <= level.level_id < 48
+            assert level.belt == 6
+            assert level.player_count == 4
+            assert level.speed == "lightning"
+
     def test_get_nonexistent_belt_returns_empty(self) -> None:
         """Test getting a belt with no levels returns empty list."""
-        # Belt 6+ not implemented yet
-        levels = get_belt_levels(6)
+        # Belt 7+ not implemented yet
+        levels = get_belt_levels(7)
         assert levels == []
 
 
@@ -168,4 +178,4 @@ class TestConstants:
 
     def test_max_belt(self) -> None:
         """Verify MAX_BELT is set correctly."""
-        assert MAX_BELT == 5
+        assert MAX_BELT == 6
