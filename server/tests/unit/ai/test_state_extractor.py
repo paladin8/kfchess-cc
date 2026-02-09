@@ -187,6 +187,44 @@ class TestStateExtractor:
         piece = next(p for p in ai_state.pieces if p.piece.id == "P:2:1:4")
         assert piece.status == PieceStatus.IDLE  # Enemy, buffer doesn't apply
 
+    def test_eliminated_player_pieces_excluded_from_enemies(self):
+        """Pieces from eliminated players (king captured) should not be in enemy_pieces."""
+        board = Board(pieces=[], board_type=BoardType.FOUR_PLAYER, width=12, height=12)
+        # Player 1 (AI) king
+        board.pieces.append(Piece.create(PieceType.KING, 1, 9, 11))
+        # Player 2 king — alive
+        board.pieces.append(Piece.create(PieceType.KING, 2, 11, 6))
+        # Player 2 rook — should be enemy
+        p2_rook = Piece.create(PieceType.ROOK, 2, 11, 0)
+        board.pieces.append(p2_rook)
+        # Player 3 king — captured (eliminated)
+        p3_king = Piece.create(PieceType.KING, 3, 6, 0)
+        p3_king.captured = True
+        board.pieces.append(p3_king)
+        # Player 3 rook — should NOT be enemy (eliminated player)
+        p3_rook = Piece.create(PieceType.ROOK, 3, 4, 0)
+        board.pieces.append(p3_rook)
+        # Player 4 king — alive
+        board.pieces.append(Piece.create(PieceType.KING, 4, 0, 6))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "human", 2: "bot:ai", 3: "bot:ai", 4: "bot:ai"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        enemy_ids = {ep.piece.id for ep in ai_state.get_enemy_pieces()}
+
+        # Player 2's rook should be an enemy
+        assert p2_rook.id in enemy_ids, "Living player's pieces should be enemies"
+        # Player 3's rook should NOT be an enemy (eliminated)
+        assert p3_rook.id not in enemy_ids, "Eliminated player's pieces should not be enemies"
+        # Player 3's rook should still be in the pieces list (for occupancy)
+        all_ids = {p.piece.id for p in ai_state.pieces}
+        assert p3_rook.id in all_ids, "Eliminated player's pieces should still exist for blocking"
+
     def test_no_buffer_without_parameter(self):
         """Without cooldown_buffer_ticks, recently expired cooldown is IDLE."""
         state = _make_game()

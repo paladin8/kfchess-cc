@@ -134,6 +134,51 @@ class TestKungFuAI:
             f"Captured only {capture_count}/{trials} times — should capture at least once"
         )
 
+    def test_king_captures_pawn_with_forward_only_threats(self):
+        """AI king should capture adjacent enemy pawn when the only nearby
+        enemies can reach the destination via forward (non-capture) moves.
+
+        Reproduces the level 69 campaign bug where K2/K3 refuse to move
+        because the arrival field incorrectly treats P4 pawns' forward
+        moves as capture threats.
+        """
+        from kfchess.campaign.board_parser import parse_board_string
+
+        board = parse_board_string("""
+000000P400K40000P4000000
+000000P400P40000P4000000
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+000000P400P40000P4000000
+000000K300K1Q100K2000000
+""", BoardType.FOUR_PLAYER)
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.LIGHTNING,
+            players={1: "human", 2: "bot:campaign", 3: "bot:campaign", 4: "bot:campaign"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        state.current_tick = 20  # Past game start delay
+
+        # Test that AI players 2 and 3 can generate moves
+        for player in (2, 3):
+            ai = KungFuAI(level=3, speed=Speed.LIGHTNING, noise=False)
+            ai.controller.think_delay_ticks = 0
+            ai.controller.last_move_tick = -9999
+
+            move = ai.get_move(state, player)
+            assert move is not None, (
+                f"Player {player} king should have a valid move "
+                f"(e.g., capturing an adjacent P4 pawn)"
+            )
+
     def test_works_with_lightning_speed(self):
         """AI should work correctly with lightning speed."""
         state = _make_game(speed=Speed.LIGHTNING)

@@ -12,6 +12,7 @@ from kfchess.ai.tactics import (
     PIECE_VALUES,
     capture_value,
     dodge_probability,
+    king_blocking_bonus,
     king_exposure_penalty,
     king_threat_capture_bonus,
     move_safety,
@@ -38,6 +39,7 @@ THREATEN_WEIGHT = 0.1 * MATERIAL_WEIGHT
 # Level 3 weights
 DODGE_FAILURE_COST = 0.9  # Fraction of our piece value lost if target dodges
 RECAPTURE_WEIGHT = 0.4 * MATERIAL_WEIGHT
+KING_THREAT_CAPTURE_WEIGHT = 0.5 * MATERIAL_WEIGHT
 
 # Development urgency (opening phase)
 DEVELOPMENT_URGENCY_SCALE = 3.0  # At full urgency, dev weight: 0.8 * (1+3) = 3.2
@@ -245,9 +247,12 @@ def _score_move(
             # King exposure: penalize moving pieces that shield the king
             score += king_exposure_penalty(candidate, ai_state, arrival_data)
 
+            # King blocking: bonus for interposing a piece to block a slider threat
+            score += king_blocking_bonus(candidate, ai_state, arrival_data)
+
             # King threat capture: bonus for capturing pieces threatening our king
             if candidate.capture_type is not None:
-                score += king_threat_capture_bonus(candidate, ai_state, arrival_data)
+                score += king_threat_capture_bonus(candidate, ai_state, arrival_data) * KING_THREAT_CAPTURE_WEIGHT
 
             # Commitment penalty: penalize long-distance moves (non-captures)
             if candidate.capture_type is None:

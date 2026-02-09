@@ -131,14 +131,17 @@ class ArrivalData:
         self, row: int, col: int,
         unblocked_pos: tuple[int, int],
         exclude_piece_id: str | None = None,
+        blocked_pos: tuple[int, int] | None = None,
     ) -> int:
-        """Recompute enemy arrival at (row, col) with unblocked_pos removed from occupancy.
+        """Recompute enemy arrival at (row, col) with modified occupancy.
 
-        This handles the case where our piece vacating its square unblocks
-        an enemy slider ray. Only recomputes for idle enemy sliders that
-        could benefit from the unblocked position.
+        Removes unblocked_pos (piece vacating) and optionally adds
+        blocked_pos (piece landing) to the occupancy set before
+        recomputing slider paths.
         """
         modified_occupied = self._occupied - {unblocked_pos}
+        if blocked_pos is not None:
+            modified_occupied = modified_occupied | {blocked_pos}
         best = INF_TICKS
 
         for ep in self._enemy_pieces:
@@ -146,6 +149,7 @@ class ArrivalData:
                 continue
             t = _piece_arrival_time(
                 ep, (row, col), self.tps, modified_occupied, self._is_4p,
+                threat_only=True,
             )
             if t < best:
                 best = t
@@ -297,6 +301,7 @@ class ArrivalField:
             piece_times: dict[tuple[int, int], int] = {}
             for sq, t in _enumerate_piece_arrivals(
                 ep, tps, occupied_by_player, is_4p, h, w,
+                threat_only=True,
             ):
                 if sq in valid_squares:
                     piece_times[sq] = t
@@ -365,11 +370,17 @@ def _enumerate_piece_arrivals(
     is_4p: bool,
     board_h: int,
     board_w: int,
+    threat_only: bool = False,
 ):
     """Yield (square, arrival_time) for all squares a piece can reach.
 
     Enumerates only reachable squares instead of checking all board squares.
     This is the key optimization for arrival field computation.
+
+    Args:
+        threat_only: If True, only yield squares where the piece can capture
+            (not just move to). Only affects pawns — their forward moves are
+            excluded since pawns can't capture straight.
     """
     pr, pc = ap.piece.grid_position
     base_delay = ap.cooldown_remaining
@@ -403,7 +414,7 @@ def _enumerate_piece_arrivals(
         yield from _enumerate_slider_arrivals(pr, pc, _QUEEN_DIRS, tps, base_delay, occupied_by_player, player, board_h, board_w)
 
     elif ptype == PieceType.PAWN:
-        yield from _enumerate_pawn_arrivals(ap, tps, base_delay, is_4p, board_h, board_w)
+        yield from _enumerate_pawn_arrivals(ap, tps, base_delay, is_4p, board_h, board_w, threat_only)
 
 
 def _enumerate_slider_arrivals(
@@ -444,22 +455,29 @@ def _enumerate_pawn_arrivals(
     is_4p: bool,
     board_h: int,
     board_w: int,
+    threat_only: bool = False,
 ):
-    """Yield reachable squares for a pawn (forward + diagonal threats)."""
+    """Yield reachable squares for a pawn (forward + diagonal threats).
+
+    Args:
+        threat_only: If True, skip forward moves (pawns can't capture straight).
+            Only diagonal capture squares are yielded.
+    """
     pr, pc = ap.piece.grid_position
     player = ap.piece.player
     fr, fc = _pawn_forward(player, is_4p)
 
-    # Forward 1
-    r1, c1 = pr + fr, pc + fc
-    if 0 <= r1 < board_h and 0 <= c1 < board_w:
-        yield (r1, c1), base_delay + tps
+    if not threat_only:
+        # Forward 1
+        r1, c1 = pr + fr, pc + fc
+        if 0 <= r1 < board_h and 0 <= c1 < board_w:
+            yield (r1, c1), base_delay + tps
 
-    # Forward 2 (from starting position)
-    if not ap.piece.moved:
-        r2, c2 = pr + 2 * fr, pc + 2 * fc
-        if 0 <= r2 < board_h and 0 <= c2 < board_w:
-            yield (r2, c2), base_delay + 2 * tps
+        # Forward 2 (from starting position)
+        if not ap.piece.moved:
+            r2, c2 = pr + 2 * fr, pc + 2 * fc
+            if 0 <= r2 < board_h and 0 <= c2 < board_w:
+                yield (r2, c2), base_delay + 2 * tps
 
     # Diagonal captures (always included for threat assessment)
     if fr != 0:
@@ -482,10 +500,14 @@ def _piece_arrival_time(
     tps: int,
     occupied: set[tuple[int, int]],
     is_4p: bool = False,
+    threat_only: bool = False,
 ) -> int:
     """Compute ticks for a single piece to reach a target square.
 
     Returns INF_TICKS if unreachable.
+
+    Args:
+        threat_only: If True, only consider capture-capable moves (affects pawns).
     """
     pos = ap.piece.grid_position
     if pos == target:
@@ -510,7 +532,7 @@ def _piece_arrival_time(
     elif ptype == PieceType.KING:
         return _king_time(pr, pc, tr, tc, tps, base_delay)
     elif ptype == PieceType.PAWN:
-        return _pawn_time(ap, tr, tc, tps, base_delay, is_4p)
+        return _pawn_time(ap, tr, tc, tps, base_delay, is_4p, threat_only)
     return INF_TICKS
 
 
@@ -613,6 +635,7 @@ def _pawn_time(
     ap: AIPiece, tr: int, tc: int,
     tps: int, base_delay: int,
     is_4p: bool = False,
+    threat_only: bool = False,
 ) -> int:
     """Arrival time for a pawn (forward moves and captures, single move only).
 
@@ -622,18 +645,22 @@ def _pawn_time(
 
     Includes diagonal capture squares — pawns can threaten diagonals even
     if no enemy is currently there (used for arrival-time threat assessment).
+
+    Args:
+        threat_only: If True, skip forward moves (pawns can't capture straight).
     """
     pr, pc = ap.piece.grid_position
     player = ap.piece.player
     fr, fc = _pawn_forward(player, is_4p)
     dr, dc = tr - pr, tc - pc
 
-    # Forward 1
-    if dr == fr and dc == fc:
-        return base_delay + tps
-    # Forward 2 (from starting position)
-    if dr == 2 * fr and dc == 2 * fc and not ap.piece.moved:
-        return base_delay + 2 * tps
+    if not threat_only:
+        # Forward 1
+        if dr == fr and dc == fc:
+            return base_delay + tps
+        # Forward 2 (from starting position)
+        if dr == 2 * fr and dc == 2 * fc and not ap.piece.moved:
+            return base_delay + 2 * tps
     # Diagonal capture: one step forward + one step sideways
     if fr != 0:
         # Row-moving pawn: forward is (fr, 0), sideways is column ±1

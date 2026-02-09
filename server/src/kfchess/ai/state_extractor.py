@@ -116,6 +116,15 @@ class StateExtractor:
             if c.is_active(state.current_tick)
         }
 
+        # In 4-player mode, players whose king has been captured are eliminated.
+        # Their remaining pieces can't move and shouldn't be treated as threats.
+        eliminated_players: set[int] = set()
+        for player_num in state.players:
+            if player_num != ai_player:
+                king = state.board.get_king(player_num)
+                if king is None:
+                    eliminated_players.add(player_num)
+
         pieces: list[AIPiece] = []
         pieces_by_id: dict[str, AIPiece] = {}
         movable: list[AIPiece] = []
@@ -217,7 +226,7 @@ class StateExtractor:
                     movable.append(ai_piece)
                 if piece.type == PieceType.KING:
                     own_king = ai_piece
-            else:
+            elif piece.player not in eliminated_players:
                 enemy_pieces.append(ai_piece)
                 if piece.type == PieceType.KING:
                     enemy_king = ai_piece

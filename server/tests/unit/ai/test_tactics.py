@@ -8,6 +8,7 @@ from kfchess.ai.tactics import (
     PIECE_VALUES,
     capture_value,
     dodge_probability,
+    king_blocking_bonus,
     king_exposure_penalty,
     king_threat_capture_bonus,
     move_safety,
@@ -778,7 +779,7 @@ class TestKingExposurePenalty:
 
 class TestKingThreatCaptureBonus:
     def test_capturing_king_threatening_piece_gives_bonus(self):
-        """Capturing an enemy piece that threatens our king gives a large bonus."""
+        """Capturing an enemy piece that threatens our king gives a bonus."""
         # Enemy rook at (7, 3) threatens king at (7, 4) — 1 square away
         board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
         board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
@@ -846,4 +847,121 @@ class TestKingThreatCaptureBonus:
             to_col=pawn.piece.grid_position[1], ai_piece=pawn,
         )
         bonus = king_threat_capture_bonus(candidate, ai_state, data)
+        assert bonus == 0.0
+
+
+class TestKingBlockingBonus:
+    def _make_blocking_board(self):
+        """Create a board where the king is threatened by an enemy queen.
+
+        Layout (row 7):
+          col 2: enemy queen
+          col 4: our king
+        Knight at (5, 2) can move to (7, 3) to block the queen's ray.
+        Queen is 2 squares from king — imminent threat (margin = 0).
+        """
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        board.pieces.append(Piece.create(PieceType.QUEEN, 2, 7, 2))  # threatens king
+        board.pieces.append(Piece.create(PieceType.KNIGHT, 1, 5, 2))  # can block
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        data = ArrivalField.compute(ai_state, state.config)
+        return ai_state, data
+
+    def test_blocking_slider_gives_bonus(self):
+        """Moving a piece to block a slider's attack on the king gives a bonus."""
+        ai_state, data = self._make_blocking_board()
+        knight = ai_state.pieces_by_id["N:1:5:2"]
+
+        # Move knight to (7, 3) — blocks queen's ray to king on row 7
+        candidate = CandidateMove(
+            piece_id=knight.piece.id, to_row=7, to_col=3, ai_piece=knight,
+        )
+        bonus = king_blocking_bonus(candidate, ai_state, data)
+        assert bonus > 50  # Should be a large bonus
+
+    def test_no_bonus_when_king_not_threatened(self):
+        """No blocking bonus when the king is not under threat."""
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        board.pieces.append(Piece.create(PieceType.KNIGHT, 1, 5, 3))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        knight = ai_state.pieces_by_id["N:1:5:3"]
+        candidate = CandidateMove(
+            piece_id=knight.piece.id, to_row=4, to_col=4, ai_piece=knight,
+        )
+        bonus = king_blocking_bonus(candidate, ai_state, data)
+        assert bonus == 0.0
+
+    def test_reblocking_cancels_exposure_penalty(self):
+        """Moving from one blocking position to another on the same ray.
+
+        Layout (col 4):
+          row 3: enemy rook
+          row 4: our rook (currently blocking)
+          row 7: our king
+        Our rook moves from (4,4) to (5,4) — still blocking on the same file.
+        Uses lightning speed so the threat is imminent after vacating.
+        The blocking bonus should offset the exposure penalty.
+        """
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 0))
+        board.pieces.append(Piece.create(PieceType.ROOK, 2, 3, 4))  # threatens king
+        board.pieces.append(Piece.create(PieceType.ROOK, 1, 4, 4))  # currently blocking
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.LIGHTNING,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        rook = ai_state.pieces_by_id["R:1:4:4"]
+        candidate = CandidateMove(
+            piece_id=rook.piece.id, to_row=5, to_col=4, ai_piece=rook,
+        )
+
+        penalty = king_exposure_penalty(candidate, ai_state, data)
+        bonus = king_blocking_bonus(candidate, ai_state, data)
+
+        # Exposure penalty fires (vacating unblocks the enemy rook)
+        assert penalty < -50
+
+        # Blocking bonus should offset it (re-blocking at new position)
+        assert bonus > 50
+
+        # Net should be approximately zero (king stays protected)
+        net = penalty + bonus
+        assert abs(net) < 20, f"Re-blocking net should be ~0, got {net}"
+
+    def test_king_move_no_bonus(self):
+        """King moves should not get a blocking bonus."""
+        ai_state, data = self._make_blocking_board()
+        king = ai_state.pieces_by_id["K:1:7:4"]
+
+        candidate = CandidateMove(
+            piece_id=king.piece.id, to_row=6, to_col=4, ai_piece=king,
+        )
+        bonus = king_blocking_bonus(candidate, ai_state, data)
         assert bonus == 0.0

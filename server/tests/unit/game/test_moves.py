@@ -998,3 +998,126 @@ class TestSameLineSliderBlocking:
             own_rook, board, 4, 2, [enemy_move], current_tick=60, ticks_per_square=30
         )
         assert path is not None
+
+
+class TestPawnOncomingEnemyBlocking:
+    """Tests for pawn forward moves blocked by oncoming enemy pieces."""
+
+    def test_pawn_blocked_by_oncoming_king(self):
+        """Pawn forward move blocked by king moving toward it on same file."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=4)
+        enemy_king = Piece.create(PieceType.KING, player=2, row=4, col=4)
+        board.add_piece(pawn)
+        board.add_piece(enemy_king)
+
+        # Enemy king moving down toward pawn on same file
+        enemy_move = Move(
+            piece_id=enemy_king.id,
+            path=[(4.0, 4.0), (5.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Pawn tries to move forward (up) - blocked by oncoming enemy
+        path = compute_move_path(
+            pawn, board, 5, 4, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None
+
+    def test_pawn_blocked_by_oncoming_queen(self):
+        """Pawn forward move blocked by queen moving toward it on same file."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=3)
+        enemy_queen = Piece.create(PieceType.QUEEN, player=2, row=3, col=3)
+        board.add_piece(pawn)
+        board.add_piece(enemy_queen)
+
+        # Enemy queen moving down toward pawn on same file
+        enemy_move = Move(
+            piece_id=enemy_queen.id,
+            path=[(3.0, 3.0), (4.0, 3.0), (5.0, 3.0)],
+            start_tick=0,
+        )
+
+        # Pawn tries to move forward - blocked
+        path = compute_move_path(
+            pawn, board, 5, 3, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None
+
+    def test_pawn_not_blocked_when_enemy_moving_away(self):
+        """Pawn can move forward when enemy on same file is moving away."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=4)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=4, col=4)
+        board.add_piece(pawn)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving UP (away from pawn) on same file
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(4.0, 4.0), (3.0, 4.0), (2.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Pawn moves forward - not blocked (enemy is moving away)
+        path = compute_move_path(
+            pawn, board, 5, 4, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is not None
+
+    def test_pawn_not_blocked_when_enemy_on_different_file(self):
+        """Pawn can move forward when oncoming enemy is on adjacent file."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=4)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=4, col=5)
+        board.add_piece(pawn)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving down on adjacent file (col 5)
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(4.0, 5.0), (5.0, 5.0), (6.0, 5.0)],
+            start_tick=0,
+        )
+
+        # Pawn moves forward - not blocked (different file)
+        path = compute_move_path(
+            pawn, board, 5, 4, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is not None
+
+    def test_pawn_diagonal_capture_not_blocked(self):
+        """Diagonal pawn capture is not affected by the straight-line check."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=4)
+        enemy_piece = Piece.create(PieceType.PAWN, player=2, row=5, col=5)
+        board.add_piece(pawn)
+        board.add_piece(enemy_piece)
+
+        # No active moves - enemy is stationary, pawn can capture diagonally
+        path = compute_move_path(
+            pawn, board, 5, 5, [], current_tick=0, ticks_per_square=30
+        )
+        assert path is not None
+
+    def test_pawn_double_forward_blocked(self):
+        """Double pawn push blocked by oncoming enemy on same file."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=4)
+        enemy_knight = Piece.create(PieceType.KNIGHT, player=2, row=3, col=4)
+        board.add_piece(pawn)
+        board.add_piece(enemy_knight)
+
+        # Enemy knight moving down on same file (unusual but possible in kung fu chess)
+        enemy_move = Move(
+            piece_id=enemy_knight.id,
+            path=[(3.0, 4.0), (5.0, 4.0)],
+            start_tick=0,
+        )
+
+        # Pawn tries double push - blocked
+        path = compute_move_path(
+            pawn, board, 4, 4, [enemy_move], current_tick=0, ticks_per_square=30
+        )
+        assert path is None

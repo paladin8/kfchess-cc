@@ -631,3 +631,194 @@ class TestSelfBlockingFix:
         assert safety_fixed > 0, (
             f"Double blocker should keep destination safe, got {safety_fixed}"
         )
+
+
+class TestPawnForwardNotThreat:
+    """Enemy pawn forward moves should NOT count as threats in arrival fields.
+
+    Pawns can't capture straight — forward moves are advances, not attacks.
+    Only diagonal captures are actual threats.
+    """
+
+    def test_enemy_pawn_forward_not_threat(self):
+        """Enemy pawn's forward square should not appear in enemy arrival times.
+
+        A P4 pawn at (9,8) moving down has forward square (10,8).
+        But forward moves can't capture, so (10,8) is not threatened by that pawn.
+        """
+        state = _make_state(Speed.LIGHTNING)
+        state.board.pieces = []
+
+        from kfchess.game.pieces import Piece
+
+        # Enemy pawn above, moving down (player 2 = top, forward is (+1,0))
+        enemy_pawn = Piece(
+            id="ep", type=PieceType.PAWN, player=2,
+            row=2, col=4, captured=False, moved=True,
+        )
+        our_king = Piece(
+            id="ok", type=PieceType.KING, player=1,
+            row=7, col=4, captured=False, moved=True,
+        )
+        enemy_king = Piece(
+            id="ek", type=PieceType.KING, player=2,
+            row=0, col=0, captured=False, moved=True,
+        )
+        state.board.pieces = [enemy_pawn, our_king, enemy_king]
+
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        # The enemy pawn at (2,4) has forward square (3,4).
+        # This should NOT count as a threat since pawns can't capture forward.
+        pawn_times = data.enemy_time_by_piece.get("ep", {})
+        # Forward square should NOT be in enemy arrival times
+        assert (3, 4) not in pawn_times, (
+            f"Enemy pawn forward square (3,4) should not be a threat, "
+            f"but arrival time = {pawn_times.get((3, 4))}"
+        )
+
+        # Diagonal captures SHOULD still be threats
+        assert (3, 3) in pawn_times, "Diagonal capture (3,3) should be a threat"
+        assert (3, 5) in pawn_times, "Diagonal capture (3,5) should be a threat"
+
+    def test_enemy_pawn_double_forward_not_threat(self):
+        """Enemy pawn's double-forward square should not appear in enemy arrival times."""
+        state = _make_state(Speed.LIGHTNING)
+        state.board.pieces = []
+
+        from kfchess.game.pieces import Piece
+
+        # Enemy pawn that hasn't moved yet (can double push)
+        enemy_pawn = Piece(
+            id="ep", type=PieceType.PAWN, player=2,
+            row=1, col=4, captured=False, moved=False,
+        )
+        our_king = Piece(
+            id="ok", type=PieceType.KING, player=1,
+            row=7, col=4, captured=False, moved=True,
+        )
+        enemy_king = Piece(
+            id="ek", type=PieceType.KING, player=2,
+            row=0, col=0, captured=False, moved=True,
+        )
+        state.board.pieces = [enemy_pawn, our_king, enemy_king]
+
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        pawn_times = data.enemy_time_by_piece.get("ep", {})
+        # Neither forward square should be a threat
+        assert (2, 4) not in pawn_times, "Single forward should not be a threat"
+        assert (3, 4) not in pawn_times, "Double forward should not be a threat"
+
+    def test_king_capture_of_pawn_safe_when_only_forward_threats(self):
+        """King capturing a pawn should be safe when nearby enemy pawns
+        can only reach the square via forward (non-capture) moves.
+
+        This reproduces the level 69 bug where K2/K3 refuse to capture
+        adjacent P4 pawns because the arrival field incorrectly treats
+        forward-moving P4 pawns behind the target as threats.
+
+        Setup: AI is player 1 (bottom, pawns move up). Enemy is player 2
+        (top, pawns move down). Enemy pawn at (5,4) has forward = (6,4).
+        """
+        state = _make_state(Speed.LIGHTNING)
+        state.board.pieces = []
+
+        from kfchess.game.pieces import Piece
+
+        # AI king (player 1) at (7,4)
+        our_king = Piece(
+            id="ok", type=PieceType.KING, player=1,
+            row=7, col=4, captured=False, moved=True,
+        )
+        # Enemy pawn to capture at (6,4)
+        target_pawn = Piece(
+            id="tp", type=PieceType.PAWN, player=2,
+            row=6, col=4, captured=False, moved=True,
+        )
+        # Enemy pawn at (5,4) — forward direction is (+1,0), so forward
+        # square is (6,4). This is the pawn that incorrectly inflates
+        # enemy arrival time at (6,4).
+        behind_pawn = Piece(
+            id="bp", type=PieceType.PAWN, player=2,
+            row=5, col=4, captured=False, moved=True,
+        )
+        enemy_king = Piece(
+            id="ek", type=PieceType.KING, player=2,
+            row=0, col=0, captured=False, moved=True,
+        )
+        state.board.pieces = [our_king, target_pawn, behind_pawn, enemy_king]
+
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+        tps = state.config.ticks_per_square
+
+        # King captures pawn at (6,4): travel = 1*tps
+        # After capturing, exclude the target pawn
+        safety = data.post_arrival_safety(
+            6, 4, tps,
+            exclude_piece_id="tp",
+            moving_from=(7, 4),
+        )
+
+        # The behind_pawn at (5,4) can only reach (6,4) via forward move
+        # (not a capture). So the square should be safe.
+        assert safety > 0, (
+            f"King capture should be safe (no diagonal threats), "
+            f"but safety margin = {safety}"
+        )
+
+
+class TestEliminatedPlayerExclusion:
+    """Pieces from eliminated players (king captured) should not generate
+    enemy arrival times in the arrival field."""
+
+    def test_eliminated_player_pieces_not_threats(self):
+        """Pieces from a player whose king was captured should not appear
+        in enemy arrival times."""
+        from kfchess.game.pieces import Piece
+
+        state = GameEngine.create_game(
+            speed=Speed.LIGHTNING,
+            players={1: "human", 2: "bot:ai", 3: "bot:ai", 4: "bot:ai"},
+            board_type=BoardType.FOUR_PLAYER,
+        )
+        state.board.pieces = []
+        state.status = GameStatus.PLAYING
+
+        # AI (player 1) king
+        our_king = Piece(
+            id="ok", type=PieceType.KING, player=1,
+            row=6, col=11, captured=False, moved=True,
+        )
+        # Player 3 king — captured (eliminated)
+        p3_king = Piece(
+            id="p3k", type=PieceType.KING, player=3,
+            row=6, col=0, captured=True, moved=True,
+        )
+        # Player 3 rook — still on board but player is eliminated
+        p3_rook = Piece(
+            id="p3r", type=PieceType.ROOK, player=3,
+            row=6, col=4, captured=False, moved=True,
+        )
+        # Player 2 king — alive
+        p2_king = Piece(
+            id="p2k", type=PieceType.KING, player=2,
+            row=11, col=6, captured=False, moved=True,
+        )
+        state.board.pieces = [our_king, p3_king, p3_rook, p2_king]
+
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        # Player 3's rook should NOT be in enemy_time_by_piece
+        assert "p3r" not in data.enemy_time_by_piece, (
+            "Eliminated player's rook should not generate enemy arrival times"
+        )
+
+        # Player 2's king SHOULD be in enemy_time_by_piece
+        assert "p2k" in data.enemy_time_by_piece, (
+            "Living player's king should generate enemy arrival times"
+        )

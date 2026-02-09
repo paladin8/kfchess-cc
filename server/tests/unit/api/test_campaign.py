@@ -162,9 +162,9 @@ class TestStartGameResponse:
 class TestLevelDefinitions:
     """Tests for level definitions used by API."""
 
-    def test_all_64_levels_defined(self) -> None:
-        """Test that all 64 levels are defined."""
-        assert len(LEVELS) == 64
+    def test_all_72_levels_defined(self) -> None:
+        """Test that all 72 levels are defined."""
+        assert len(LEVELS) == 72
 
     def test_get_level_returns_correct_level(self) -> None:
         """Test get_level returns the correct level."""
@@ -176,12 +176,12 @@ class TestLevelDefinitions:
     def test_get_level_returns_none_for_invalid(self) -> None:
         """Test get_level returns None for invalid level IDs."""
         assert get_level(-1) is None
-        assert get_level(64) is None
+        assert get_level(72) is None
         assert get_level(100) is None
 
-    def test_max_belt_is_8(self) -> None:
-        """Test MAX_BELT is 8 (currently implemented belts)."""
-        assert MAX_BELT == 8
+    def test_max_belt_is_9(self) -> None:
+        """Test MAX_BELT is 9 (currently implemented belts)."""
+        assert MAX_BELT == 9
 
     def test_belt_names_defined(self) -> None:
         """Test belt names are defined for all implemented belts."""

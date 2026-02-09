@@ -4,8 +4,8 @@ import pytest
 
 from kfchess.ai.arrival_field import ArrivalField
 from kfchess.ai.eval import (
-    Eval,
     SAFETY_WEIGHT,
+    Eval,
     _compute_development_urgency,
     _compute_pawn_data,
     _count_pawn_support,

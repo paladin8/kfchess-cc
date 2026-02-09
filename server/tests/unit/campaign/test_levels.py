@@ -171,7 +171,7 @@ class TestGetBeltLevels:
 
     def test_get_nonexistent_belt_returns_empty(self) -> None:
         """Test getting a belt with no levels returns empty list."""
-        levels = get_belt_levels(9)
+        levels = get_belt_levels(10)
         assert levels == []
 
 
@@ -187,4 +187,4 @@ class TestConstants:
 
     def test_max_belt(self) -> None:
         """Verify MAX_BELT is set correctly."""
-        assert MAX_BELT == 8
+        assert MAX_BELT == 9

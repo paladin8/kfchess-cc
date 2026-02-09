@@ -457,7 +457,7 @@ class TestCleanupStale:
             )
             await db_session.commit()
 
-            count = await repo.cleanup_stale(max_age_hours=2)
+            await repo.cleanup_stale(max_age_hours=2)
             await db_session.commit()
 
             # The game we just registered should not be cleaned up

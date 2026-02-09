@@ -534,6 +534,8 @@ def _is_path_clear(
     - Own moving pieces' already-traversed path does NOT block
     - Enemy moving pieces do NOT block (neither their start nor path)
     - Exception: any enemy piece moving on the same line blocks slider pieces
+    - Exception: pawn moving straight is blocked by any oncoming enemy on the same line
+      (pawns can't capture straight, so head-on collision is a guaranteed loss)
     - Cannot capture moving enemies (destination with moving enemy = blocked)
     """
     # Build set of forward path squares for own moving pieces
@@ -547,7 +549,19 @@ def _is_path_clear(
 
     # Build set of same-line blocking squares from enemy pieces moving on the same line
     enemy_same_line_path: set[tuple[int, int]] = set()
-    if piece_type is not None and piece_type in _SLIDER_TYPES and len(path) >= 2:
+
+    # Detect if pawn is moving straight (exactly one axis changes)
+    is_pawn_straight = False
+    if piece_type == PieceType.PAWN and len(path) >= 2:
+        _dr = int(path[1][0] - path[0][0])
+        _dc = int(path[1][1] - path[0][1])
+        is_pawn_straight = (_dr != 0) != (_dc != 0)  # exactly one axis
+
+    check_same_line = piece_type is not None and len(path) >= 2 and (
+        piece_type in _SLIDER_TYPES or is_pawn_straight
+    )
+
+    if check_same_line:
         # Compute direction of the proposed move
         my_dr = int(path[1][0] - path[0][0])
         my_dc = int(path[1][1] - path[0][1])
@@ -575,9 +589,16 @@ def _is_path_clear(
             if diff_r * my_dc != diff_c * my_dr:
                 continue
 
-            # Enemy piece is on the same line - its forward path blocks us
-            forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
-            enemy_same_line_path.update(forward_squares)
+            # Slider: enemy's forward path blocks us
+            if piece_type in _SLIDER_TYPES:
+                forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
+                enemy_same_line_path.update(forward_squares)
+
+            # Pawn straight: opposite direction + ahead = guaranteed loss (can't capture straight)
+            if is_pawn_straight:
+                if my_dr * e_dr + my_dc * e_dc < 0:  # opposite direction
+                    if diff_r * my_dr + diff_c * my_dc > 0:  # enemy is ahead
+                        return False
 
     # Check intermediate squares (excluding start and destination)
     for row, col in path[1:-1]:

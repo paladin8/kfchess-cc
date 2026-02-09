@@ -1,7 +1,7 @@
 """Fixtures for auth integration tests."""
 
 import pytest
-from sqlalchemy import delete, text
+from sqlalchemy import delete
 
 
 @pytest.fixture(autouse=True)

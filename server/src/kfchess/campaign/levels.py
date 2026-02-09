@@ -16,10 +16,10 @@ BELT_NAMES = [
     "Blue",  # 6: levels 40-47
     "Brown",  # 7: levels 48-55
     "Red",  # 8: levels 56-63
-    "Black",  # 9: levels 64-71 (future)
+    "Black",  # 9: levels 64-71
 ]
 
-MAX_BELT = 8  # Currently implemented belts
+MAX_BELT = 9  # Currently implemented belts
 
 
 LEVELS: list[CampaignLevel] = [
@@ -1263,8 +1263,191 @@ K200000000000000
         title="Psycho Pass",
         description="Can you trust the Sibyl system with the fate of humanity?",
     ),
-    # ========== Belt 9+ ==========
-    # Levels 64+ will be designed later
+    # ========== Belt 9: Black (4P Lightning) ==========
+    CampaignLevel(
+        level_id=64,
+        belt=9,
+        speed="lightning",
+        board_str="""
+000000000000000000000000
+000000000000000000000000
+00000000K400000000000000
+00000000P400000000000000
+00000000000000P1P1000000
+K3P3000000000000K1000000
+00000000000000P1P1000000
+000000000000000000000000
+00000000P200000000000000
+00000000K200000000000000
+000000000000000000000000
+000000000000000000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="One Punch Man",
+        description="Consecutive normal punches should do the trick. Just don't miss.",
+    ),
+    CampaignLevel(
+        level_id=65,
+        belt=9,
+        speed="lightning",
+        board_str="""
+0000P4P4P4K4P4P4P4P40000
+0000P4P4P4P4P4P4P4P40000
+P3P300P4P4P4P4P4P400P1P1
+P3P3P300P4P4P4P400P1P1P1
+P3P3P3P300P4P400P1P1P1P1
+P3P3P3P3P30000P1P1P1P1K1
+K3P3P3P3P30000P1P1P1P1P1
+P3P3P3P300P2P200P1P1P1P1
+P3P3P300P2P2P2P200P1P1P1
+P3P300P2P2P2P2P2P200P1P1
+0000P2P2P2P2P2P2P2P20000
+0000P2P2P2P2K2P2P2P20000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Squid Game",
+        description="456 players enter, but only one wins.",
+    ),
+    CampaignLevel(
+        level_id=66,
+        belt=9,
+        speed="lightning",
+        board_str="""
+0000Q2Q2Q2Q2K2B2R2Q20000
+0000P2P2P2P2P2P2P2P20000
+00000000000000000000P3Q3
+00000000000000000000P3Q3
+B1000000000000000000P3Q3
+00000000000000000000P3K3
+K1000000000000000000P3B3
+00000000000000000000P3R3
+B1000000000000000000P3Q3
+00000000000000000000P3Q3
+0000P4P4P4P4P4P4P4P40000
+0000Q4R4B4K4Q4Q4Q4Q40000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Survey Corps",
+        description="Danger lies beyond the walls. Attack the giant targets with precision!",
+    ),
+    CampaignLevel(
+        level_id=67,
+        belt=9,
+        speed="lightning",
+        board_str="""
+0000Q4K4Q400000000000000
+0000Q4Q4Q4000000R1000000
+0000Q4Q4Q400000000B10000
+0000000000000000R1B1R100
+000000000000000000B10000
+Q3Q3Q30000000000R10000K1
+K3Q3Q3000000R100000000Q1
+Q3Q3Q300000000B100000000
+000000000000R1B1R1000000
+0000Q2Q2Q20000B100000000
+0000Q2Q2Q200R10000000000
+0000Q2K2Q200000000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Golden",
+        description="We're goin' up, up, up, it's our moment.",
+    ),
+    CampaignLevel(
+        level_id=68,
+        belt=9,
+        speed="lightning",
+        board_str="""
+000000000000000000000000
+000000000000000000000000
+0000P4P1P1P1P1P1P1P10000
+0000P4000000000000P20000
+0000P400K4P1P1K100P20000
+0000P400P40000P200P20000
+0000P400P40000P200P20000
+0000P400K3P3P3K200P20000
+0000P4000000000000P20000
+0000P3P3P3P3P3P3P3P20000
+000000000000000000000000
+000000000000000000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Inception",
+        description="Is this the real world, or just a dream within a dream?",
+    ),
+    CampaignLevel(
+        level_id=69,
+        belt=9,
+        speed="lightning",
+        board_str="""
+0000Q4P400K40000P4Q40000
+000000P400P40000P4000000
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+P4P400P400P40000P400P4P4
+000000P400P40000P4000000
+000000K300K1Q100K2000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="I'm Blue",
+        description="Da ba dee da ba daa, da ba dee da ba daa.",
+    ),
+    CampaignLevel(
+        level_id=70,
+        belt=9,
+        speed="lightning",
+        board_str="""
+0000B4B400K400B4B4000000
+00000000B400B40000000000
+000000000000000000000000
+R3R3000000000000000000B1
+0000000000000000000000N1
+R3000000000000000000R1K1
+K300000000000000000000Q1
+R30000000000000000000000
+000000000000000000000000
+R3R300000000000000000000
+0000000000N200N200000000
+000000N2N200K200N2N20000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="The Last Airbender",
+        description="Water. Earth. Fire. Air. Only the Avatar can master all four elements.",
+    ),
+    CampaignLevel(
+        level_id=71,
+        belt=9,
+        speed="lightning",
+        board_str="""
+000000000000000000000000
+000000000000000000000000
+K4Q4Q400000000B1B1B10000
+Q4Q4Q4000000B1B100000000
+Q3Q3000000B100B100000000
+K3Q30000B10000K100000000
+Q3Q3000000B100B100000000
+Q2Q2Q2000000B1B100000000
+K2Q2Q200000000B1B1B10000
+000000000000000000000000
+000000000000000000000000
+000000000000000000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Endgame",
+        description="End it all with a snap of your fingers.",
+    ),
 ]
 
 
