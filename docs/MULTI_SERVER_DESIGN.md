@@ -1,0 +1,949 @@
+# Multi-Server Design
+
+This document describes the design for running multiple Kung Fu Chess server instances behind a load balancer, supporting rolling deploys and crash recovery with minimal game disruption.
+
+---
+
+## Table of Contents
+
+1. [Current Architecture](#current-architecture)
+2. [Goals & Constraints](#goals--constraints)
+3. [Deployment Topology](#deployment-topology)
+4. [Game Routing](#game-routing)
+5. [Game State Persistence & Recovery](#game-state-persistence--recovery)
+6. [Lobby System](#lobby-system)
+7. [Replay System](#replay-system)
+8. [Rolling Deploys](#rolling-deploys)
+9. [Crash Recovery](#crash-recovery)
+10. [Live Games List](#live-games-list)
+11. [Campaign & Quickplay](#campaign--quickplay)
+12. [Redis Key Schema](#redis-key-schema)
+13. [nginx Configuration](#nginx-configuration)
+14. [Deployment Script](#deployment-script)
+15. [Migration Path](#migration-path)
+
+---
+
+## Current Architecture
+
+Everything that matters for multi-server runs in-memory on a single process:
+
+| Component | Storage | Multi-Server Impact |
+|-----------|---------|-------------------|
+| `GameService.games` | In-memory dict | Game state lives on one server only |
+| `ConnectionManager.connections` | In-memory dict | WebSocket connections are process-local |
+| `LobbyManager._lobbies` | In-memory dict (+ optional DB) | Lobbies invisible to other servers |
+| `_game_loop_locks` | In-memory dict | Game loop coordination is process-local |
+| Game loop tasks | `asyncio.Task` per game | Cannot migrate between processes |
+| `active_games` table | PostgreSQL | Already cross-server (has `server_id`) |
+| Replays | PostgreSQL | Already cross-server |
+| Auth (JWT cookies) | Stateless | Already cross-server |
+
+### Request Flow Today
+
+```
+Client ──POST /api/games──> Server ──creates ManagedGame in memory
+Client ──WS /ws/game/{id}──> Same Server ──finds game in memory, starts loop
+```
+
+The client always talks to the same server because there's only one. With multiple servers, we need routing.
+
+---
+
+## Goals & Constraints
+
+### Must Have
+1. Multiple server processes on a single machine, different ports, behind nginx
+2. WebSocket connections routed to the server hosting the game
+3. Rolling deploys with fast forced game migration, <1s blip
+4. Crash recovery: in-progress games can resume on another server
+5. Lobbies visible and joinable across all servers
+
+### Nice to Have
+6. Servers on different machines (each with own nginx), behind AWS ALB
+7. Horizontal scaling by adding more server processes
+
+### Non-Goals
+- Splitting a single game across multiple servers
+- Real-time cross-server communication during gameplay (pub/sub for game ticks)
+- Zero-downtime deploys (a brief blip is acceptable)
+
+---
+
+## Deployment Topology
+
+### Single Machine (Primary Target)
+
+```
+                    ┌─────────────────┐
+                    │   AWS ALB       │
+                    │ (HTTPS/WSS)     │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │     nginx       │
+                    │  (reverse proxy)│
+                    └──┬────┬────┬───┘
+                       │    │    │
+              ┌────────▼┐ ┌▼────────┐ ┌▼────────┐
+              │ Server 1│ │ Server 2│ │ Server 3│
+              │ :8001   │ │ :8002   │ │ :8003   │
+              └────┬────┘ └────┬────┘ └────┬────┘
+                   │           │           │
+              ┌────▼───────────▼───────────▼────┐
+              │         PostgreSQL + Redis       │
+              └─────────────────────────────────┘
+```
+
+Each server has a stable `KFCHESS_SERVER_ID` (e.g., `worker1`, `worker2`, `worker3`).
+
+### Multi-Machine Extension
+
+Each machine runs its own nginx. The ALB routes to machines; machine nginx routes to local server processes. The design works identically because all coordination goes through PostgreSQL and Redis.
+
+---
+
+## Game Routing
+
+### The Core Problem
+
+A game's state lives in-memory on one server. WebSocket connections for that game must reach that server. But:
+- Game creation (REST) and WebSocket connection are separate requests
+- Reconnecting clients don't know which server hosts their game
+- After a crash or deploy, the game may move to a different server
+
+### Solution: Application-Level Redirect via nginx
+
+We use **application-level redirects**: a WS connection can land on any server (via nginx round-robin). If the server doesn't own the game, it checks Redis, tells the client which server to reconnect to, and the client reconnects with a routing hint that nginx uses to proxy to the correct upstream.
+
+#### How It Works
+
+```
+1. Client connects: wss://kfchess.com/ws/game/{game_id}?player_key=xxx
+   → nginx round-robins to Server 2
+
+2. Server 2 checks local GameService.games → not found
+
+3. Server 2 checks Redis game:{game_id}:server → "worker1"
+
+4. Server 2 closes WS with code 4302, reason: "worker1"
+
+5. Client reconnects: wss://kfchess.com/ws/game/{game_id}?player_key=xxx&server=worker1
+   → nginx sees server=worker1 query param, routes to Server 1
+
+6. Server 1 has the game → accepts connection, proceeds normally
+```
+
+The client never needs to know internal server addresses - it always connects through `kfchess.com`. The `server` query parameter is an opaque routing hint that nginx resolves to the correct upstream.
+
+#### Registration Flow
+
+When a game is created, the server:
+1. Stores the game in memory (as today)
+2. Writes to Redis: `game:{game_id}:server → server_id` (with TTL)
+3. Writes to `active_games` table (as today, already has `server_id`)
+
+```python
+async def register_game_routing(game_id: str, server_id: str):
+    await redis.set(f"game:{game_id}:server", server_id, ex=7200)  # 2hr TTL
+```
+
+The Redis entry is refreshed periodically by the game loop and deleted when the game ends.
+
+#### Full WebSocket Connection Flow
+
+```
+1. Client connects: WS /ws/game/{game_id}?player_key=xxx
+
+2. Server checks local GameService.games
+   → Found locally? Accept connection, proceed as today.
+
+3. Not found locally → Check Redis for game:{game_id}:server
+   → Found on another server?
+     Close with code 4302, reason = target server_id.
+   → Not in Redis? Check active_games table in PostgreSQL.
+     → Found in DB? Attempt game recovery (see Crash Recovery).
+     → Not in DB either? Close with 4004 "Game not found".
+```
+
+---
+
+## Game State Persistence & Recovery
+
+### The Problem
+
+Game state is in-memory. If a server crashes or is shut down for a deploy, all games on that server are lost unless we persist state.
+
+### Solution: Periodic State Snapshots to Redis
+
+The game loop already runs at 30 Hz. We add a **state snapshot** at a lower frequency:
+
+```python
+SNAPSHOT_INTERVAL_TICKS = 30  # Once per second at 30 Hz
+
+async def _run_game_loop(game_id: str) -> None:
+    # ... existing loop ...
+    while True:
+        # ... existing tick logic ...
+
+        # Periodic state snapshot (every ~1 second)
+        if state.current_tick % SNAPSHOT_INTERVAL_TICKS == 0:
+            await _snapshot_game_state(game_id, managed_game)
+
+        # ... rest of loop ...
+```
+
+#### What Gets Snapshotted
+
+```python
+@dataclass
+class GameSnapshot:
+    """Serializable game state for persistence."""
+    game_id: str
+    state: dict           # GameState serialized to dict
+    player_keys: dict     # {player_num: key}
+    ai_config: dict       # {player_num: ai_type} (AI instances recreated from config)
+    campaign_level_id: int | None
+    campaign_user_id: int | None
+    initial_board_str: str | None
+    server_id: str
+    snapshot_tick: int
+    snapshot_time: float   # time.time()
+```
+
+**Storage**: Redis key `game:{game_id}:snapshot` (JSON string)
+- TTL: 2 hours (same as stale game cleanup)
+- Size: ~5-20 KB per game (board + moves + cooldowns)
+
+#### GameState Serialization
+
+`GameState` needs `to_snapshot_dict()` and `from_snapshot_dict()` methods:
+
+```python
+class GameState:
+    def to_snapshot_dict(self) -> dict:
+        """Serialize state for persistence."""
+        return {
+            "game_id": self.game_id,
+            "speed": self.speed.value,
+            "board_type": self.board.board_type.value,
+            "players": self.players,
+            "current_tick": self.current_tick,
+            "status": self.status.value,
+            "winner": self.winner,
+            "win_reason": self.win_reason.value if self.win_reason else None,
+            "ready_players": list(self.ready_players),
+            "pieces": [piece.to_dict() for piece in self.board.pieces],
+            "active_moves": [move.to_dict() for move in self.active_moves],
+            "cooldowns": [cd.to_dict() for cd in self.cooldowns],
+            "replay_moves": [m.to_dict() for m in self.replay_moves],
+            "last_move_tick": self.last_move_tick,
+            "last_capture_tick": self.last_capture_tick,
+        }
+
+    @classmethod
+    def from_snapshot_dict(cls, data: dict) -> "GameState":
+        """Deserialize state from persistence."""
+        # ... reconstruct full state ...
+```
+
+AI instances are **not** serialized - only the AI config (type name, e.g. `"novice"`) is stored. On recovery, fresh AI instances are created. Since AI is already non-deterministic (noise parameter), this is transparent to the player.
+
+#### Cost Analysis
+
+- **Serialization**: ~0.1ms for a typical game state
+- **Redis write**: ~0.2ms on localhost
+- **Frequency**: Once per second per game
+- **With 100 concurrent games**: 100 writes/sec to Redis, ~30 KB/sec bandwidth
+- **Acceptable**: Well within Redis capacity
+
+---
+
+## Lobby System
+
+### The Problem
+
+Lobbies are fully in-memory singletons. Two servers have two separate `LobbyManager` instances with no shared state.
+
+### Solution: Redis-Backed State + Stateless Pub/Sub WebSockets
+
+All lobby state moves to Redis. The existing in-memory `LobbyManager` is **replaced entirely** by a `RedisLobbyManager` with an all-async interface.
+
+Lobby WebSocket connections become **stateless subscribers**: each server with connected lobby clients subscribes to that lobby's Redis Pub/Sub channel and forwards events to local WebSocket connections.
+
+This means:
+- **No lobby WS routing needed** - any server can handle lobby WS connections
+- **No single "owner" server** for a lobby - connections can be spread across servers
+- Lobby state changes (REST or WS actions) write to Redis and publish events
+- All servers with subscribers receive events and broadcast to their local connections
+- **No one-lobby-per-player restriction** - players can be in multiple lobbies simultaneously
+
+#### Architecture
+
+```
+                    ┌──────────────────┐
+                    │   Redis          │
+                    │   - Lobby state  │
+                    │   - Pub/Sub      │
+                    └──┬────┬────┬────┘
+                       │    │    │
+         subscribe  subscribe  subscribe
+                       │    │    │
+              ┌────────▼┐ ┌▼────────┐ ┌▼────────┐
+              │ Server 1│ │ Server 2│ │ Server 3│
+              │ WS: P1  │ │ WS: P2  │ │         │
+              └─────────┘ └─────────┘ └─────────┘
+
+Player 1 on Server 1, Player 2 on Server 2.
+P1 readies up → Server 1 writes to Redis, publishes event.
+Server 2 receives event via pub/sub → broadcasts to P2's WS.
+```
+
+#### Redis Data Model
+
+```
+lobby:{code}              → JSON string: full lobby state
+                            {settings, status, host_slot, players, ...}
+lobby:{code}:keys         → Hash: {slot → player_key}
+lobby:public_index        → Sorted Set: {code → created_at_timestamp}
+```
+
+#### Pub/Sub Channel
+
+```
+Channel: lobby_events:{code}
+Messages:
+  {"type": "player_joined", "slot": 2, "player": {...}, "lobby": {...}}
+  {"type": "player_left", "slot": 2, "reason": "left"}
+  {"type": "player_ready", "slot": 1, "ready": true}
+  {"type": "player_disconnected", "slot": 2}
+  {"type": "player_reconnected", "slot": 2, "player": {...}}
+  {"type": "settings_updated", "settings": {...}}
+  {"type": "host_changed", "newHostSlot": 2}
+  {"type": "game_starting", "gameId": "...", "playerKeys": {slot: key}}
+  {"type": "game_ended", "winner": 1, "reason": "king_captured"}
+  {"type": "lobby_state", "lobby": {...}}  // Full state sync
+```
+
+The `game_starting` message includes all player keys. Each server filters to only send a player their own key. This is safe because pub/sub is server-to-server (never exposed to clients).
+
+#### WebSocket Handler
+
+The lobby WebSocket handler becomes a thin pub/sub relay:
+
+```python
+async def handle_lobby_websocket(websocket, code, player_key):
+    # 1. Validate player_key against Redis
+    slot = await redis_lobby.validate_key(code, player_key)
+    if slot is None:
+        await websocket.close(code=4001)
+        return
+
+    # 2. Mark player connected in Redis, publish reconnection event
+    await redis_lobby.set_connected(code, slot, True)
+
+    # 3. Accept WS, send current lobby state from Redis
+    await websocket.accept()
+    lobby = await redis_lobby.get_lobby(code)
+    await websocket.send_json({"type": "lobby_state", "lobby": lobby})
+
+    # 4. Subscribe to lobby events channel
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(f"lobby_events:{code}")
+
+    # 5. Run two concurrent tasks:
+    #    a) Forward pub/sub events to WebSocket
+    #    b) Handle incoming WS messages (ready, start, etc.)
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(_relay_pubsub_to_ws(pubsub, websocket))
+        tg.create_task(_handle_ws_messages(websocket, code, slot))
+
+    # 6. On disconnect: mark disconnected, unsubscribe
+    await redis_lobby.set_connected(code, slot, False)
+    await pubsub.unsubscribe(f"lobby_events:{code}")
+```
+
+#### RedisLobbyManager
+
+Replaces the current in-memory `LobbyManager` entirely. All operations are async:
+
+```python
+class RedisLobbyManager:
+    """Lobby manager backed by Redis. Replaces in-memory LobbyManager."""
+
+    async def create_lobby(self, ...) -> tuple[dict, str]:
+        # Atomic write to Redis (MULTI/EXEC or Lua script)
+        # Add to lobby:public_index if public
+        # Publish "lobby_state" event
+        ...
+
+    async def join_lobby(self, code, ...) -> tuple[dict, str, int]:
+        # Atomic read-modify-write in Redis
+        # Publish "player_joined" event
+        ...
+
+    async def get_lobby(self, code) -> dict | None:
+        # Read lobby:{code} from Redis
+        ...
+
+    async def get_public_lobbies(self, ...) -> list[dict]:
+        # Read from lobby:public_index sorted set
+        # Fetch each lobby's state
+        ...
+
+    async def set_ready(self, code, player_key, ready) -> dict:
+        # Update player ready state in Redis
+        # Publish "player_ready" event
+        ...
+
+    async def start_game(self, code, host_key) -> tuple[str, dict[int, str]]:
+        # Validate all ready, transition to IN_GAME
+        # Generate game player keys
+        # Publish "game_starting" event with all player keys
+        ...
+
+    # ... etc for all lobby operations
+```
+
+#### Lobby → Game Transition
+
+When the host starts a game via WebSocket:
+
+1. Server validates all players ready (from Redis state)
+2. Server creates the game locally via `GameService.create_lobby_game()`
+3. Server registers game routing in Redis (`game:{id}:server`)
+4. Server publishes `game_starting` event with game_id and all player keys
+5. Each server with lobby WS connections receives the event and sends `game_starting` to its local players (each player gets only their own player_key)
+6. Players open game WebSocket connections (routed to the game's server via redirect)
+
+The game is always created on the server where the host's WS connection lives, since the host triggers `start_game`. This naturally distributes games across servers.
+
+#### Lobby Cleanup
+
+Disconnected player cleanup uses timestamps in the lobby state:
+- When a player disconnects, `disconnected_at` is set in Redis
+- On any lobby access (REST or WS message), check for expired disconnections (>30s)
+- Lobbies with no human players and status != IN_GAME are deleted
+- Stale lobbies cleaned up on server startup (scan `lobby:public_index`)
+
+---
+
+## Replay System
+
+Replays are already database-backed and mostly stateless. The WebSocket playback session (`ReplaySession`) is in-memory but doesn't need cross-server coordination.
+
+### Reconnection
+
+If a replay WS disconnects:
+1. Client reconnects (possibly to a different server)
+2. Client sends `{"type": "resume", "tick": N, "was_playing": true}`
+3. New server loads replay from DB, seeks to tick N, resumes playback
+
+This is already described in the TODO comments in `replay_handler.py` and `replay/session.py`. No Redis needed - the seek cost (O(n) in ticks) is acceptable since replays are short.
+
+---
+
+## Rolling Deploys
+
+Deploys should be fast - immediately force-migrate all games rather than waiting.
+
+### Deploy Sequence
+
+```
+1. Deploy signal received (SIGTERM)
+
+2. Server enters DRAINING state:
+   a. Health check returns unhealthy → nginx stops sending new requests
+   b. Stop accepting new game creation (return 503)
+
+3. Force-migrate all active games (immediately, don't wait):
+   a. For each running game:
+      - Write final snapshot to Redis synchronously (no data loss)
+      - Delete game:{id}:server from Redis (so it can be claimed)
+      - Close all game WS connections with code 4301 ("server shutting down")
+      - Clients reconnect → new server picks up from snapshot
+
+4. Close all lobby WS connections:
+   a. Mark all locally-connected lobby players as disconnected in Redis
+   b. Close connections (clients reconnect to any server via round-robin)
+
+5. Clean up active_games table entries for this server
+
+6. Shutdown
+```
+
+### Client-Side Handling
+
+```typescript
+// In GameWebSocketClient
+private handleClose(event: CloseEvent): void {
+    if (event.code === 4301) {
+        // Server shutting down - reconnect immediately (no backoff)
+        this.reconnectAttempts = 0;
+        this.connect();
+        return;
+    }
+    if (event.code === 4302) {
+        // Redirect to specific server
+        const serverId = event.reason;
+        this.connectWithServerHint(serverId);
+        return;
+    }
+    // ... existing reconnect logic with backoff ...
+}
+
+private connectWithServerHint(serverId: string): void {
+    // Add server= query param so nginx routes correctly
+    const url = new URL(this.wsUrl);
+    url.searchParams.set('server', serverId);
+    this.ws = new WebSocket(url.toString());
+    // ...
+}
+```
+
+### Disruption Budget
+
+- **Planned deploy**: Zero data loss (final snapshot written synchronously before closing connections)
+- **Reconnection time**: ~200-500ms (WS close + reconnect + snapshot restore)
+- **Total blip**: ~500ms
+
+---
+
+## Crash Recovery
+
+### Detection
+
+Each server writes a heartbeat to Redis every second:
+
+```
+server:{server_id}:heartbeat → timestamp    TTL: 5s
+```
+
+If a server's heartbeat expires, it's considered dead. Crash detection happens in two ways:
+1. **Client reconnection**: client's WS drops, it reconnects to any server
+2. **Other servers**: can check heartbeat when they see a game routed to a dead server
+
+### Recovery Flow
+
+When a client reconnects after a crash:
+
+```
+1. Client WS reconnects (any server, via nginx round-robin)
+2. Server checks local games → not found
+3. Server checks Redis game:{id}:server → "worker2" (the dead server)
+4. Server checks Redis server:worker2:heartbeat → expired/missing
+5. Server atomically claims game: SET game:{id}:server worker1 XX
+   (XX = only set if key exists; prevents claiming non-existent games)
+   If claim fails (another server won), redirect to winner.
+6. Server loads game:{id}:snapshot from Redis
+7. Server restores game state, recreates AI instances, starts game loop
+8. Server updates active_games table with new server_id
+9. Client receives state update, game continues
+```
+
+The atomic `SET ... XX` ensures only one server can claim a game. If two clients reconnect to different servers simultaneously, only one wins. The other redirects.
+
+### Data Loss on Crash
+
+- **Worst case**: Up to 1 second of game state (last snapshot to crash)
+- **Effect**: Pieces may "jump back" slightly, players may need to re-issue moves
+- **Replay**: Last ~30 ticks of replay data not recorded
+- **Ratings**: Not affected (ratings only update on game completion)
+- **Acceptable**: Yes - with 10s cooldowns, losing 1s of state is minor
+
+### Countdown Phase
+
+If a recovered game is at tick 0, skip countdown and start immediately. The countdown is cosmetic - players already saw it before the crash.
+
+### Unrecoverable Scenarios
+
+If Redis itself crashes (losing snapshots), games in progress are lost. Players see an error and the game does not count for ratings.
+
+---
+
+## Live Games List
+
+### Current Behavior
+
+- Games register in `active_games` with `server_id` and `started_at` on creation
+- Games deregister on completion
+- `GET /api/games/live` queries the table, currently enriches with in-memory tick count
+
+### Multi-Server Change
+
+Instead of enriching with tick count (which only works for games on the responding server), use the `started_at` timestamp from PostgreSQL and display relative time in the UI (e.g., "2 minutes ago", "30 seconds ago").
+
+This is simpler, works across servers with no additional infrastructure, and provides a good enough user experience for the live games list.
+
+---
+
+## Campaign & Quickplay
+
+Both create games via REST then connect via WebSocket.
+
+### Current Flow
+
+```
+POST /api/games         → creates game on this server, returns game_id + player_key
+WS /ws/game/{game_id}  → connects to this server (same server, so game is found)
+```
+
+### Multi-Server Flow
+
+```
+POST /api/games         → creates game on this server, returns game_id + player_key
+                          Also writes game:{id}:server to Redis
+WS /ws/game/{game_id}  → any server via round-robin
+                          If wrong server → redirect to correct one (one extra round-trip)
+```
+
+Since the REST response includes the `game_id`, and the Redis routing entry is written during creation, the WebSocket connection will be correctly routed on the first or second attempt. The client never needs to know about the server topology.
+
+Game is always created on the server that handles the REST request. The load balancer distributes requests roughly evenly, so game distribution is roughly even across servers.
+
+---
+
+## Redis Key Schema
+
+All Redis keys used by the multi-server system:
+
+```
+# Game routing & state
+game:{game_id}:server       → String: "worker1"             TTL: 2h (refreshed by game loop)
+game:{game_id}:snapshot      → String: JSON game snapshot    TTL: 2h (refreshed by game loop)
+
+# Lobby state
+lobby:{code}                 → String: JSON lobby state      TTL: 24h
+lobby:{code}:keys            → Hash: {slot → player_key}     TTL: 24h
+lobby:public_index           → Sorted Set: {code → timestamp} (no TTL, cleaned on delete)
+
+# Lobby pub/sub
+lobby_events:{code}          → Pub/Sub channel (no storage)
+
+# Server heartbeat
+server:{server_id}:heartbeat → String: timestamp             TTL: 5s (refreshed every 1s)
+server:{server_id}:addr      → String: "127.0.0.1:8001"     TTL: 10s (refreshed every 5s)
+```
+
+---
+
+## nginx Configuration
+
+Full production nginx config for `kfchess.com`. SSL is terminated at the ALB, so nginx handles plain HTTP/WS from the ALB.
+
+### `/etc/nginx/conf.d/kfchess.conf`
+
+```nginx
+# ─── Upstreams ───────────────────────────────────────────────
+
+upstream kfchess_default {
+    server 127.0.0.1:8001;
+    server 127.0.0.1:8002;
+    server 127.0.0.1:8003;
+}
+
+# ─── Server routing map ─────────────────────────────────────
+# Maps the ?server= query parameter to specific upstream addresses.
+# Used for game WebSocket routing (redirect-based sticky sessions).
+# Update this map when adding/removing server processes.
+
+map $arg_server $kfchess_game_target {
+    default   "";
+    worker1   127.0.0.1:8001;
+    worker2   127.0.0.1:8002;
+    worker3   127.0.0.1:8003;
+}
+
+# ─── Connection upgrade map ─────────────────────────────────
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ""      close;
+}
+
+# ─── Server block ───────────────────────────────────────────
+
+server {
+    listen 80;
+    server_name kfchess.com;
+
+    # ── Health check (for ALB) ───────────────────────────────
+    location = /nginx-health {
+        return 200 "ok";
+        add_header Content-Type text/plain;
+    }
+
+    # ── Static frontend assets ───────────────────────────────
+    location / {
+        root /var/www/kfchess/client/dist;
+        try_files $uri $uri/ /index.html;
+
+        # Cache static assets aggressively
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # ── API (round-robin to any server) ──────────────────────
+    location /api/ {
+        proxy_pass http://kfchess_default;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── Game WebSocket (routed by server hint) ───────────────
+    # If ?server=workerN is present, route to that specific server.
+    # Otherwise, round-robin to any server (which may redirect).
+    location /ws/game/ {
+        # Use game target if server hint is present, otherwise default upstream
+        set $game_upstream kfchess_default;
+        if ($kfchess_game_target != "") {
+            set $game_upstream $kfchess_game_target;
+        }
+
+        proxy_pass http://$game_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # WebSocket timeouts
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ── Lobby WebSocket (round-robin, no routing needed) ─────
+    location /ws/lobby/ {
+        proxy_pass http://kfchess_default;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ── Replay WebSocket (round-robin, no routing needed) ────
+    location /ws/replay/ {
+        proxy_pass http://kfchess_default;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+```
+
+### Notes
+
+- **SSL termination**: Handled by the ALB. nginx receives plain HTTP on port 80.
+- **Static files**: Served directly by nginx from the built frontend. API and WS requests are proxied.
+- **Lobby/Replay WS**: Round-robin to any server. No routing hint needed because lobby WS uses pub/sub (any server works) and replay sessions are stateless.
+- **Game WS**: Uses `$arg_server` to route to specific servers when the client provides a `?server=workerN` hint. Falls back to round-robin if no hint is present.
+- **Health checks**: The ALB checks `/nginx-health` (always 200). Individual server health is checked by the ALB via `/health` through the upstream.
+
+---
+
+## Deployment Script
+
+Script to perform a rolling deploy across all server processes. Each server is stopped, updated, and restarted one at a time.
+
+### `scripts/deploy.sh`
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─── Configuration ───────────────────────────────────────────
+WORKERS=(worker1 worker2 worker3)
+PORTS=(8001 8002 8003)
+APP_DIR="/var/www/kfchess"
+SERVER_DIR="$APP_DIR/server"
+VENV_CMD="uv run"
+DEPLOY_PAUSE=2  # seconds between workers
+
+# ─── Colors ──────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log() { echo -e "${GREEN}[deploy]${NC} $1"; }
+warn() { echo -e "${YELLOW}[deploy]${NC} $1"; }
+err() { echo -e "${RED}[deploy]${NC} $1" >&2; }
+
+# ─── Pre-deploy ──────────────────────────────────────────────
+log "Starting rolling deploy..."
+
+# Pull latest code
+cd "$APP_DIR"
+git pull origin main
+
+# Build frontend
+log "Building frontend..."
+cd "$APP_DIR/client"
+npm ci --production
+npm run build
+
+# Copy built frontend to nginx serving directory
+cp -r dist/* /var/www/kfchess/client/dist/
+
+# Install/update backend dependencies
+cd "$SERVER_DIR"
+uv sync
+
+# Run database migrations
+log "Running database migrations..."
+$VENV_CMD alembic upgrade head
+
+# ─── Rolling restart ─────────────────────────────────────────
+for i in "${!WORKERS[@]}"; do
+    worker="${WORKERS[$i]}"
+    port="${PORTS[$i]}"
+
+    log "Deploying $worker (port $port)..."
+
+    # Send SIGTERM to the worker process (triggers graceful drain)
+    # The server writes final snapshots and closes connections before exiting
+    if systemctl is-active --quiet "kfchess@$worker"; then
+        log "  Stopping $worker (graceful drain)..."
+        systemctl stop "kfchess@$worker"
+
+        # Wait for process to fully exit
+        sleep 1
+    else
+        warn "  $worker was not running"
+    fi
+
+    # Start the worker with new code
+    log "  Starting $worker..."
+    systemctl start "kfchess@$worker"
+
+    # Wait for health check
+    for attempt in $(seq 1 10); do
+        if curl -sf "http://127.0.0.1:$port/health" > /dev/null 2>&1; then
+            log "  $worker is healthy"
+            break
+        fi
+        if [ "$attempt" -eq 10 ]; then
+            err "  $worker failed to start! Aborting deploy."
+            exit 1
+        fi
+        sleep 1
+    done
+
+    # Pause before next worker to let games migrate
+    if [ "$i" -lt $((${#WORKERS[@]} - 1)) ]; then
+        log "  Waiting ${DEPLOY_PAUSE}s before next worker..."
+        sleep "$DEPLOY_PAUSE"
+    fi
+done
+
+log "Deploy complete! All workers running."
+```
+
+### systemd Unit Template
+
+### `/etc/systemd/system/kfchess@.service`
+
+```ini
+[Unit]
+Description=Kung Fu Chess Server (%i)
+After=network.target postgresql.service redis.service
+Requires=postgresql.service redis.service
+
+[Service]
+Type=exec
+User=kfchess
+Group=kfchess
+WorkingDirectory=/var/www/kfchess/server
+Environment=KFCHESS_SERVER_ID=%i
+EnvironmentFile=/var/www/kfchess/server/.env
+
+# Port is derived from worker name: worker1=8001, worker2=8002, etc.
+ExecStart=/var/www/kfchess/server/.venv/bin/uvicorn \
+    kfchess.main:app \
+    --host 127.0.0.1 \
+    --port %I \
+    --workers 1 \
+    --log-level info
+
+# Graceful shutdown: SIGTERM triggers drain, then SIGKILL after timeout
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Note**: The systemd template uses `%i` for the server ID (e.g., `worker1`) and `%I` for the unescaped instance name. The port mapping (worker1→8001, etc.) needs to be handled either via the `EnvironmentFile` or by setting `KFCHESS_PORT` per-instance. A simpler approach is to have each worker's port in the `.env` file or use a wrapper script:
+
+```bash
+# /usr/local/bin/kfchess-worker
+#!/bin/bash
+# Derive port from worker number: worker1→8001, worker2→8002, etc.
+NUM="${KFCHESS_SERVER_ID//[!0-9]/}"
+PORT=$((8000 + NUM))
+exec uvicorn kfchess.main:app --host 127.0.0.1 --port "$PORT" --workers 1 --log-level info
+```
+
+Then in the systemd unit: `ExecStart=/usr/local/bin/kfchess-worker`
+
+---
+
+## Migration Path
+
+The migration from single-server to multi-server can be done incrementally:
+
+### Phase 1: State Serialization (no behavior change)
+- Add `to_snapshot_dict()` / `from_snapshot_dict()` to `GameState`
+- Add serialization to `Piece`, `Move`, `Cooldown`, `Board`
+- Add comprehensive tests for round-trip serialization
+- **Zero risk**: No behavior changes, just new code paths
+
+### Phase 2: Redis Integration (single server, no routing)
+- Add Redis client to the application
+- Add periodic game state snapshots to Redis from the game loop
+- Add game restoration from Redis snapshot on startup
+- Add server heartbeat to Redis
+- Test: Kill server, restart, verify games resume from snapshot
+- **Low risk**: Single server, Redis adds persistence but doesn't change behavior
+
+### Phase 3: Game Routing (multi-server games)
+- Add `game:{id}:server` registration on game creation
+- Add redirect logic in WebSocket handler (check Redis, redirect if wrong server)
+- Add `server` query param handling in nginx config
+- Add client-side handling for close codes 4301/4302
+- Deploy nginx config and deployment script
+- Test: Create game on Server 1, connect from Server 2, verify redirect works
+- **Medium risk**: Routing errors could cause extra round-trips but are self-correcting
+
+### Phase 4: Lobby Migration to Redis
+- Replace in-memory `LobbyManager` with `RedisLobbyManager` (all-async interface)
+- Remove one-lobby-per-player restriction (`_player_to_lobby` tracking)
+- Implement Redis Pub/Sub relay in lobby WebSocket handler
+- Update REST endpoints to use Redis-backed manager
+- Test: Create lobby on Server 1, join from Server 2, start game
+- **Higher risk**: Lobby system is complex, thorough testing needed
+
+### Phase 5: Deploy & Recovery
+- Add drain mode (SIGTERM handler, health check endpoint)
+- Add synchronous final snapshot on drain
+- Add crash recovery flow (claim game from dead server)
+- Test: Deploy with active games, verify <1s blip
+- Test: Kill server process, verify game recovery on reconnect
