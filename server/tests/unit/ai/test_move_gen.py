@@ -1,7 +1,7 @@
 """Tests for MoveGen."""
 
 
-from kfchess.ai.move_gen import MoveGen
+from kfchess.ai.move_gen import _INF_TRAVEL, MoveGen, compute_travel_ticks
 from kfchess.ai.state_extractor import StateExtractor
 from kfchess.game.board import Board, BoardType
 from kfchess.game.engine import GameEngine
@@ -102,3 +102,66 @@ class TestMoveGen:
         ai_state = StateExtractor.extract(state, ai_player=1)
         candidates = MoveGen.generate_candidates(state, ai_state, 1)
         assert len(candidates) == 0
+
+
+class TestComputeTravelTicks:
+    """Tests for compute_travel_ticks piece movement constraints."""
+
+    # -- Rook -----------------------------------------------------------
+
+    def test_rook_same_rank(self):
+        """Rook on same rank returns correct distance."""
+        assert compute_travel_ticks(3, 0, 3, 7, PieceType.ROOK, 6) == 7 * 6
+
+    def test_rook_same_file(self):
+        """Rook on same file returns correct distance."""
+        assert compute_travel_ticks(0, 4, 7, 4, PieceType.ROOK, 6) == 7 * 6
+
+    def test_rook_off_axis_returns_inf(self):
+        """Rook not on same rank or file cannot reach target in one move."""
+        result = compute_travel_ticks(3, 0, 0, 4, PieceType.ROOK, 6)
+        assert result == _INF_TRAVEL
+
+    def test_rook_diagonal_returns_inf(self):
+        """Rook on a diagonal (dr == dc) still can't reach in one move."""
+        result = compute_travel_ticks(0, 0, 3, 3, PieceType.ROOK, 6)
+        assert result == _INF_TRAVEL
+
+    # -- Bishop ---------------------------------------------------------
+
+    def test_bishop_same_diagonal(self):
+        """Bishop on same diagonal returns correct distance."""
+        assert compute_travel_ticks(0, 0, 5, 5, PieceType.BISHOP, 6) == 5 * 6
+
+    def test_bishop_off_diagonal_returns_inf(self):
+        """Bishop not on same diagonal cannot reach target in one move."""
+        result = compute_travel_ticks(0, 0, 3, 4, PieceType.BISHOP, 6)
+        assert result == _INF_TRAVEL
+
+    def test_bishop_same_rank_returns_inf(self):
+        """Bishop on same rank but not diagonal cannot reach."""
+        result = compute_travel_ticks(3, 0, 3, 5, PieceType.BISHOP, 6)
+        assert result == _INF_TRAVEL
+
+    # -- King -----------------------------------------------------------
+
+    def test_king_adjacent(self):
+        """King can reach adjacent square."""
+        assert compute_travel_ticks(4, 4, 3, 5, PieceType.KING, 6) == 1 * 6
+
+    def test_king_two_squares_returns_inf(self):
+        """King cannot reach a square 2+ away in one move."""
+        result = compute_travel_ticks(4, 4, 2, 4, PieceType.KING, 6)
+        assert result == _INF_TRAVEL
+
+    # -- Queen / Knight (unchanged behavior) ----------------------------
+
+    def test_queen_any_direction(self):
+        """Queen uses Chebyshev distance for any direction."""
+        assert compute_travel_ticks(0, 0, 3, 3, PieceType.QUEEN, 6) == 3 * 6
+        assert compute_travel_ticks(0, 0, 0, 5, PieceType.QUEEN, 6) == 5 * 6
+
+    def test_knight_fixed_cost(self):
+        """Knight always returns 2 * tps regardless of distance."""
+        assert compute_travel_ticks(0, 0, 2, 1, PieceType.KNIGHT, 6) == 2 * 6
+        assert compute_travel_ticks(0, 0, 7, 7, PieceType.KNIGHT, 6) == 2 * 6

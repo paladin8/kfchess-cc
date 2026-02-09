@@ -17,11 +17,11 @@ PIECE_VALUES: dict[PieceType, float] = {
     PieceType.BISHOP: 3.0,
     PieceType.ROOK: 5.0,
     PieceType.QUEEN: 9.0,
-    PieceType.KING: 10.0,  # Base value; game-ending bonus applied separately
+    PieceType.KING: 20.0,  # Base value; game-ending bonus applied separately
 }
 
 # Bonus for capturing the last enemy king (wins the game)
-GAME_ENDING_KING_BONUS = 90.0  # Total effective = (10 + 90) * 10 = 1000
+GAME_ENDING_KING_BONUS = 80.0  # Total effective = (20 + 80) * 10 = 1000
 
 
 def capture_value(

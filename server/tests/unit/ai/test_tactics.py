@@ -67,7 +67,7 @@ class TestGameEndingKingCapture:
         )
         value = capture_value(candidate)
         assert value == PIECE_VALUES[PieceType.KING]
-        assert value == 10.0  # Base king value
+        assert value == 20.0  # Base king value
 
     def test_king_capture_with_single_enemy_king_adds_bonus(self):
         """Capturing the last enemy king adds game-ending bonus."""
@@ -88,7 +88,7 @@ class TestGameEndingKingCapture:
         value = capture_value(candidate, ai_state)
         expected = PIECE_VALUES[PieceType.KING] + GAME_ENDING_KING_BONUS
         assert value == expected
-        assert value == 100.0  # 10 + 90
+        assert value == 100.0  # 20 + 80
 
     def test_king_capture_with_multiple_enemy_kings_no_bonus(self):
         """Capturing a king when others remain gives no bonus (4-player)."""
@@ -115,7 +115,7 @@ class TestGameEndingKingCapture:
         value = capture_value(candidate, ai_state)
         # No bonus - game doesn't end
         assert value == PIECE_VALUES[PieceType.KING]
-        assert value == 10.0
+        assert value == 20.0
 
     def test_non_king_capture_unaffected(self):
         """Capturing non-king pieces is unaffected by game-ending logic."""
@@ -611,6 +611,93 @@ class TestThreatenScore:
 
         candidate = CandidateMove(piece_id="x", to_row=4, to_col=4)
         assert threaten_score(candidate, ai_state, data) == 0.0
+
+    def test_rook_no_phantom_threat_off_axis(self):
+        """Rook should NOT score a threat to a king it can't reach in one move.
+
+        Regression: the old compute_travel_ticks used Chebyshev distance for
+        all pieces, giving rooks a finite attack time to off-axis targets.
+        This produced phantom threats from positions where the rook had no
+        actual attack line.
+        """
+        # Minimal board: our rook + king, enemy king not aligned with dest
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 4))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        board.pieces.append(Piece.create(PieceType.ROOK, 1, 7, 0))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.LIGHTNING,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+
+        rook = ai_state.pieces_by_id["R:1:7:0"]
+
+        # Rook moves to (3, 0). Enemy king at (0, 4) is NOT on same
+        # rank or file as (3, 0), so the rook cannot attack it.
+        # King at (0, 4) is 4 cols away from dest (3, 0) — can't
+        # counter-capture in one move, so enemy_to_dest = INF.
+        #
+        # Old bug: compute_travel_ticks(3,0 → 0,4) = max(3,4)*tps = 24
+        #   → finite attack time, INF enemy arrival → phantom threat scored
+        # Fix: compute_travel_ticks returns INF for off-axis rook
+        #   → attack_travel = INF → our_attack_time = INF → no threat
+        enemy_by_piece: dict[str, dict[tuple[int, int], int]] = {}
+        for ep in ai_state.get_enemy_pieces():
+            # King can't reach (3, 0) in one move — default to INF
+            enemy_by_piece[ep.piece.id] = {}
+
+        data = ArrivalData(
+            tps=6, cd_ticks=60,
+            enemy_time_by_piece=enemy_by_piece,
+        )
+
+        candidate = CandidateMove(
+            piece_id=rook.piece.id, to_row=3, to_col=0,
+            ai_piece=rook,
+        )
+        score = threaten_score(candidate, ai_state, data)
+        assert score == 0.0  # No real threat — rook can't attack from (3,0) to (0,4)
+
+    def test_rook_real_threat_on_same_file(self):
+        """Rook on same file as enemy king SHOULD score a threat."""
+        # Rook starts on file 4, moves up file 4 toward king at (0, 4).
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 0))
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 4))
+        board.pieces.append(Piece.create(PieceType.ROOK, 1, 7, 4))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.LIGHTNING,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+        ai_state = StateExtractor.extract(state, ai_player=1)
+
+        rook = ai_state.pieces_by_id["R:1:7:4"]
+
+        # Rook moves to (3, 4) — same file as king at (0, 4).
+        # King at (0, 4) is 3 rows from (3, 4) — can't reach in one move.
+        # Rook CAN attack along the file: (3,4) → (0,4).
+        enemy_by_piece: dict[str, dict[tuple[int, int], int]] = {}
+        for ep in ai_state.get_enemy_pieces():
+            enemy_by_piece[ep.piece.id] = {}  # King can't reach (3,4)
+
+        data = ArrivalData(
+            tps=6, cd_ticks=60,
+            enemy_time_by_piece=enemy_by_piece,
+        )
+
+        candidate = CandidateMove(
+            piece_id=rook.piece.id, to_row=3, to_col=4,
+            ai_piece=rook,
+        )
+        score = threaten_score(candidate, ai_state, data)
+        assert score == PIECE_VALUES[PieceType.KING]  # 10.0 — real threat
 
 
 class TestKingExposurePenalty:

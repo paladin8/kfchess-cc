@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from kfchess.ai.arrival_field import ArrivalData
 
 
+_INF_TRAVEL = 999_999
+
+
 def compute_travel_ticks(
     from_row: int, from_col: int,
     to_row: int, to_col: int,
@@ -22,15 +25,23 @@ def compute_travel_ticks(
 ) -> int:
     """Estimate travel time in ticks for a move.
 
-    This is an approximation — the engine computes exact path length,
-    but we use Chebyshev distance for sliders and fixed costs for knights.
+    Returns _INF_TRAVEL if the piece can't reach the target in a single
+    move (e.g. rook off-axis, bishop off-diagonal).
     """
     if piece_type == PieceType.KNIGHT:
         return 2 * tps  # Knights always move 2 segments
-    # Sliders, king, pawn: distance along the path
     dr = abs(to_row - from_row)
     dc = abs(to_col - from_col)
-    dist = max(dr, dc)  # Chebyshev = path length for diagonal/straight
+    if piece_type == PieceType.ROOK:
+        if dr != 0 and dc != 0:
+            return _INF_TRAVEL  # Rook requires same rank or file
+    elif piece_type == PieceType.BISHOP:
+        if dr != dc:
+            return _INF_TRAVEL  # Bishop requires same diagonal
+    elif piece_type == PieceType.KING:
+        if dr > 1 or dc > 1:
+            return _INF_TRAVEL  # King moves 1 square at a time
+    dist = max(dr, dc)
     return dist * tps
 
 

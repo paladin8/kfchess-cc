@@ -1,7 +1,4 @@
 """Campaign level definitions.
-
-Levels 0-31: Legacy 2-player levels (preserved from original kfchess)
-Levels 32+: Future 4-player levels (to be designed)
 """
 
 from kfchess.game.board import BoardType
@@ -16,17 +13,17 @@ BELT_NAMES = [
     "Green",  # 3: levels 16-23
     "Purple",  # 4: levels 24-31
     "Orange",  # 5: levels 32-39
-    "Blue",  # 6: levels 40-47 (future)
-    "Brown",  # 7: levels 48-55 (future)
-    "Red",  # 8: levels 56-63 (future)
+    "Blue",  # 6: levels 40-47
+    "Brown",  # 7: levels 48-55
+    "Red",  # 8: levels 56-63
     "Black",  # 9: levels 64-71 (future)
 ]
 
-MAX_BELT = 7  # Currently implemented belts
+MAX_BELT = 8  # Currently implemented belts
 
 
 LEVELS: list[CampaignLevel] = [
-    # ========== Belt 1: White (Tutorial) ==========
+    # ========== Belt 1: White (2P Standard) ==========
     CampaignLevel(
         level_id=0,
         belt=1,
@@ -163,7 +160,7 @@ P1P1P10000P1P1P1
         title="The Four Horsemen",
         description="Knights capture only at the end of their path. Ride to victory!",
     ),
-    # ========== Belt 2: Yellow ==========
+    # ========== Belt 2: Yellow (2P Standard) ==========
     CampaignLevel(
         level_id=8,
         belt=2,
@@ -300,7 +297,7 @@ R1N1B1Q1K1B1N1R1
         title="For the Alliance!",
         description="You must put an end to the Horde once and for all.",
     ),
-    # ========== Belt 3: Green (Lightning Speed) ==========
+    # ========== Belt 3: Green (2P Lightning) ==========
     CampaignLevel(
         level_id=16,
         belt=3,
@@ -437,7 +434,7 @@ R1000000K1B1N100
         title="Need for Speed",
         description="Discover your inner speed demon to overcome the odds.",
     ),
-    # ========== Belt 4: Purple ==========
+    # ========== Belt 4: Purple (2P Standard) ==========
     CampaignLevel(
         level_id=24,
         belt=4,
@@ -574,7 +571,7 @@ R1R1B1B1K1B1R1R1
         title="Final Destination",
         description="No items, Fox only, Final Destination.",
     ),
-    # ========== Belt 5: Orange (4-Player) ==========
+    # ========== Belt 5: Orange (4P Standard) ==========
     CampaignLevel(
         level_id=32,
         belt=5,
@@ -759,7 +756,7 @@ R3P30000000000000000P1R1
         title="Grand Melee",
         description="A classic four-player battle. Full armies, no mercy.",
     ),
-    # ========== Belt 6: Blue (4-Player Lightning) ==========
+    # ========== Belt 6: Blue (4P Lightning) ==========
     CampaignLevel(
         level_id=40,
         belt=6,
@@ -944,7 +941,7 @@ R3P30000000000000000P1R1
         title="Plus Ultra",
         description="Full armies. Lightning speed. Go beyond your limits!",
     ),
-    # ========== Belt 7 ==========
+    # ========== Belt 7 (4P Standard) ==========
     CampaignLevel(
         level_id=48,
         belt=7,
@@ -1129,8 +1126,145 @@ P200P400P400P3P3P1P100P2
         title="Infinity Castle",
         description="Navigate the endless corridors and find your way to the throne room at the center.",
     ),
-    # ========== Belt 8+ ==========
-    # Levels 56+ will be designed later
+    # ========== Belt 8: Red (2P Lightning) ==========
+    CampaignLevel(
+        level_id=56,
+        belt=8,
+        speed="lightning",
+        board_str="""
+00R20000K20000R2
+0000000000000000
+00N1000000N10000
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+R1000000K10000R1
+""",
+        title="Omae Wa Mou Shindeiru",
+        description="You are already dead. You just don't know it yet.",
+    ),
+    CampaignLevel(
+        level_id=57,
+        belt=8,
+        speed="lightning",
+        board_str="""
+B200B200K200B2B2
+0000000000000000
+P100P1P100P1P100
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+00000000K1000000
+""",
+        title="This Isn't Even My Final Form",
+        description="Transform your pawns before the bishops clip their wings.",
+    ),
+    CampaignLevel(
+        level_id=58,
+        belt=8,
+        speed="lightning",
+        board_str="""
+K20000000000K100
+R20000000000P100
+R200000000P10000
+R2000000P1000000
+R20000P1P1P1P100
+R200000000P10000
+R2000000P1000000
+R20000P100000000
+""",
+        title="Dancing Through the Lightning Strikes",
+        description="But now, the sky is opalite.",
+    ),
+    CampaignLevel(
+        level_id=59,
+        belt=8,
+        speed="lightning",
+        board_str="""
+Q1P2P2P2K2P2P2P2
+P2P2P2P2P2P2P2P2
+P2P2P2P2P2P2P2P2
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+00000000K1000000
+""",
+        title="LEEEROY JENKINSSS!!!",
+        description="Sometimes, you just gotta charge in and hope for the best.",
+    ),
+    CampaignLevel(
+        level_id=60,
+        belt=8,
+        speed="lightning",
+        board_str="""
+B200B200K200B200
+0000B20000B20000
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+R1R10000K100R1R1
+""",
+        title="Power of Parity",
+        description="Pay attention to the color of squares as you move. It might just save your life.",
+    ),
+    CampaignLevel(
+        level_id=61,
+        belt=8,
+        speed="lightning",
+        board_str="""
+000000P2K2000000
+0000P20000P20000
+00P200000000P200
+P2000000000000P2
+00P200000000P200
+0000P20000P20000
+00000000P2000000
+Q1000000K10000Q1
+""",
+        title="Do a Barrel Roll",
+        description="Use the boost to get through!",
+    ),
+    CampaignLevel(
+        level_id=62,
+        belt=8,
+        speed="lightning",
+        board_str="""
+R1N1B1Q1K1B1N1R1
+P1P1P1P1P1P1P1P1
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+P2P2P2P2P2P2P2P2
+R2N2B2Q2K2B2N2R2
+""",
+        title="Mirror's Edge",
+        description="Something seems off about this place...",
+    ),
+    CampaignLevel(
+        level_id=63,
+        belt=8,
+        speed="lightning",
+        board_str="""
+00000000000000K1
+P200000000000000
+P1P20000P2000000
+00P1P200P1P20000
+0000P1P200P1P200
+000000P10000P1P2
+00000000000000P1
+K200000000000000
+""",
+        title="Psycho Pass",
+        description="Can you trust the Sibyl system with the fate of humanity?",
+    ),
+    # ========== Belt 9+ ==========
+    # Levels 64+ will be designed later
 ]
 
 
