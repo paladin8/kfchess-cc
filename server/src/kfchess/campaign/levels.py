@@ -22,7 +22,7 @@ BELT_NAMES = [
     "Black",  # 9: levels 64-71 (future)
 ]
 
-MAX_BELT = 6  # Currently implemented belts
+MAX_BELT = 7  # Currently implemented belts
 
 
 LEVELS: list[CampaignLevel] = [
@@ -954,10 +954,10 @@ R3P30000000000000000P1R1
 0000P4P4P4P4P4P4P4P40000
 R3P300000000000000000000
 N3P300000000000000000000
-B3P30000Q1Q1Q1Q100000000
-Q3P30000Q1Q1K1Q100000000
-K3P30000Q1Q1Q1Q100000000
-B3P30000Q1Q1Q1Q100000000
+B3P30000Q1Q1Q1Q1Q1000000
+Q3P30000Q1Q1K1Q1Q1000000
+K3P30000Q1Q1Q1Q1Q1000000
+B3P30000Q1Q1Q1Q1Q1000000
 N3P300000000000000000000
 R3P300000000000000000000
 0000P2P2P2P2P2P2P2P20000
@@ -967,6 +967,167 @@ R3P300000000000000000000
         player_count=4,
         title="Domain Expansion",
         description="Turn reality into your playground.",
+    ),
+    CampaignLevel(
+        level_id=49,
+        belt=7,
+        speed="standard",
+        board_str="""
+0000000000K4000000000000
+0000R400R40000R400R40000
+00R300000000000000000000
+00000000000000000000N1N1
+00R30000000000000000N1N1
+000000000000K1000000N1N1
+K3000000000000000000N1N1
+00R30000000000000000N1N1
+00000000000000000000N1N1
+00R300000000000000000000
+0000R200R20000R200R20000
+000000000000K20000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="The Cavalry Has Arrived",
+        description="Just when you thought all hope was lost, reinforcements arrive to turn the tide of battle.",
+    ),
+    CampaignLevel(
+        level_id=50,
+        belt=7,
+        speed="standard",
+        board_str="""
+0000B10000K400B100000000
+000000P4P4P4P4P400B10000
+00N100000000000000000000
+000000000000000000000000
+N1P300000000000000000000
+00P3000000000000000000K1
+K3P300000000000000000000
+00P300000000000000000000
+00P300000000000000000000
+N10000000000000000000000
+0000R100P2P2P2P2P2000000
+000000000000K20000R10000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Behind Enemy Lines",
+        description="Your agents have infiltrated the enemy's position.",
+    ),
+    CampaignLevel(
+        level_id=51,
+        belt=7,
+        speed="standard",
+        board_str="""
+000000000000000000000000
+000000000000000000000000
+0000000000R4R40000000000
+0000000000K4Q40000000000
+0000000000000000K1R10000
+0000000000000000Q1R10000
+0000R3Q30000000000000000
+0000R3K30000000000000000
+0000000000Q2K20000000000
+0000000000R2R20000000000
+000000000000000000000000
+000000000000000000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="The Crucible",
+        description="Four armies collide in the center. There is no retreat.",
+    ),
+    CampaignLevel(
+        level_id=52,
+        belt=7,
+        speed="standard",
+        board_str="""
+0000000000K4000000000000
+000000B4B4B4B4B4B4000000
+000000000000000000000000
+00B30000P1P1P1P1P1000000
+00B30000P1P1P1P1P1000000
+00B30000P1P1K1P1P1000000
+K3B30000P1P1P1P1P1000000
+00B30000P1P1P1P1P1000000
+00B300000000000000000000
+000000000000000000000000
+000000B2B2B2B2B2B2000000
+0000000000K2000000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Get Down, Mr. President!",
+        description="Keep your bodyguards close and your king safe.",
+    ),
+    CampaignLevel(
+        level_id=53,
+        belt=7,
+        speed="standard",
+        board_str="""
+0000000000Q1Q10000000000
+000000000000000000000000
+000000000000000000000000
+000000Q4Q4Q4000000000000
+000000Q4K4Q400K100000000
+Q10000Q4Q4Q40000000000Q1
+Q10000Q3Q3Q3Q2Q2Q20000Q1
+000000Q3K3Q3Q2K2Q2000000
+000000Q3Q3Q3Q2Q2Q2000000
+000000000000000000000000
+000000000000000000000000
+0000000000Q1Q10000000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Oppenheimer",
+        description="Can you wield the power of the atom without destroying yourself?",
+    ),
+    CampaignLevel(
+        level_id=54,
+        belt=7,
+        speed="standard",
+        board_str="""
+00000000B4K4Q40000R40000
+0000P4P4P4P4P4P4P4P40000
+R3P3000000000000000000R1
+N3P3000000000000000000N1
+B3P3000000000000000000B1
+Q3P300000000000000000000
+K3P3000000000000000000Q1
+B3P3000000000000000000B1
+N3P3000000000000000000N1
+K1P3000000000000000000R1
+0000P2P2P2P2P2P2P2P20000
+0000R20000Q2K2B200000000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Hidden In Plain Sight",
+        description="Survive in the heart of the enemy's territory until the dust settles.",
+    ),
+    CampaignLevel(
+        level_id=55,
+        belt=7,
+        speed="standard",
+        board_str="""
+0000P40000P400P400P30000
+0000P20000P400P400P30000
+P3P3P1P100P200P200P200P4
+0000000000P200P200P200P2
+P3P3P1P1K1P1P400K3000000
+000000000000P400P400P3P1
+P3P3P1P10000P200P200Q100
+00000000K400P200K20000P1
+P400P400P4000000P20000P4
+P200P400P400P3P3P1P100P2
+0000P200P200000000000000
+0000P200P200P3P3P1P10000
+""",
+        board_type=BoardType.FOUR_PLAYER,
+        player_count=4,
+        title="Infinity Castle",
+        description="Navigate the endless corridors and find your way to the throne room at the center.",
     ),
     # ========== Belt 8+ ==========
     # Levels 56+ will be designed later

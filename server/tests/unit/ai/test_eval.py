@@ -5,6 +5,7 @@ import pytest
 from kfchess.ai.arrival_field import ArrivalField
 from kfchess.ai.eval import (
     Eval,
+    SAFETY_WEIGHT,
     _compute_development_urgency,
     _compute_pawn_data,
     _count_pawn_support,
@@ -14,6 +15,7 @@ from kfchess.ai.move_gen import CandidateMove
 from kfchess.ai.state_extractor import StateExtractor
 from kfchess.game.board import Board, BoardType
 from kfchess.game.engine import GameEngine
+from kfchess.game.moves import Move
 from kfchess.game.pieces import Piece, PieceType
 from kfchess.game.state import GameStatus, Speed
 
@@ -431,3 +433,59 @@ class TestKingThreatCaptureSafety:
         # Bishop capture should rank higher — same material + threat bonus,
         # but much lower safety cost (losing bishop=3 vs queen=9)
         assert scored[0][0].piece_id == "B:1:3:1"
+
+
+class TestPawnTravelingThreat:
+    """Pawns should not advance into the ray of a traveling enemy piece."""
+
+    def test_pawn_into_traveling_rook_ray_penalized(self):
+        """A pawn moving into a traveling rook's path should get full safety penalty."""
+        # Minimal board: P1 pawn at (5,4) can advance to (4,4).
+        # Enemy rook is traveling down col 4 and will pass through (4,4).
+        board = Board(pieces=[], board_type=BoardType.STANDARD, width=8, height=8)
+        pawn = Piece.create(PieceType.PAWN, 1, 5, 4)
+        board.pieces.append(pawn)
+        board.pieces.append(Piece.create(PieceType.KING, 1, 7, 0))
+        enemy_rook = Piece.create(PieceType.ROOK, 2, 0, 4)
+        board.pieces.append(enemy_rook)
+        board.pieces.append(Piece.create(PieceType.KING, 2, 0, 7))
+
+        state = GameEngine.create_game_from_board(
+            speed=Speed.STANDARD,
+            players={1: "bot:test1", 2: "bot:test2"},
+            board=board,
+        )
+        state.status = GameStatus.PLAYING
+
+        # Set up rook traveling from (0,4) to (7,4)
+        rook_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(0.0, 4.0), (1.0, 4.0), (2.0, 4.0), (3.0, 4.0),
+                  (4.0, 4.0), (5.0, 4.0), (6.0, 4.0), (7.0, 4.0)],
+            start_tick=0,
+        )
+        state.active_moves.append(rook_move)
+        tps = state.config.ticks_per_square
+        state.current_tick = 2 * tps  # Rook at ~row 2, heading toward row 4
+
+        ai_state = StateExtractor.extract(state, ai_player=1)
+        arrival_data = ArrivalField.compute(ai_state, state.config)
+
+        # The destination (4,4) should have a traveling threat
+        assert arrival_data.has_traveling_threat(4, 4)
+
+        pawn_ai = ai_state.pieces_by_id[pawn.id]
+        advance = CandidateMove(
+            pawn.id, 4, 4, capture_type=None, ai_piece=pawn_ai,
+        )
+
+        scored = Eval.score_candidates(
+            [advance], ai_state, noise=False, level=2, arrival_data=arrival_data,
+        )
+
+        # The pawn advance should have a strongly negative score due to
+        # full safety penalty (no pawn discount for committed threats)
+        score = scored[0][1]
+        assert score < -SAFETY_WEIGHT * 0.5, (
+            f"Pawn into traveling rook ray should be heavily penalized, got {score}"
+        )

@@ -225,15 +225,20 @@ def _score_move(
         if arrival_data is not None and level >= 2:
             safety_cost = move_safety(candidate, ai_state, arrival_data)
 
-            # Pawns: discount safety to 25%, skip entirely if supported
+            # Pawns: discount safety to 25%, skip entirely if supported.
+            # Exception: if a traveling enemy is committed to passing through
+            # this square, the capture is guaranteed — no discount.
             if piece.type == PieceType.PAWN and safety_cost < 0:
-                recapture_time = arrival_data.get_our_time_excluding(
-                    candidate.to_row, candidate.to_col, piece.id,
-                )
-                if recapture_time <= arrival_data.cd_ticks + arrival_data.reaction_ticks:
-                    safety_cost = 0.0  # Supported — friendly piece can recapture
-                else:
-                    safety_cost *= 0.25
+                if not arrival_data.has_traveling_threat(
+                    candidate.to_row, candidate.to_col,
+                ):
+                    recapture_time = arrival_data.get_our_time_excluding(
+                        candidate.to_row, candidate.to_col, piece.id,
+                    )
+                    if recapture_time <= arrival_data.cd_ticks + arrival_data.reaction_ticks:
+                        safety_cost = 0.0  # Supported — friendly piece can recapture
+                    else:
+                        safety_cost *= 0.25
 
             score += safety_cost * SAFETY_WEIGHT
 

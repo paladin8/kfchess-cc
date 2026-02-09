@@ -66,6 +66,25 @@ class ArrivalData:
     _enemy_pieces: list[AIPiece] = field(default_factory=list)
     _is_4p: bool = False
 
+    # IDs of pieces stored in _enemy_pieces (idle pieces only).
+    # Pieces in enemy_time_by_piece but NOT in this set are traveling.
+    _idle_enemy_ids: set[str] = field(default_factory=set)
+
+    def has_traveling_threat(self, row: int, col: int) -> bool:
+        """Check if any traveling enemy piece will pass through this square.
+
+        Returns True when a committed (already-moving) enemy piece has
+        this square on its projected path.  Used to avoid discounting
+        pawn safety when the threat is guaranteed rather than speculative.
+        """
+        sq = (row, col)
+        for pid, times in self.enemy_time_by_piece.items():
+            if pid in self._idle_enemy_ids:
+                continue  # idle piece — not a committed threat
+            if sq in times:
+                return True
+        return False
+
     def get_our_time(self, row: int, col: int) -> int:
         """Get our minimum arrival time at a square."""
         return self.our_time.get((row, col), INF_TICKS)
@@ -334,6 +353,7 @@ class ArrivalField:
             reaction_ticks=reaction_ticks,
             _occupied=occupied,
             _enemy_pieces=enemy_pieces,
+            _idle_enemy_ids={ep.piece.id for ep in enemy_pieces},
             _is_4p=is_4p,
         )
 

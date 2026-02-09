@@ -263,6 +263,56 @@ class TestArrivalField:
         assert enemy_t <= 5 * tps, "Traveling rook should arrive at king in ~4*tps"
 
 
+class TestHasTravelingThreat:
+    """Tests for has_traveling_threat() — detecting committed enemy moves."""
+
+    def test_traveling_rook_flags_squares_on_path(self):
+        """A rook traveling down a column should flag all squares ahead."""
+        state = _make_state()
+        tps = state.config.ticks_per_square
+
+        enemy_rook = None
+        for p in state.board.pieces:
+            if p.player == 2 and p.type == PieceType.ROOK and p.col == 0.0:
+                enemy_rook = p
+                break
+        assert enemy_rook is not None
+
+        # Clear blocking pawns
+        for p in state.board.pieces:
+            if p.type == PieceType.PAWN and p.col == 0.0:
+                p.captured = True
+
+        rook_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0),
+                  (4.0, 0.0), (5.0, 0.0), (6.0, 0.0), (7.0, 0.0)],
+            start_tick=0,
+        )
+        state.active_moves.append(rook_move)
+        state.current_tick = 2 * tps
+
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        # Squares ahead of the rook should be flagged
+        assert data.has_traveling_threat(4, 0)
+        assert data.has_traveling_threat(5, 0)
+        # Square off the column should NOT be flagged
+        assert not data.has_traveling_threat(4, 3)
+
+    def test_idle_enemy_not_flagged(self):
+        """An idle enemy piece should NOT be flagged as a traveling threat."""
+        state = _make_state()
+        ai_state = StateExtractor.extract(state, 1)
+        data = ArrivalField.compute(ai_state, state.config)
+
+        # Enemy pieces are idle on row 0-1. The squares they can reach
+        # should NOT be flagged as traveling threats.
+        assert not data.has_traveling_threat(3, 0)
+        assert not data.has_traveling_threat(4, 4)
+
+
 class TestSliderCaptureArrival:
     """Tests that sliders register arrival at opponent-occupied squares (captures)."""
 
