@@ -363,7 +363,7 @@
 .game-over-modal {
   background: var(--color-background);
   border: 2px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 2rem 3rem;
   text-align: center;
   min-width: 300px;

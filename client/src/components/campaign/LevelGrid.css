@@ -20,7 +20,7 @@
   padding: 1rem;
   background-color: var(--color-bg-secondary);
   border: 2px solid transparent;
-  border-radius: 12px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   text-align: left;

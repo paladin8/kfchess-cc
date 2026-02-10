@@ -62,7 +62,7 @@ function PlayerSlot({ slot, player, isHost, isMe, canKick, onKick, onChangeAiDif
 
   return (
     <div
-      className={`player-slot ${isMe ? 'me' : ''} ${isEffectivelyReady ? 'ready' : ''} ${isDisconnected ? 'disconnected' : ''}`}
+      className={`player-slot ${isEffectivelyReady ? 'ready' : ''} ${isDisconnected ? 'disconnected' : ''}`}
     >
       <div className="slot-header">
         <div className="player-name">
@@ -75,6 +75,7 @@ function PlayerSlot({ slot, player, isHost, isMe, canKick, onKick, onChangeAiDif
           />
         </div>
         <div className="slot-badges">
+          {isMe && <span className="you-badge">You</span>}
           {isHost && <span className="host-badge">Host</span>}
           {player.isAi && <span className="ai-badge">AI</span>}
           {isDisconnected && <span className="disconnected-badge">Offline</span>}

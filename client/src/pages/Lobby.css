@@ -178,10 +178,6 @@
   opacity: 0.6;
 }
 
-.player-slot.me {
-  border-color: var(--color-primary);
-}
-
 .player-slot.ready {
   border-color: #28a745;
 }
@@ -212,12 +208,18 @@
 }
 
 .host-badge,
-.ai-badge {
+.ai-badge,
+.you-badge {
   font-size: 0.7rem;
   padding: 0.15rem 0.4rem;
   border-radius: 3px;
   text-transform: uppercase;
   font-weight: 600;
+}
+
+.you-badge {
+  background-color: #6c63ff;
+  color: white;
 }
 
 .host-badge {
@@ -303,7 +305,7 @@
   display: flex;
   justify-content: center;
   gap: 1rem;
-  padding: 1rem 0;
+  padding: 0.25rem 0;
 }
 
 /* Share Section */

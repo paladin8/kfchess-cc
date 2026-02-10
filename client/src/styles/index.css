@@ -304,7 +304,6 @@ a:hover {
   background-color: var(--color-primary);
   color: white;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
@@ -340,7 +339,7 @@ a:hover {
 .modal-content {
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 2rem;
   min-width: 400px;
   max-width: 90vw;
@@ -484,6 +483,13 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.guest-notice {
+  margin: 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
 }
 
 .form-group {
