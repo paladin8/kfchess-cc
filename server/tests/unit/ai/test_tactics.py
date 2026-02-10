@@ -445,9 +445,9 @@ class TestRecaptureBonus:
         our_pawn = _make_ai_piece(PieceType.PAWN, 1, 6, 4)
         ai_state._own_pieces.append(our_pawn)
 
-        # Enemy rook at (1, 4) traveling down — 5 squares to our pawn
+        # Enemy rook at (2, 4) traveling down — 4 squares to our pawn
         enemy_rook = _make_ai_piece(
-            PieceType.ROOK, 2, 1, 4,
+            PieceType.ROOK, 2, 2, 4,
             status=PieceStatus.TRAVELING,
             travel_direction=(1.0, 0.0),
         )
@@ -460,7 +460,7 @@ class TestRecaptureBonus:
             ai_piece=our_rook,
         )
         bonus = recapture_bonus(candidate, ai_state, data)
-        # Enemy lands at (6,4) in 50 ticks, vulnerable until 50+100=150
+        # Enemy lands at (6,4) in 40 ticks, vulnerable until 40+100+10=150
         # Our rook: travel to (6,3) = 3*10=30, cd=100, reaction=10,
         # travel to (6,4) = 1*10=10 → total=150
         # 150 < 150? No, equal — just misses
@@ -491,10 +491,10 @@ class TestRecaptureBonus:
             ai_piece=our_rook,
         )
         bonus = recapture_bonus(candidate, ai_state, data)
-        # Enemy lands at (6,4) in 60 ticks, vulnerable until 60+100=160
+        # Enemy lands at (6,4) in 60 ticks, vulnerable until 60+100+10=170
         # Our rook: travel to (6,3) = 2*10=20, cd=100, reaction=10,
         # travel to (6,4) = 1*10=10 → total=140
-        # 140 < 160 ✓ → bonus = 5.0 (rook value)
+        # 140 < 170 ✓ → bonus = 5.0 (rook value)
         assert bonus == 5.0
 
     def test_no_traveling_enemies(self):

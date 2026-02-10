@@ -520,6 +520,7 @@ class GameService:
             return False
 
         king.captured = True
+        state.board.invalidate_position_map()
 
         # Check winner (handles 2P and 4P correctly)
         winner, _ = GameEngine.check_winner(state)
@@ -636,8 +637,10 @@ class GameService:
         if state.status != GameStatus.PLAYING:
             return state, [], False
 
-        # Process AI moves
-        for player_num, ai in managed_game.ai_players.items():
+        # Process AI moves (shuffled to avoid move-order bias)
+        ai_items = list(managed_game.ai_players.items())
+        random.shuffle(ai_items)
+        for player_num, ai in ai_items:
             if ai.should_move(state, player_num, state.current_tick):
                 move_data = ai.get_move(state, player_num)
                 if move_data is not None:

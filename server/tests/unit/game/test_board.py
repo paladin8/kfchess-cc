@@ -86,6 +86,7 @@ class TestBoard:
 
         # Captured pieces should not be found
         piece.captured = True
+        board.invalidate_position_map()
         assert board.get_piece_at(7, 4) is None
 
     def test_get_pieces_for_player(self):
@@ -124,6 +125,7 @@ class TestBoard:
 
         # Test with captured king
         king1.captured = True
+        board.invalidate_position_map()
         assert board.get_king(1) is None
 
     def test_get_active_pieces(self):
@@ -193,3 +195,53 @@ class TestBoard:
         # Try removing non-existent piece
         result = board.remove_piece("X:9:9:9")
         assert result is False
+
+    def test_get_piece_by_id_uses_cache(self):
+        """Test that get_piece_by_id uses a cached map for O(1) lookups."""
+        board = Board.create_standard()
+
+        # First call builds the cache
+        king = board.get_piece_by_id("K:1:7:4")
+        assert king is not None
+        assert king.type == PieceType.KING
+        assert board._id_map is not None
+
+        # Second call uses the cache
+        king2 = board.get_piece_by_id("K:1:7:4")
+        assert king2 is king
+
+        # Non-existent piece returns None
+        assert board.get_piece_by_id("X:9:9:9") is None
+
+    def test_id_map_invalidated_on_add(self):
+        """Test that _id_map is invalidated when a piece is added."""
+        board = Board.create_empty()
+        piece = Piece.create(PieceType.QUEEN, player=1, row=4, col=4)
+
+        board.add_piece(piece)
+        found = board.get_piece_by_id(piece.id)
+        assert found is piece
+
+    def test_id_map_invalidated_on_remove(self):
+        """Test that _id_map is invalidated when a piece is removed."""
+        board = Board.create_standard()
+        king = board.get_piece_by_id("K:1:7:4")
+        assert king is not None
+
+        board.remove_piece("K:1:7:4")
+        assert board.get_piece_by_id("K:1:7:4") is None
+
+    def test_id_map_includes_captured_pieces(self):
+        """Test that _id_map includes captured pieces (unlike _position_map)."""
+        board = Board.create_standard()
+        king = board.get_piece_by_id("K:1:7:4")
+        king.captured = True
+        board.invalidate_position_map()
+
+        # position_map should not find captured king
+        assert board.get_piece_at(7, 4) is None
+
+        # id_map should still find captured king
+        found = board.get_piece_by_id("K:1:7:4")
+        assert found is king
+        assert found.captured is True

@@ -19,7 +19,7 @@ from kfchess.game.state import TICK_RATE_HZ, SpeedConfig
 INF_TICKS = 999_999
 
 # Reaction time: how long it takes to see an incoming threat and issue
-# a dodge move after cooldown expires. 100ms converted to ticks.
+# a dodge move after cooldown expires. ~1s converted to ticks.
 REACTION_TIME_SECONDS = 1.0
 
 # Direction constants for piece movement
@@ -160,7 +160,7 @@ class ArrivalData:
             if exclude_piece_id and pid == exclude_piece_id:
                 continue
             # Skip idle pieces — already recomputed above
-            if any(ep.piece.id == pid for ep in self._enemy_pieces):
+            if pid in self._idle_enemy_ids:
                 continue
             t = times.get((row, col), INF_TICKS)
             if t < best:

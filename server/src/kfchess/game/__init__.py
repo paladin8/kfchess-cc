@@ -10,7 +10,14 @@ from kfchess.game.collision import (
     is_piece_on_cooldown,
 )
 from kfchess.game.engine import GameEngine, GameEvent, GameEventType
-from kfchess.game.moves import Cooldown, Move, check_castling, compute_move_path
+from kfchess.game.moves import (
+    Cooldown,
+    Move,
+    PathClearContext,
+    build_path_clear_context,
+    check_castling,
+    compute_move_path,
+)
 from kfchess.game.pieces import Piece, PieceType
 from kfchess.game.state import (
     SPEED_CONFIGS,
@@ -32,6 +39,8 @@ __all__ = [
     "Move",
     "Cooldown",
     "compute_move_path",
+    "PathClearContext",
+    "build_path_clear_context",
     "check_castling",
     # Collision
     "detect_collisions",

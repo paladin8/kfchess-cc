@@ -1,7 +1,9 @@
 """Move definitions and validation for Kung Fu Chess."""
 
+from __future__ import annotations
+
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from kfchess.game.board import Board, BoardType
 from kfchess.game.pieces import Piece, PieceType
@@ -13,6 +15,74 @@ _SLIDER_TYPES = frozenset({PieceType.BISHOP, PieceType.ROOK, PieceType.QUEEN})
 
 # Path type: can be int or float (floats used for knight midpoint)
 PathPoint = tuple[float, float]
+
+
+@dataclass
+class _EnemyMoveInfo:
+    """Pre-extracted data about an enemy's active move for same-line blocking."""
+
+    dr: int
+    dc: int
+    start_r: int
+    start_c: int
+    forward_squares: list[tuple[int, int]]
+
+
+@dataclass
+class PathClearContext:
+    """Precomputed blocking data reusable across all candidates for one player.
+
+    Built once per player per ``get_legal_moves_fast`` call, eliminating
+    repeated iteration over ``active_moves`` inside ``_is_path_clear``.
+    """
+
+    own_forward_path: set[tuple[int, int]] = field(default_factory=set)
+    moving_piece_ids: set[str] = field(default_factory=set)
+    enemy_moves: list[_EnemyMoveInfo] = field(default_factory=list)
+
+
+def build_path_clear_context(
+    player: int,
+    board: Board,
+    active_moves: list[Move],
+    current_tick: int,
+    ticks_per_square: int,
+) -> PathClearContext:
+    """Build a PathClearContext for *player* given the current game state."""
+    own_forward: set[tuple[int, int]] = set()
+    moving_ids: set[str] = set()
+    enemy_moves: list[_EnemyMoveInfo] = []
+
+    for move in active_moves:
+        moving_ids.add(move.piece_id)
+        moving_piece = board.get_piece_by_id(move.piece_id)
+        if moving_piece is None:
+            continue
+
+        if moving_piece.player == player:
+            forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
+            own_forward.update(forward_squares)
+        else:
+            # Enemy move – extract info for same-line blocking
+            if len(move.path) >= 2:
+                e_dr = int(move.path[1][0] - move.path[0][0])
+                e_dc = int(move.path[1][1] - move.path[0][1])
+                e_start_r = int(move.path[0][0])
+                e_start_c = int(move.path[0][1])
+                fwd = _get_forward_path(move, current_tick, ticks_per_square)
+                enemy_moves.append(
+                    _EnemyMoveInfo(
+                        dr=e_dr, dc=e_dc,
+                        start_r=e_start_r, start_c=e_start_c,
+                        forward_squares=fwd,
+                    )
+                )
+
+    return PathClearContext(
+        own_forward_path=own_forward,
+        moving_piece_ids=moving_ids,
+        enemy_moves=enemy_moves,
+    )
 
 
 @dataclass(frozen=True)
@@ -70,7 +140,7 @@ class Move:
     piece_id: str
     path: list[PathPoint]
     start_tick: int
-    extra_move: "Move | None" = None
+    extra_move: Move | None = None
 
     @property
     def start_position(self) -> PathPoint:
@@ -115,6 +185,7 @@ def compute_move_path(
     active_moves: list[Move],
     current_tick: int = 0,
     ticks_per_square: int = 30,
+    path_context: PathClearContext | None = None,
 ) -> list[PathPoint] | None:
     """Compute the path for a piece to move to a destination.
 
@@ -130,6 +201,8 @@ def compute_move_path(
         active_moves: Currently active moves (to check for path conflicts)
         current_tick: Current game tick (for forward path blocking)
         ticks_per_square: Ticks to move one square (for forward path blocking)
+        path_context: Optional precomputed blocking context (avoids repeated
+            iteration over active_moves when validating many candidates)
 
     Returns:
         List of (row, col) positions forming the path, or None if invalid
@@ -151,11 +224,19 @@ def compute_move_path(
 
     # Check for blocking pieces along the path (except knights which jump)
     if piece.type != PieceType.KNIGHT:
-        if not _is_path_clear(path, board, piece.player, active_moves, current_tick, ticks_per_square, piece.type):
+        if not _is_path_clear(
+            path, board, piece.player, active_moves,
+            current_tick, ticks_per_square, piece.type,
+            path_context=path_context,
+        ):
             return None
     else:
         # Knights jump over pieces but still can't land on own pieces
-        if not _is_knight_destination_valid(path, board, piece.player, active_moves, current_tick, ticks_per_square):
+        if not _is_knight_destination_valid(
+            path, board, piece.player, active_moves,
+            current_tick, ticks_per_square,
+            path_context=path_context,
+        ):
             return None
 
     return path
@@ -525,6 +606,8 @@ def _is_path_clear(
     current_tick: int = 0,
     ticks_per_square: int = 30,
     piece_type: PieceType | None = None,
+    *,
+    path_context: PathClearContext | None = None,
 ) -> bool:
     """Check if a path is clear of blocking pieces.
 
@@ -537,17 +620,42 @@ def _is_path_clear(
     - Exception: pawn moving straight is blocked by any oncoming enemy on the same line
       (pawns can't capture straight, so head-on collision is a guaranteed loss)
     - Cannot capture moving enemies (destination with moving enemy = blocked)
-    """
-    # Build set of forward path squares for own moving pieces
-    own_forward_path: set[tuple[int, int]] = set()
-    for move in active_moves:
-        moving_piece = board.get_piece_by_id(move.piece_id)
-        if moving_piece is not None and moving_piece.player == player:
-            # Calculate which squares are in the forward path (not yet reached)
-            forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
-            own_forward_path.update(forward_squares)
 
-    # Build set of same-line blocking squares from enemy pieces moving on the same line
+    If *path_context* is provided, uses precomputed blocking data instead of
+    iterating over *active_moves* each call.
+    """
+    # ---------- Resolve blocking data (precomputed or on-the-fly) ----------
+    if path_context is not None:
+        own_forward_path = path_context.own_forward_path
+        moving_piece_ids = path_context.moving_piece_ids
+        enemy_moves = path_context.enemy_moves
+    else:
+        # Fallback: compute inline (original behaviour)
+        own_forward_path = set()
+        moving_piece_ids = set()
+        enemy_moves: list[_EnemyMoveInfo] = []
+        for move in active_moves:
+            moving_piece_ids.add(move.piece_id)
+            moving_piece = board.get_piece_by_id(move.piece_id)
+            if moving_piece is None:
+                continue
+            if moving_piece.player == player:
+                forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
+                own_forward_path.update(forward_squares)
+            elif len(move.path) >= 2:
+                e_dr = int(move.path[1][0] - move.path[0][0])
+                e_dc = int(move.path[1][1] - move.path[0][1])
+                fwd = _get_forward_path(move, current_tick, ticks_per_square)
+                enemy_moves.append(
+                    _EnemyMoveInfo(
+                        dr=e_dr, dc=e_dc,
+                        start_r=int(move.path[0][0]),
+                        start_c=int(move.path[0][1]),
+                        forward_squares=fwd,
+                    )
+                )
+
+    # ---------- Same-line blocking from enemy moves ----------
     enemy_same_line_path: set[tuple[int, int]] = set()
 
     # Detect if pawn is moving straight (exactly one axis changes)
@@ -567,48 +675,35 @@ def _is_path_clear(
         my_dc = int(path[1][1] - path[0][1])
         my_start_r, my_start_c = int(path[0][0]), int(path[0][1])
 
-        for move in active_moves:
-            moving_piece = board.get_piece_by_id(move.piece_id)
-            if moving_piece is None or moving_piece.player == player:
-                continue
-            if len(move.path) < 2:
-                continue
-
-            # Get enemy move direction
-            e_dr = int(move.path[1][0] - move.path[0][0])
-            e_dc = int(move.path[1][1] - move.path[0][1])
-
+        for em in enemy_moves:
             # Check if directions are parallel (cross product == 0)
-            if my_dr * e_dc != my_dc * e_dr:
+            if my_dr * em.dc != my_dc * em.dr:
                 continue
 
             # Check if on the same geometric line
-            e_start_r, e_start_c = int(move.path[0][0]), int(move.path[0][1])
-            diff_r = e_start_r - my_start_r
-            diff_c = e_start_c - my_start_c
+            diff_r = em.start_r - my_start_r
+            diff_c = em.start_c - my_start_c
             if diff_r * my_dc != diff_c * my_dr:
                 continue
 
             # Slider: enemy's forward path blocks us
             if piece_type in _SLIDER_TYPES:
-                forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
-                enemy_same_line_path.update(forward_squares)
+                enemy_same_line_path.update(em.forward_squares)
 
-            # Pawn straight: opposite direction + ahead = guaranteed loss (can't capture straight)
+            # Pawn straight: opposite direction + ahead = guaranteed loss
             if is_pawn_straight:
-                if my_dr * e_dr + my_dc * e_dc < 0:  # opposite direction
+                if my_dr * em.dr + my_dc * em.dc < 0:  # opposite direction
                     if diff_r * my_dr + diff_c * my_dc > 0:  # enemy is ahead
                         return False
 
-    # Check intermediate squares (excluding start and destination)
+    # ---------- Check intermediate squares (excluding start and destination) ----------
     for row, col in path[1:-1]:
         int_row, int_col = int(row), int(col)
 
         piece_at = board.get_piece_at(int_row, int_col)
         if piece_at is not None:
             # Check if this piece is currently moving
-            is_moving = any(m.piece_id == piece_at.id for m in active_moves)
-            if not is_moving:
+            if piece_at.id not in moving_piece_ids:
                 # Stationary piece blocks
                 return False
             # Moving piece: only blocks if it's enemy (can't capture on intermediate)
@@ -625,15 +720,14 @@ def _is_path_clear(
         if (int_row, int_col) in enemy_same_line_path:
             return False
 
-    # Check destination square
+    # ---------- Check destination square ----------
     if len(path) >= 2:
         dest_row, dest_col = path[-1]
         int_row, int_col = int(dest_row), int(dest_col)
 
         piece_at = board.get_piece_at(int_row, int_col)
         if piece_at is not None:
-            is_moving = any(m.piece_id == piece_at.id for m in active_moves)
-            if is_moving:
+            if piece_at.id in moving_piece_ids:
                 # Moving piece has vacated - square is effectively empty
                 # (collision detection handles any mid-path interactions)
                 pass
@@ -705,6 +799,8 @@ def _is_knight_destination_valid(
     active_moves: list[Move],
     current_tick: int = 0,
     ticks_per_square: int = 30,
+    *,
+    path_context: PathClearContext | None = None,
 ) -> bool:
     """Check if a knight's destination is valid.
 
@@ -715,11 +811,17 @@ def _is_knight_destination_valid(
     end_row, end_col = path[-1]
     int_row, int_col = int(end_row), int(end_col)
 
+    if path_context is not None:
+        moving_piece_ids = path_context.moving_piece_ids
+        own_forward_path = path_context.own_forward_path
+    else:
+        moving_piece_ids = {m.piece_id for m in active_moves}
+        own_forward_path = None  # computed lazily below
+
     # Check piece at destination
     piece_at = board.get_piece_at(int_row, int_col)
     if piece_at is not None:
-        is_moving = any(m.piece_id == piece_at.id for m in active_moves)
-        if is_moving:
+        if piece_at.id in moving_piece_ids:
             # Moving piece has vacated - square is effectively empty
             pass
         elif piece_at.player == player:
@@ -728,12 +830,16 @@ def _is_knight_destination_valid(
         # else: enemy stationary piece at destination - capture allowed
 
     # Check for own moving piece's forward path at destination
-    for move in active_moves:
-        moving_piece = board.get_piece_by_id(move.piece_id)
-        if moving_piece is not None and moving_piece.player == player:
-            forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
-            if (int_row, int_col) in forward_squares:
-                return False  # Can't land on own piece's forward path
+    if own_forward_path is not None:
+        if (int_row, int_col) in own_forward_path:
+            return False
+    else:
+        for move in active_moves:
+            moving_piece = board.get_piece_by_id(move.piece_id)
+            if moving_piece is not None and moving_piece.player == player:
+                forward_squares = _get_forward_path(move, current_tick, ticks_per_square)
+                if (int_row, int_col) in forward_squares:
+                    return False  # Can't land on own piece's forward path
 
     return True
 
@@ -911,7 +1017,8 @@ def _check_castling_standard(
     for _ in range(2):
         king_path.append((float(from_row), king_path[-1][1] + king_step))
 
-    # Build rook path with intermediate squares so it takes the same time as king
+    # Build rook path with intermediate squares (queenside rook travels 3 squares
+    # vs king's 2, so rook takes longer to arrive and enter cooldown)
     rook_path: list[PathPoint] = [(float(from_row), float(rook_col))]
     rook_step = 1 if new_rook_col > rook_col else -1
     rook_distance = abs(new_rook_col - rook_col)
@@ -1031,7 +1138,8 @@ def _check_castling_horizontal(
     for _ in range(2):
         king_path.append((float(from_row), king_path[-1][1] + king_step))
 
-    # Build rook path with intermediate squares so it takes the same time as king
+    # Build rook path with intermediate squares (queenside rook travels 3 squares
+    # vs king's 2, so rook takes longer to arrive and enter cooldown)
     rook_path: list[PathPoint] = [(float(from_row), float(rook_col))]
     rook_step = 1 if new_rook_col > rook_col else -1
     rook_distance = abs(new_rook_col - rook_col)
@@ -1118,7 +1226,8 @@ def _check_castling_vertical(
     for _ in range(2):
         king_path.append((king_path[-1][0] + king_step, float(from_col)))
 
-    # Build rook path with intermediate squares so it takes the same time as king
+    # Build rook path with intermediate squares (long-side rook travels 3 squares
+    # vs king's 2, so rook takes longer to arrive and enter cooldown)
     rook_path: list[PathPoint] = [(float(rook_row), float(from_col))]
     rook_step = 1 if new_rook_row > rook_row else -1
     rook_distance = abs(new_rook_row - rook_row)

@@ -29,6 +29,11 @@ def compute_travel_ticks(
     move (e.g. rook off-axis, bishop off-diagonal).
     """
     if piece_type == PieceType.KNIGHT:
+        # Knights must reach target via L-shape (2+1 or 1+2)
+        dr = abs(to_row - from_row)
+        dc = abs(to_col - from_col)
+        if not ((dr == 2 and dc == 1) or (dr == 1 and dc == 2)):
+            return _INF_TRAVEL
         return 2 * tps  # Knights always move 2 segments
     dr = abs(to_row - from_row)
     dc = abs(to_col - from_col)

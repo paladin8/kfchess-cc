@@ -1,7 +1,7 @@
 """Tests for the core game engine."""
 
 
-from kfchess.game.board import Board
+from kfchess.game.board import Board, BoardType
 from kfchess.game.engine import GameEngine, GameEventType
 from kfchess.game.moves import Cooldown, Move
 from kfchess.game.pieces import Piece, PieceType
@@ -535,6 +535,131 @@ class TestGetLegalMoves:
         # Pawn should not have any moves
         pawn_moves = [m for m in moves if m[0] == pawn.id]
         assert len(pawn_moves) == 0
+
+
+class TestGetLegalMovesFastEquivalence:
+    """Verify get_legal_moves_fast matches validate_move for every candidate."""
+
+    def _get_legal_moves_via_validate(self, state, player, *, ignore_cooldown=False):
+        """Reference implementation: call validate_move for every candidate."""
+        from kfchess.game.collision import is_piece_moving, is_piece_on_cooldown
+        from kfchess.game.engine import _get_piece_candidates
+
+        legal = []
+        king = state.board.get_king(player)
+        if king is None or king.captured:
+            return legal
+        for piece in state.board.get_pieces_for_player(player):
+            if piece.captured:
+                continue
+            if is_piece_moving(piece.id, state.active_moves):
+                continue
+            if not ignore_cooldown and is_piece_on_cooldown(
+                piece.id, state.cooldowns, state.current_tick
+            ):
+                continue
+            candidates = _get_piece_candidates(piece, state.board, state.active_moves)
+            for to_row, to_col in candidates:
+                move = GameEngine.validate_move(
+                    state, player, piece.id, to_row, to_col,
+                    ignore_cooldown=ignore_cooldown,
+                )
+                if move is not None:
+                    legal.append((piece.id, to_row, to_col))
+        return legal
+
+    def test_initial_position_standard(self):
+        """Opening position: fast path matches validate_move."""
+        state = GameEngine.create_game(
+            speed=Speed.STANDARD, players={1: "u:1", 2: "u:2"},
+        )
+        GameEngine.set_player_ready(state, 1)
+        GameEngine.set_player_ready(state, 2)
+
+        for player in (1, 2):
+            fast = set(GameEngine.get_legal_moves_fast(state, player))
+            ref = set(self._get_legal_moves_via_validate(state, player))
+            assert fast == ref, f"Player {player}: fast={fast - ref}, ref={ref - fast}"
+
+    def test_with_active_moves_and_cooldowns(self):
+        """Mid-game with moving pieces and cooldowns: fast matches validate."""
+        state = GameEngine.create_game(
+            speed=Speed.LIGHTNING, players={1: "u:1", 2: "u:2"},
+        )
+        GameEngine.set_player_ready(state, 1)
+        GameEngine.set_player_ready(state, 2)
+
+        # Make a few moves and tick to create cooldowns / active moves
+        pawn1 = state.board.get_piece_at(6, 4)
+        move1 = GameEngine.validate_move(state, 1, pawn1.id, 4, 4)
+        GameEngine.apply_move(state, move1)
+
+        pawn2 = state.board.get_piece_at(1, 3)
+        move2 = GameEngine.validate_move(state, 2, pawn2.id, 3, 3)
+        GameEngine.apply_move(state, move2)
+
+        # Tick partway so moves are in progress
+        for _ in range(3):
+            GameEngine.tick(state)
+
+        for player in (1, 2):
+            fast = set(GameEngine.get_legal_moves_fast(state, player))
+            ref = set(self._get_legal_moves_via_validate(state, player))
+            assert fast == ref
+
+    def test_with_ignore_cooldown(self):
+        """ignore_cooldown flag: fast matches validate."""
+        state = GameEngine.create_game(
+            speed=Speed.LIGHTNING, players={1: "u:1", 2: "u:2"},
+        )
+        GameEngine.set_player_ready(state, 1)
+        GameEngine.set_player_ready(state, 2)
+
+        # Move and tick until cooldown
+        pawn = state.board.get_piece_at(6, 0)
+        move = GameEngine.validate_move(state, 1, pawn.id, 5, 0)
+        GameEngine.apply_move(state, move)
+        for _ in range(20):
+            GameEngine.tick(state)
+
+        fast = set(GameEngine.get_legal_moves_fast(state, 1, ignore_cooldown=True))
+        ref = set(self._get_legal_moves_via_validate(state, 1, ignore_cooldown=True))
+        assert fast == ref
+
+    def test_4player_initial(self):
+        """4-player opening position: fast matches validate."""
+        state = GameEngine.create_game(
+            speed=Speed.LIGHTNING,
+            players={1: "u:1", 2: "u:2", 3: "u:3", 4: "u:4"},
+            board_type=BoardType.FOUR_PLAYER,
+        )
+        for p in (1, 2, 3, 4):
+            GameEngine.set_player_ready(state, p)
+
+        for player in (1, 2, 3, 4):
+            fast = set(GameEngine.get_legal_moves_fast(state, player))
+            ref = set(self._get_legal_moves_via_validate(state, player))
+            assert fast == ref, f"Player {player}: fast={fast - ref}, ref={ref - fast}"
+
+    def test_castling_available(self):
+        """Castling candidates: fast matches validate."""
+        state = GameEngine.create_game(
+            speed=Speed.STANDARD, players={1: "u:1", 2: "u:2"},
+        )
+        GameEngine.set_player_ready(state, 1)
+        GameEngine.set_player_ready(state, 2)
+
+        # Clear path for kingside castling (remove knight and bishop)
+        state.board.remove_piece("N:1:7:6")
+        state.board.remove_piece("B:1:7:5")
+
+        fast = set(GameEngine.get_legal_moves_fast(state, 1))
+        ref = set(self._get_legal_moves_via_validate(state, 1))
+        assert fast == ref
+
+        # Verify castling is actually in the results
+        king_moves = {m for m in fast if m[0] == "K:1:7:4"}
+        assert ("K:1:7:4", 7, 6) in king_moves  # kingside castling
 
 
 class TestGetPieceState:

@@ -105,15 +105,21 @@ class AIController:
             self._cached_ai_state = None
         else:
             ai_state = StateExtractor.extract(
-                state, player, cooldown_buffer_ticks=COOLDOWN_BUFFER_TICKS,
+                state, player,
+                cooldown_buffer_ticks=COOLDOWN_BUFFER_TICKS,
+                reaction_delay_ticks=REACTION_DELAY_TICKS,
             )
 
-        # Compute enemy escape moves for L3 dodgeability
+        # Compute enemy escape moves for L3 dodgeability.
+        # Use ignore_cooldown=True so pieces on cooldown still have potential
+        # escape squares — they may finish cooldown before our attack arrives.
         if self.level >= 3:
             escape_moves: dict[str, list[tuple[int, int]]] = {}
             for ep in state.players:
                 if ep != player:
-                    for pid, r, c in GameEngine.get_legal_moves_fast(state, ep):
+                    for pid, r, c in GameEngine.get_legal_moves_fast(
+                        state, ep, ignore_cooldown=True,
+                    ):
                         escape_moves.setdefault(pid, []).append((r, c))
             ai_state.enemy_escape_moves = escape_moves
 

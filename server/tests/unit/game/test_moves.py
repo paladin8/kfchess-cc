@@ -11,6 +11,7 @@ from kfchess.game.moves import (
     _compute_pawn_path,
     _compute_queen_path,
     _compute_rook_path,
+    build_path_clear_context,
     check_castling,
     compute_move_path,
 )
@@ -1121,3 +1122,156 @@ class TestPawnOncomingEnemyBlocking:
             pawn, board, 4, 4, [enemy_move], current_tick=0, ticks_per_square=30
         )
         assert path is None
+
+
+class TestPathClearContext:
+    """Tests that PathClearContext produces identical results to inline computation."""
+
+    def test_context_matches_inline_for_slider_blocking(self):
+        """Slider blocked by enemy same-line move: context vs inline match."""
+        board = Board.create_empty()
+        rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy_rook = Piece.create(PieceType.ROOK, player=2, row=4, col=7)
+        board.add_piece(rook)
+        board.add_piece(enemy_rook)
+
+        # Enemy rook moving left along the same rank
+        enemy_move = Move(
+            piece_id=enemy_rook.id,
+            path=[(4.0, 7.0), (4.0, 6.0), (4.0, 5.0)],
+            start_tick=0,
+        )
+        active_moves = [enemy_move]
+
+        # Without context (inline computation)
+        result_inline = compute_move_path(
+            rook, board, 4, 5, active_moves, current_tick=0, ticks_per_square=10
+        )
+
+        # With context (precomputed)
+        ctx = build_path_clear_context(1, board, active_moves, 0, 10)
+        result_ctx = compute_move_path(
+            rook, board, 4, 5, active_moves, current_tick=0, ticks_per_square=10,
+            path_context=ctx,
+        )
+
+        assert result_inline == result_ctx
+
+    def test_context_matches_inline_for_own_forward_blocking(self):
+        """Own moving piece's forward path blocks: context vs inline match."""
+        board = Board.create_empty()
+        rook1 = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        rook2 = Piece.create(PieceType.ROOK, player=1, row=4, col=5)
+        board.add_piece(rook1)
+        board.add_piece(rook2)
+
+        # Own rook2 moving right, forward path includes (4,6), (4,7)
+        own_move = Move(
+            piece_id=rook2.id,
+            path=[(4.0, 5.0), (4.0, 6.0), (4.0, 7.0)],
+            start_tick=0,
+        )
+        active_moves = [own_move]
+
+        # Rook1 tries to reach (4,6) which is in rook2's forward path
+        result_inline = compute_move_path(
+            rook1, board, 4, 6, active_moves, current_tick=0, ticks_per_square=10
+        )
+        ctx = build_path_clear_context(1, board, active_moves, 0, 10)
+        result_ctx = compute_move_path(
+            rook1, board, 4, 6, active_moves, current_tick=0, ticks_per_square=10,
+            path_context=ctx,
+        )
+
+        assert result_inline is None
+        assert result_ctx is None
+
+    def test_context_matches_inline_for_knight_destination(self):
+        """Knight destination validity: context vs inline match."""
+        board = Board.create_empty()
+        knight = Piece.create(PieceType.KNIGHT, player=1, row=4, col=4)
+        own_rook = Piece.create(PieceType.ROOK, player=1, row=2, col=3)
+        board.add_piece(knight)
+        board.add_piece(own_rook)
+
+        # Own rook moving, forward path includes (2,3)
+        own_move = Move(
+            piece_id=own_rook.id,
+            path=[(2.0, 3.0), (2.0, 4.0), (2.0, 5.0)],
+            start_tick=0,
+        )
+        active_moves = [own_move]
+
+        # Knight tries to jump to (2,5) which is in forward path
+        result_inline = compute_move_path(
+            knight, board, 2, 5, active_moves, current_tick=0, ticks_per_square=10
+        )
+        ctx = build_path_clear_context(1, board, active_moves, 0, 10)
+        result_ctx = compute_move_path(
+            knight, board, 2, 5, active_moves, current_tick=0, ticks_per_square=10,
+            path_context=ctx,
+        )
+
+        assert result_inline == result_ctx
+
+    def test_context_matches_inline_for_unblocked_move(self):
+        """Unblocked move: context vs inline produce same valid result."""
+        board = Board.create_empty()
+        rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        board.add_piece(rook)
+
+        active_moves: list[Move] = []
+
+        result_inline = compute_move_path(
+            rook, board, 4, 5, active_moves, current_tick=0, ticks_per_square=10
+        )
+        ctx = build_path_clear_context(1, board, active_moves, 0, 10)
+        result_ctx = compute_move_path(
+            rook, board, 4, 5, active_moves, current_tick=0, ticks_per_square=10,
+            path_context=ctx,
+        )
+
+        assert result_inline is not None
+        assert result_inline == result_ctx
+
+    def test_context_moving_piece_ids(self):
+        """Verify moving_piece_ids is built correctly."""
+        board = Board.create_empty()
+        rook = Piece.create(PieceType.ROOK, player=1, row=4, col=0)
+        enemy = Piece.create(PieceType.QUEEN, player=2, row=0, col=0)
+        board.add_piece(rook)
+        board.add_piece(enemy)
+
+        move1 = Move(piece_id=rook.id, path=[(4.0, 0.0), (4.0, 1.0)], start_tick=0)
+        move2 = Move(piece_id=enemy.id, path=[(0.0, 0.0), (0.0, 1.0)], start_tick=0)
+
+        ctx = build_path_clear_context(1, board, [move1, move2], 0, 10)
+
+        assert rook.id in ctx.moving_piece_ids
+        assert enemy.id in ctx.moving_piece_ids
+
+    def test_context_pawn_oncoming_enemy(self):
+        """Pawn blocked by oncoming enemy: context vs inline match."""
+        board = Board.create_empty()
+        pawn = Piece.create(PieceType.PAWN, player=1, row=6, col=4)
+        enemy = Piece.create(PieceType.PAWN, player=2, row=3, col=4)
+        board.add_piece(pawn)
+        board.add_piece(enemy)
+
+        enemy_move = Move(
+            piece_id=enemy.id,
+            path=[(3.0, 4.0), (4.0, 4.0), (5.0, 4.0)],
+            start_tick=0,
+        )
+        active_moves = [enemy_move]
+
+        result_inline = compute_move_path(
+            pawn, board, 5, 4, active_moves, current_tick=0, ticks_per_square=10
+        )
+        ctx = build_path_clear_context(1, board, active_moves, 0, 10)
+        result_ctx = compute_move_path(
+            pawn, board, 5, 4, active_moves, current_tick=0, ticks_per_square=10,
+            path_context=ctx,
+        )
+
+        assert result_inline == result_ctx

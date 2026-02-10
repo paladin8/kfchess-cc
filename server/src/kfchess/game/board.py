@@ -46,6 +46,22 @@ class Board:
     width: int = 8
     height: int = 8
 
+    # Lazily-built position lookup: (row, col) -> Piece for uncaptured pieces.
+    # Set to None to invalidate (e.g. after captures or move completions).
+    _position_map: dict[tuple[int, int], Piece] | None = field(
+        default=None, repr=False, compare=False,
+    )
+
+    # Lazily-built ID lookup: piece_id -> Piece (all pieces, including captured).
+    _id_map: dict[str, Piece] | None = field(
+        default=None, repr=False, compare=False,
+    )
+
+    # Lazily-built king lookup: player -> uncaptured King piece (or None).
+    _king_cache: dict[int, Piece | None] | None = field(
+        default=None, repr=False, compare=False,
+    )
+
     @classmethod
     def create_standard(cls) -> "Board":
         """Create a standard 8x8 chess board with initial piece positions."""
@@ -188,24 +204,47 @@ class Board:
         )
 
     def get_piece_by_id(self, piece_id: str) -> Piece | None:
-        """Get a piece by its ID."""
-        for piece in self.pieces:
-            if piece.id == piece_id:
-                return piece
-        return None
+        """Get a piece by its ID.
+
+        Uses a lazily-built ID map for O(1) lookup.
+        """
+        if self._id_map is None:
+            self._build_id_map()
+        return self._id_map.get(piece_id)  # type: ignore[union-attr]
 
     def get_piece_at(self, row: int, col: int) -> Piece | None:
         """Get an uncaptured piece at the given grid position.
 
-        Uses grid position (rounded to nearest int) for matching.
+        Uses a lazily-built position map for O(1) lookup.
         """
+        if self._position_map is None:
+            self._build_position_map()
+        return self._position_map.get((row, col))  # type: ignore[union-attr]
+
+    def invalidate_position_map(self) -> None:
+        """Invalidate all board caches after board mutations."""
+        self._position_map = None
+        self._id_map = None
+        self._king_cache = None
+
+    def _build_position_map(self) -> None:
+        """Build the (row, col) -> Piece lookup for uncaptured pieces."""
+        self._position_map = {}
         for piece in self.pieces:
             if piece.captured:
                 continue
-            piece_row, piece_col = piece.grid_position
-            if piece_row == row and piece_col == col:
-                return piece
-        return None
+            self._position_map[piece.grid_position] = piece
+
+    def _build_id_map(self) -> None:
+        """Build the piece_id -> Piece lookup (all pieces, including captured)."""
+        self._id_map = {p.id: p for p in self.pieces}
+
+    def _build_king_cache(self) -> None:
+        """Build the player -> King lookup for uncaptured kings."""
+        self._king_cache = {}
+        for piece in self.pieces:
+            if piece.type == PieceType.KING and not piece.captured:
+                self._king_cache[piece.player] = piece
 
     def get_pieces_for_player(self, player: int) -> list[Piece]:
         """Get all uncaptured pieces for a player."""
@@ -216,11 +255,13 @@ class Board:
         return [p for p in self.pieces if not p.captured]
 
     def get_king(self, player: int) -> Piece | None:
-        """Get the king piece for a player."""
-        for piece in self.pieces:
-            if piece.type == PieceType.KING and piece.player == player and not piece.captured:
-                return piece
-        return None
+        """Get the king piece for a player.
+
+        Uses a lazily-built cache for O(1) lookup.
+        """
+        if self._king_cache is None:
+            self._build_king_cache()
+        return self._king_cache.get(player)  # type: ignore[union-attr]
 
     def is_valid_square(self, row: int, col: int) -> bool:
         """Check if a square is valid on this board."""
@@ -243,11 +284,17 @@ class Board:
     def add_piece(self, piece: Piece) -> None:
         """Add a piece to the board."""
         self.pieces.append(piece)
+        self._position_map = None
+        self._id_map = None
+        self._king_cache = None
 
     def remove_piece(self, piece_id: str) -> bool:
         """Remove a piece from the board. Returns True if found and removed."""
         for i, piece in enumerate(self.pieces):
             if piece.id == piece_id:
                 del self.pieces[i]
+                self._position_map = None
+                self._id_map = None
+                self._king_cache = None
                 return True
         return False

@@ -210,8 +210,11 @@ def _score_move(
 
             # Pawn structure: chain bonus and isolated penalty
             if friendly_pawn_positions is not None and friendly_pawn_files is not None:
+                # Exclude mover's origin to avoid self-support on diagonal moves
+                origin = piece.grid_position
+                pawn_pos = friendly_pawn_positions - {origin} if origin in friendly_pawn_positions else friendly_pawn_positions
                 support = _count_pawn_support(
-                    candidate.to_row, candidate.to_col, ai_state, friendly_pawn_positions,
+                    candidate.to_row, candidate.to_col, ai_state, pawn_pos,
                 )
                 score += support * PAWN_CHAIN_BONUS
                 pawn_file = _get_pawn_file(candidate.to_row, candidate.to_col, ai_state)

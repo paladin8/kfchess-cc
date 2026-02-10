@@ -162,6 +162,9 @@ class TestComputeTravelTicks:
         assert compute_travel_ticks(0, 0, 0, 5, PieceType.QUEEN, 6) == 5 * 6
 
     def test_knight_fixed_cost(self):
-        """Knight always returns 2 * tps regardless of distance."""
+        """Knight returns 2 * tps for valid L-shape moves, INF otherwise."""
         assert compute_travel_ticks(0, 0, 2, 1, PieceType.KNIGHT, 6) == 2 * 6
-        assert compute_travel_ticks(0, 0, 7, 7, PieceType.KNIGHT, 6) == 2 * 6
+        assert compute_travel_ticks(0, 0, 1, 2, PieceType.KNIGHT, 6) == 2 * 6
+        # Non-L-shape targets are unreachable in a single move
+        assert compute_travel_ticks(0, 0, 7, 7, PieceType.KNIGHT, 6) == 999_999
+        assert compute_travel_ticks(0, 0, 0, 3, PieceType.KNIGHT, 6) == 999_999

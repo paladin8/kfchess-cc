@@ -23,6 +23,8 @@ from kfchess.game.moves import (
     FOUR_PLAYER_ORIENTATIONS,
     Cooldown,
     Move,
+    PathClearContext,
+    build_path_clear_context,
     check_castling,
     compute_move_path,
     should_promote_pawn,
@@ -195,6 +197,9 @@ class GameEngine:
         piece_id: str,
         to_row: int,
         to_col: int,
+        *,
+        ignore_cooldown: bool = False,
+        path_context: PathClearContext | None = None,
     ) -> Move | None:
         """Validate and compute a move.
 
@@ -204,6 +209,9 @@ class GameEngine:
             piece_id: ID of the piece to move
             to_row: Destination row
             to_col: Destination column
+            ignore_cooldown: If True, skip cooldown check (for AI escape analysis)
+            path_context: Optional precomputed blocking context (avoids repeated
+                iteration over active_moves when validating many candidates)
 
         Returns:
             Move object if valid, None if invalid
@@ -236,7 +244,7 @@ class GameEngine:
             return None
 
         # Check piece is not on cooldown
-        if is_piece_on_cooldown(piece_id, state.cooldowns, state.current_tick):
+        if not ignore_cooldown and is_piece_on_cooldown(piece_id, state.cooldowns, state.current_tick):
             logger.warning(f"Move rejected: {piece_id} is on cooldown")
             return None
 
@@ -265,6 +273,7 @@ class GameEngine:
             piece, state.board, to_row, to_col, state.active_moves,
             current_tick=state.current_tick,
             ticks_per_square=config.ticks_per_square,
+            path_context=path_context,
         )
         if path is None:
             logger.debug(
@@ -373,6 +382,7 @@ class GameEngine:
 
         events: list[GameEvent] = []
         state.current_tick += 1
+        state.board.invalidate_position_map()
 
         config = state.config
 
@@ -486,6 +496,10 @@ class GameEngine:
             # Remove completed move from active moves
             state.active_moves = [m for m in state.active_moves if m.piece_id != move.piece_id]
 
+        # Invalidate position cache after captures and move completions
+        if captures or completed_moves:
+            state.board.invalidate_position_map()
+
         # 4. Remove expired cooldowns (record end tick on piece for AI buffer)
         active_cooldowns = []
         for c in state.cooldowns:
@@ -553,7 +567,7 @@ class GameEngine:
         # In multiplayer, if all remaining players are bots, end the game
         if len(players_with_king) >= 2 and len(state.players) > 2:
             all_bots = all(
-                state.players.get(p, "").startswith("bot:")
+                state.players.get(p, "").startswith(("bot:", "c:"))
                 for p in players_with_king
             )
             if all_bots:
@@ -593,16 +607,25 @@ class GameEngine:
         return GameEngine.get_legal_moves_fast(state, player)
 
     @staticmethod
-    def get_legal_moves_fast(state: GameState, player: int) -> list[tuple[str, int, int]]:
+    def get_legal_moves_fast(
+        state: GameState, player: int, *, ignore_cooldown: bool = False,
+    ) -> list[tuple[str, int, int]]:
         """Get all legal moves for a player using per-piece candidate generation.
 
         Instead of brute-forcing every board square, generates only geometrically
         reachable squares per piece type, then validates each candidate. This reduces
         validate_move calls from ~1024 to ~100 for a typical position.
 
+        Bypasses ``validate_move`` for the inner loop — the precondition checks
+        (game status, king alive, piece ownership, captured, moving, cooldown)
+        are already performed once in the outer loop, so only
+        ``compute_move_path`` / ``check_castling`` are called per candidate.
+
         Args:
             state: Current game state
             player: Player number
+            ignore_cooldown: If True, include moves for pieces on cooldown
+                (useful for computing potential escape squares)
 
         Returns:
             List of (piece_id, to_row, to_col) tuples
@@ -613,18 +636,50 @@ class GameEngine:
         if king is None or king.captured:
             return legal_moves
 
-        for piece in state.board.get_pieces_for_player(player):
+        # Cache config values and build blocking context once.
+        config = state.config
+        tps = config.ticks_per_square
+        current_tick = state.current_tick
+        active_moves = state.active_moves
+        board = state.board
+
+        ctx = build_path_clear_context(
+            player, board, active_moves, current_tick, tps,
+        )
+
+        for piece in board.get_pieces_for_player(player):
             if piece.captured:
                 continue
-            if is_piece_moving(piece.id, state.active_moves):
+            # Set lookup replaces is_piece_moving's any() linear scan
+            if piece.id in ctx.moving_piece_ids:
                 continue
-            if is_piece_on_cooldown(piece.id, state.cooldowns, state.current_tick):
+            if not ignore_cooldown and is_piece_on_cooldown(piece.id, state.cooldowns, current_tick):
                 continue
 
-            candidates = _get_piece_candidates(piece, state.board, state.active_moves)
+            is_king = piece.type == PieceType.KING
+            candidates = _get_piece_candidates(piece, board, active_moves)
             for to_row, to_col in candidates:
-                move = GameEngine.validate_move(state, player, piece.id, to_row, to_col)
-                if move is not None:
+                # For kings, check castling first (handles 2-square moves)
+                if is_king:
+                    castling = check_castling(
+                        piece, board, to_row, to_col, active_moves,
+                        cooldowns=state.cooldowns,
+                        current_tick=current_tick,
+                        ticks_per_square=tps,
+                    )
+                    if castling is not None:
+                        legal_moves.append((piece.id, to_row, to_col))
+                        continue
+
+                # Compute the move path directly (precondition checks
+                # already done in the outer loop above)
+                path = compute_move_path(
+                    piece, board, to_row, to_col, active_moves,
+                    current_tick=current_tick,
+                    ticks_per_square=tps,
+                    path_context=ctx,
+                )
+                if path is not None:
                     legal_moves.append((piece.id, to_row, to_col))
 
         return legal_moves

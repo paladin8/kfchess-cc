@@ -391,7 +391,7 @@ def recapture_bonus(
         # then be on cooldown for cd_ticks
         enemy_remaining_travel = travel_dist * tps
         # Enemy is vulnerable from landing until cooldown + reaction expires
-        enemy_vulnerable_until = enemy_remaining_travel + cd_ticks
+        enemy_vulnerable_until = enemy_remaining_travel + cd_ticks + arrival_data.reaction_ticks
 
         # Can we recapture? Move to dest, cooldown, then travel to target_pos
         from_pos = candidate.ai_piece.piece.grid_position
@@ -516,13 +516,13 @@ def threaten_score(
         if ep_pos == dest:
             continue  # That's a capture, not a threat
 
-        # Time for us to attack this enemy from dest (after arriving + cooldown)
+        # Time for us to attack this enemy from dest (after arriving + cooldown + reaction)
         attack_travel = compute_travel_ticks(
             dest[0], dest[1],
             ep_pos[0], ep_pos[1],
             our_type, tps,
         )
-        our_attack_time = our_travel + cd_ticks + attack_travel
+        our_attack_time = our_travel + cd_ticks + arrival_data.reaction_ticks + attack_travel
 
         # Can the enemy reach our dest before our attack lands?
         # If so, it can counter-capture us — not a safe threat.
