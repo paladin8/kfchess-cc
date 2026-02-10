@@ -142,6 +142,25 @@ class Move:
     start_tick: int
     extra_move: Move | None = None
 
+    def to_dict(self) -> dict:
+        """Serialize move to a dictionary for snapshot persistence."""
+        return {
+            "piece_id": self.piece_id,
+            "path": [list(p) for p in self.path],
+            "start_tick": self.start_tick,
+            "extra_move": self.extra_move.to_dict() if self.extra_move else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Move:
+        """Deserialize move from a dictionary."""
+        return cls(
+            piece_id=data["piece_id"],
+            path=[tuple(p) for p in data["path"]],
+            start_tick=data["start_tick"],
+            extra_move=cls.from_dict(data["extra_move"]) if data.get("extra_move") else None,
+        )
+
     @property
     def start_position(self) -> PathPoint:
         """Get the starting position of the move."""
@@ -171,6 +190,23 @@ class Cooldown:
     piece_id: str
     start_tick: int
     duration: int
+
+    def to_dict(self) -> dict:
+        """Serialize cooldown to a dictionary for snapshot persistence."""
+        return {
+            "piece_id": self.piece_id,
+            "start_tick": self.start_tick,
+            "duration": self.duration,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Cooldown:
+        """Deserialize cooldown from a dictionary."""
+        return cls(
+            piece_id=data["piece_id"],
+            start_tick=data["start_tick"],
+            duration=data["duration"],
+        )
 
     def is_active(self, current_tick: int) -> bool:
         """Check if cooldown is still active at the given tick."""

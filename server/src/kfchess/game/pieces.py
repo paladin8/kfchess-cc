@@ -71,6 +71,33 @@ class Piece:
             cooldown_end_tick=self.cooldown_end_tick,
         )
 
+    def to_dict(self) -> dict:
+        """Serialize piece to a dictionary for snapshot persistence."""
+        return {
+            "id": self.id,
+            "type": self.type.value,
+            "player": self.player,
+            "row": self.row,
+            "col": self.col,
+            "captured": self.captured,
+            "moved": self.moved,
+            "cooldown_end_tick": self.cooldown_end_tick,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Piece":
+        """Deserialize piece from a dictionary."""
+        return cls(
+            id=data["id"],
+            type=PieceType(data["type"]),
+            player=data["player"],
+            row=float(data["row"]),
+            col=float(data["col"]),
+            captured=data.get("captured", False),
+            moved=data.get("moved", False),
+            cooldown_end_tick=data.get("cooldown_end_tick", 0),
+        )
+
     @property
     def position(self) -> tuple[float, float]:
         """Get the current position as (row, col) tuple."""

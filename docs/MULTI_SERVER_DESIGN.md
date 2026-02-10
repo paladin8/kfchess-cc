@@ -99,7 +99,9 @@ Each server has a stable `KFCHESS_SERVER_ID` (e.g., `worker1`, `worker2`, `worke
 
 ### Multi-Machine Extension
 
-Each machine runs its own nginx. The ALB routes to machines; machine nginx routes to local server processes. The design works identically because all coordination goes through PostgreSQL and Redis.
+Each machine runs its own nginx. The ALB routes to machines; machine nginx routes to local server processes. All coordination goes through PostgreSQL and Redis.
+
+**Open design question**: Worker IDs (e.g., `worker1`) and the nginx `$arg_server` map are currently local to a single machine. For multi-machine, worker IDs would need to be globally unique (e.g., `m1-worker1`) and the routing layer would need to resolve them across machines (e.g., ALB sticky routing or a global nginx map). This needs further design when multi-machine becomes a priority. The single-machine design works as-is.
 
 ---
 
@@ -206,6 +208,9 @@ class GameSnapshot:
     campaign_level_id: int | None
     campaign_user_id: int | None
     initial_board_str: str | None
+    resigned_piece_ids: list[str]  # King IDs captured via resignation (4-player)
+    draw_offers: set[int]          # Players who have offered a draw
+    force_broadcast: bool          # Force state broadcast on next tick
     server_id: str
     snapshot_tick: int
     snapshot_time: float   # time.time()
@@ -213,7 +218,7 @@ class GameSnapshot:
 
 **Storage**: Redis key `game:{game_id}:snapshot` (JSON string)
 - TTL: 2 hours (same as stale game cleanup)
-- Size: ~5-20 KB per game (board + moves + cooldowns)
+- Size: ~5-20 KB for short games, growing with `replay_moves` over time (~50 bytes/move). A 10-minute game with ~200 moves is ~15-25 KB. A 1-hour game could reach ~80-100 KB. Still well within Redis comfort.
 
 #### GameState Serialization
 
@@ -227,7 +232,9 @@ class GameState:
             "game_id": self.game_id,
             "speed": self.speed.value,
             "board_type": self.board.board_type.value,
-            "players": self.players,
+            "board_width": self.board.width,
+            "board_height": self.board.height,
+            "players": {str(k): v for k, v in self.players.items()},
             "current_tick": self.current_tick,
             "status": self.status.value,
             "winner": self.winner,
@@ -239,13 +246,17 @@ class GameState:
             "replay_moves": [m.to_dict() for m in self.replay_moves],
             "last_move_tick": self.last_move_tick,
             "last_capture_tick": self.last_capture_tick,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
         }
 
     @classmethod
     def from_snapshot_dict(cls, data: dict) -> "GameState":
         """Deserialize state from persistence."""
-        # ... reconstruct full state ...
+        # ... reconstruct full state (see game/state.py) ...
 ```
+
+Note: `players` dict keys are converted to strings for JSON compatibility and back to ints on deserialization. `board_width`/`board_height` are stored explicitly for robustness (with fallback derivation from `board_type`).
 
 AI instances are **not** serialized - only the AI config (type name, e.g. `"novice"`) is stored. On recovery, fresh AI instances are created. Since AI is already non-deterministic (noise parameter), this is transparent to the player.
 
@@ -254,7 +265,7 @@ AI instances are **not** serialized - only the AI config (type name, e.g. `"novi
 - **Serialization**: ~0.1ms for a typical game state
 - **Redis write**: ~0.2ms on localhost
 - **Frequency**: Once per second per game
-- **With 100 concurrent games**: 100 writes/sec to Redis, ~30 KB/sec bandwidth
+- **With 100 concurrent games**: 100 writes/sec to Redis, ~100-500 KB/sec bandwidth (varies with game length)
 - **Acceptable**: Well within Redis capacity
 
 ---
@@ -348,6 +359,8 @@ async def handle_lobby_websocket(websocket, code, player_key):
     await websocket.send_json({"type": "lobby_state", "lobby": lobby})
 
     # 4. Subscribe to lobby events channel
+    # Note: at scale, optimize to one subscription per lobby per server
+    # (shared across all local connections) instead of per-connection.
     pubsub = redis.pubsub()
     await pubsub.subscribe(f"lobby_events:{code}")
 
@@ -459,17 +472,19 @@ Deploys should be fast - immediately force-migrate all games rather than waiting
 3. Force-migrate all active games (immediately, don't wait):
    a. For each running game:
       - Write final snapshot to Redis synchronously (no data loss)
-      - Delete game:{id}:server from Redis (so it can be claimed)
+      - Stop heartbeat (let it expire, making this server look "dead")
       - Close all game WS connections with code 4301 ("server shutting down")
-      - Clients reconnect → new server picks up from snapshot
+      - Leave game:{id}:server pointing to this server (NOT deleted)
+      - Clients reconnect → new server sees stale routing, checks heartbeat,
+        claims via CAS (same as crash recovery)
 
 4. Close all lobby WS connections:
    a. Mark all locally-connected lobby players as disconnected in Redis
    b. Close connections (clients reconnect to any server via round-robin)
 
-5. Clean up active_games table entries for this server
+5. Shutdown
 
-6. Shutdown
+Note: deploy and crash recovery use the **same claim path**. The only difference is that deploy writes a fresh snapshot first (zero data loss), while a crash may have a snapshot up to 1 second stale. The `active_games` table entries are cleaned up by the claiming server as part of the recovery flow (step 8).
 ```
 
 ### Client-Side Handling
@@ -478,9 +493,10 @@ Deploys should be fast - immediately force-migrate all games rather than waiting
 // In GameWebSocketClient
 private handleClose(event: CloseEvent): void {
     if (event.code === 4301) {
-        // Server shutting down - reconnect immediately (no backoff)
+        // Server shutting down - reconnect with small random jitter
+        // to avoid thundering herd when many clients reconnect at once
         this.reconnectAttempts = 0;
-        this.connect();
+        setTimeout(() => this.connect(), Math.random() * 500);
         return;
     }
     if (event.code === 4302) {
@@ -523,25 +539,39 @@ If a server's heartbeat expires, it's considered dead. Crash detection happens i
 1. **Client reconnection**: client's WS drops, it reconnects to any server
 2. **Other servers**: can check heartbeat when they see a game routed to a dead server
 
+**Trade-off**: A 5s TTL means a severely overloaded (but alive) server could be falsely declared dead. The Lua CAS claim (below) limits the blast radius: only one server can claim, and if the "dead" server is actually alive, it will notice its games were claimed (its game loop will find the routing key changed) and can stop gracefully. For a game server, this brief confusion is acceptable - no financial transactions are at stake.
+
 ### Recovery Flow
 
-When a client reconnects after a crash:
+When a client reconnects after a crash (or deploy):
 
 ```
 1. Client WS reconnects (any server, via nginx round-robin)
 2. Server checks local games → not found
-3. Server checks Redis game:{id}:server → "worker2" (the dead server)
+3. Server checks Redis game:{id}:server → "worker2" (the dead/draining server)
 4. Server checks Redis server:worker2:heartbeat → expired/missing
-5. Server atomically claims game: SET game:{id}:server worker1 XX
-   (XX = only set if key exists; prevents claiming non-existent games)
-   If claim fails (another server won), redirect to winner.
+5. Server atomically claims game via Lua compare-and-swap:
+     if GET game:{id}:server == "worker2" then SET game:{id}:server "worker1"
+   If claim fails (another server already claimed it), redirect to winner.
 6. Server loads game:{id}:snapshot from Redis
 7. Server restores game state, recreates AI instances, starts game loop
 8. Server updates active_games table with new server_id
 9. Client receives state update, game continues
 ```
 
-The atomic `SET ... XX` ensures only one server can claim a game. If two clients reconnect to different servers simultaneously, only one wins. The other redirects.
+The Lua CAS script ensures only one server can claim a game. Two servers racing to claim will both check the current value, but only the first `SET` matches - the second sees the value has already changed and fails. The loser redirects to the winner.
+
+```lua
+-- KEYS[1] = game:{id}:server
+-- ARGV[1] = expected current owner (dead server)
+-- ARGV[2] = new owner (claiming server)
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    redis.call('SET', KEYS[1], ARGV[2])
+    return 1
+else
+    return 0
+end
+```
 
 ### Data Loss on Crash
 
@@ -615,7 +645,7 @@ game:{game_id}:snapshot      → String: JSON game snapshot    TTL: 2h (refreshe
 # Lobby state
 lobby:{code}                 → String: JSON lobby state      TTL: 24h
 lobby:{code}:keys            → Hash: {slot → player_key}     TTL: 24h
-lobby:public_index           → Sorted Set: {code → timestamp} (no TTL, cleaned on delete)
+lobby:public_index           → Sorted Set: {code → timestamp} (no TTL, lazy cleanup: stale entries removed when lobby key is found missing during reads)
 
 # Lobby pub/sub
 lobby_events:{code}          → Pub/Sub channel (no storage)
@@ -753,7 +783,7 @@ server {
 - **Static files**: Served directly by nginx from the built frontend. API and WS requests are proxied.
 - **Lobby/Replay WS**: Round-robin to any server. No routing hint needed because lobby WS uses pub/sub (any server works) and replay sessions are stateless.
 - **Game WS**: Uses `$arg_server` to route to specific servers when the client provides a `?server=workerN` hint. Falls back to round-robin if no hint is present.
-- **Health checks**: The ALB checks `/nginx-health` (always 200). Individual server health is checked by the ALB via `/health` through the upstream.
+- **Health checks**: The ALB checks `/nginx-health` on nginx (always 200 if nginx is up). Individual server processes expose `/health` which returns unhealthy during drain - but nginx doesn't use this for routing decisions. Server `/health` is used by the deploy script to confirm a worker is ready after restart.
 
 ---
 
@@ -873,13 +903,8 @@ WorkingDirectory=/var/www/kfchess/server
 Environment=KFCHESS_SERVER_ID=%i
 EnvironmentFile=/var/www/kfchess/server/.env
 
-# Port is derived from worker name: worker1=8001, worker2=8002, etc.
-ExecStart=/var/www/kfchess/server/.venv/bin/uvicorn \
-    kfchess.main:app \
-    --host 127.0.0.1 \
-    --port %I \
-    --workers 1 \
-    --log-level info
+# Uses wrapper script to derive port from worker number (worker1→8001, etc.)
+ExecStart=/usr/local/bin/kfchess-worker
 
 # Graceful shutdown: SIGTERM triggers drain, then SIGKILL after timeout
 KillSignal=SIGTERM
@@ -891,7 +916,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-**Note**: The systemd template uses `%i` for the server ID (e.g., `worker1`) and `%I` for the unescaped instance name. The port mapping (worker1→8001, etc.) needs to be handled either via the `EnvironmentFile` or by setting `KFCHESS_PORT` per-instance. A simpler approach is to have each worker's port in the `.env` file or use a wrapper script:
+The wrapper script derives the port from the worker number:
 
 ```bash
 # /usr/local/bin/kfchess-worker
@@ -902,18 +927,17 @@ PORT=$((8000 + NUM))
 exec uvicorn kfchess.main:app --host 127.0.0.1 --port "$PORT" --workers 1 --log-level info
 ```
 
-Then in the systemd unit: `ExecStart=/usr/local/bin/kfchess-worker`
-
 ---
 
 ## Migration Path
 
 The migration from single-server to multi-server can be done incrementally:
 
-### Phase 1: State Serialization (no behavior change)
-- Add `to_snapshot_dict()` / `from_snapshot_dict()` to `GameState`
-- Add serialization to `Piece`, `Move`, `Cooldown`, `Board`
-- Add comprehensive tests for round-trip serialization
+### Phase 1: State Serialization (no behavior change) ✅ DONE
+- `to_snapshot_dict()` / `from_snapshot_dict()` on `GameState` (`game/state.py`)
+- `to_dict()` / `from_dict()` on `Piece`, `Move`, `Cooldown`, `ReplayMove` (`game/pieces.py`, `game/moves.py`, `game/state.py`)
+- `GameSnapshot` dataclass with full `ManagedGame` metadata (`game/snapshot.py`)
+- 43 round-trip tests covering individual types, full game states, JSON round-trips, 4-player with eliminations, and end-to-end pipeline (`tests/unit/game/test_snapshot.py`)
 - **Zero risk**: No behavior changes, just new code paths
 
 ### Phase 2: Redis Integration (single server, no routing)

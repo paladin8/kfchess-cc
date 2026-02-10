@@ -143,6 +143,27 @@ class ReplayMove:
     to_col: int
     player: int
 
+    def to_dict(self) -> dict:
+        """Serialize replay move to a dictionary for snapshot persistence."""
+        return {
+            "tick": self.tick,
+            "piece_id": self.piece_id,
+            "to_row": self.to_row,
+            "to_col": self.to_col,
+            "player": self.player,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ReplayMove":
+        """Deserialize replay move from a dictionary."""
+        return cls(
+            tick=data["tick"],
+            piece_id=data["piece_id"],
+            to_row=data["to_row"],
+            to_col=data["to_col"],
+            player=data["player"],
+        )
+
 
 @dataclass
 class GameState:
@@ -308,3 +329,77 @@ class GameState:
                 for c in self.cooldowns
             ],
         }
+
+    def to_snapshot_dict(self) -> dict[str, Any]:
+        """Serialize full game state for snapshot persistence.
+
+        Unlike to_dict() (used for WebSocket protocol), this includes all fields
+        needed to fully reconstruct the game state: replay_moves, ready_players,
+        timestamps, etc.
+        """
+        return {
+            "game_id": self.game_id,
+            "speed": self.speed.value,
+            "board_type": self.board.board_type.value,
+            "board_width": self.board.width,
+            "board_height": self.board.height,
+            "players": {str(k): v for k, v in self.players.items()},
+            "current_tick": self.current_tick,
+            "status": self.status.value,
+            "winner": self.winner,
+            "win_reason": self.win_reason.value if self.win_reason else None,
+            "ready_players": list(self.ready_players),
+            "pieces": [p.to_dict() for p in self.board.pieces],
+            "active_moves": [m.to_dict() for m in self.active_moves],
+            "cooldowns": [c.to_dict() for c in self.cooldowns],
+            "replay_moves": [rm.to_dict() for rm in self.replay_moves],
+            "last_move_tick": self.last_move_tick,
+            "last_capture_tick": self.last_capture_tick,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+    @classmethod
+    def from_snapshot_dict(cls, data: dict[str, Any]) -> "GameState":
+        """Deserialize full game state from a snapshot dictionary.
+
+        Reconstructs a complete GameState from the output of to_snapshot_dict().
+        """
+        from kfchess.game.board import Board, BoardType
+        from kfchess.game.pieces import Piece
+
+        board_type = BoardType(data["board_type"])
+        pieces = [Piece.from_dict(p) for p in data["pieces"]]
+        board = Board(
+            pieces=pieces,
+            board_type=board_type,
+            width=data.get("board_width", 8 if board_type == BoardType.STANDARD else 12),
+            height=data.get("board_height", 8 if board_type == BoardType.STANDARD else 12),
+        )
+
+        started_at = None
+        if data.get("started_at"):
+            started_at = datetime.fromisoformat(data["started_at"])
+
+        finished_at = None
+        if data.get("finished_at"):
+            finished_at = datetime.fromisoformat(data["finished_at"])
+
+        return cls(
+            game_id=data["game_id"],
+            board=board,
+            speed=Speed(data["speed"]),
+            players={int(k): v for k, v in data["players"].items()},
+            active_moves=[Move.from_dict(m) for m in data.get("active_moves", [])],
+            cooldowns=[Cooldown.from_dict(c) for c in data.get("cooldowns", [])],
+            current_tick=data.get("current_tick", 0),
+            status=GameStatus(data["status"]),
+            started_at=started_at,
+            finished_at=finished_at,
+            winner=data.get("winner"),
+            win_reason=WinReason(data["win_reason"]) if data.get("win_reason") else None,
+            last_move_tick=data.get("last_move_tick", 0),
+            last_capture_tick=data.get("last_capture_tick", 0),
+            replay_moves=[ReplayMove.from_dict(rm) for rm in data.get("replay_moves", [])],
+            ready_players=set(data.get("ready_players", [])),
+        )
