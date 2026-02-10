@@ -95,10 +95,16 @@ class TestWebSocketEndpoint:
     """Tests for WebSocket endpoint."""
 
     def test_websocket_connect_invalid_game(self, client: TestClient) -> None:
-        """Test connecting to a nonexistent game."""
-        with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/ws/game/NOTFOUND"):
-                pass
+        """Test connecting to a nonexistent game gets accepted then closed.
+
+        The handler accepts the WebSocket before closing with a custom code
+        so the client can receive the close code (ASGI servers send HTTP 403
+        if you close without accept).
+        """
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect("/ws/game/NOTFOUND") as websocket:
+                websocket.receive_text()  # triggers close
+        assert exc_info.value.code == 4004
 
     def test_websocket_connect_valid_game(self, client: TestClient) -> None:
         """Test connecting to a valid game."""

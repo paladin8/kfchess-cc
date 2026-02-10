@@ -12,6 +12,8 @@ from kfchess.campaign.service import CampaignService
 from kfchess.db.models import User
 from kfchess.db.repositories.campaign import CampaignProgressRepository
 from kfchess.db.session import async_session_factory
+from kfchess.redis.routing import register_routing_fire_and_forget
+from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
 
 logger = logging.getLogger(__name__)
@@ -231,9 +233,7 @@ async def start_level(
 
     logger.info(f"User {user.id} started campaign level {level_id}, game {game_id}")
 
-    # Register in active games registry
-    from kfchess.services.game_registry import register_game_fire_and_forget
-
+    # Register in active games and routing registries
     players_info = [
         {"slot": 1, "username": user.username or f"User {user.id}", "is_ai": False,
          "user_id": user.id, "picture_url": user.picture_url},
@@ -249,6 +249,7 @@ async def start_level(
         players=players_info,
         campaign_level_id=level.level_id,
     )
+    register_routing_fire_and_forget(game_id)
 
     return StartGameResponse(
         game_id=game_id,

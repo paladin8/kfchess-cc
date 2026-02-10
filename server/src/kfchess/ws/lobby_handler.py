@@ -11,6 +11,8 @@ from kfchess.game.board import BoardType
 from kfchess.game.state import Speed
 from kfchess.lobby.manager import LobbyError, get_lobby_manager
 from kfchess.lobby.models import Lobby, LobbyPlayer, LobbySettings, LobbyStatus
+from kfchess.redis.routing import register_routing_fire_and_forget
+from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
 
 logger = logging.getLogger(__name__)
@@ -657,9 +659,7 @@ async def _create_game_from_lobby(
     # Update the game-to-lobby mapping
     manager._game_to_lobby[game_id_created] = code
 
-    # Register in active games registry
-    from kfchess.services.game_registry import register_game_fire_and_forget
-
+    # Register in active games and routing registries
     players_info = []
     for slot, player in lobby.players.items():
         players_info.append({
@@ -678,6 +678,7 @@ async def _create_game_from_lobby(
         players=players_info,
         lobby_code=code,
     )
+    register_routing_fire_and_forget(game_id_created)
 
     # Send game_starting message to ALL human players
     logger.info(

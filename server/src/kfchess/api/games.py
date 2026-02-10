@@ -16,6 +16,7 @@ from kfchess.game.collision import (
     is_piece_on_cooldown,
 )
 from kfchess.game.state import Speed
+from kfchess.redis.routing import register_routing_fire_and_forget
 from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
 from kfchess.utils.display_name import resolve_player_info
@@ -152,6 +153,7 @@ async def create_game(request: CreateGameRequest) -> CreateGameResponse:
                 board_type=request.board_type,
                 players=players_info,
             )
+            register_routing_fire_and_forget(game_id)
     except Exception as err:
         logger.exception(f"Failed to create game: {err}")
         raise HTTPException(status_code=500, detail=f"Failed to create game: {err}") from err

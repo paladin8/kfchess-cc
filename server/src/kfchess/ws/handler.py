@@ -22,10 +22,12 @@ from kfchess.game.snapshot import GameSnapshot
 from kfchess.game.state import TICK_RATE_HZ, GameStatus
 from kfchess.lobby.manager import get_lobby_manager
 from kfchess.redis.client import get_redis
+from kfchess.redis.routing import delete_game_routing, get_game_server, register_game_routing
 from kfchess.redis.snapshot_store import delete_snapshot, save_snapshot
 from kfchess.services.game_registry import deregister_game_fire_and_forget
 from kfchess.services.game_service import ManagedGame, get_game_service
 from kfchess.services.rating_service import RatingService
+from kfchess.settings import get_settings
 from kfchess.ws.lobby_handler import notify_game_ended
 from kfchess.ws.protocol import (
     CampaignLevelInfo,
@@ -67,8 +69,6 @@ _snapshot_tasks: set[asyncio.Task] = set()
 
 def _build_snapshot(game_id: str, managed_game: ManagedGame) -> GameSnapshot:
     """Build a GameSnapshot from a ManagedGame."""
-    from kfchess.settings import get_settings
-
     state = managed_game.state
 
     return GameSnapshot(
@@ -88,11 +88,12 @@ def _build_snapshot(game_id: str, managed_game: ManagedGame) -> GameSnapshot:
 
 
 def _save_snapshot_fire_and_forget(snapshot: GameSnapshot) -> None:
-    """Schedule a snapshot save as a fire-and-forget task."""
+    """Schedule a snapshot save and routing key refresh as a fire-and-forget task."""
     async def _save() -> None:
         try:
             r = await get_redis()
             await save_snapshot(r, snapshot)
+            await register_game_routing(r, snapshot.game_id, snapshot.server_id)
         except Exception:
             logger.exception(f"Failed to save snapshot for game {snapshot.game_id}")
 
@@ -102,11 +103,12 @@ def _save_snapshot_fire_and_forget(snapshot: GameSnapshot) -> None:
 
 
 def _delete_snapshot_fire_and_forget(game_id: str) -> None:
-    """Schedule a snapshot deletion as a fire-and-forget task."""
+    """Schedule snapshot and routing key deletion as a fire-and-forget task."""
     async def _delete() -> None:
         try:
             r = await get_redis()
             await delete_snapshot(r, game_id)
+            await delete_game_routing(r, game_id)
         except Exception:
             logger.exception(f"Failed to delete snapshot for game {game_id}")
 
@@ -389,9 +391,27 @@ async def handle_websocket(
 
     service = get_game_service()
 
-    # Validate game exists
+    # Validate game exists (locally or via Redis routing)
     state = service.get_game(game_id)
     if state is None:
+        # Must accept before close so the client receives the custom close code.
+        # Without accept(), ASGI servers send HTTP 403 and the client sees code 1006.
+        await websocket.accept()
+
+        # Not on this server — check Redis for routing to another server
+        try:
+            r = await get_redis()
+            owner = await get_game_server(r, game_id)
+            if owner is not None and owner != get_settings().effective_server_id:
+                logger.info(
+                    f"WebSocket redirect: game {game_id} is on {owner}, "
+                    f"sending 4302"
+                )
+                await websocket.close(code=4302, reason=owner)
+                return
+        except Exception:
+            logger.exception(f"Failed to check routing for game {game_id}")
+
         logger.warning(f"WebSocket rejected: game {game_id} not found")
         await websocket.close(code=4004, reason="Game not found")
         return
@@ -401,6 +421,7 @@ async def handle_websocket(
     if player_key:
         player = service.validate_player_key(game_id, player_key)
         if player is None:
+            await websocket.accept()
             logger.warning(f"WebSocket rejected: invalid player key for game {game_id}")
             await websocket.close(code=4001, reason="Invalid player key")
             return

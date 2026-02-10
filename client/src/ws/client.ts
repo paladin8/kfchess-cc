@@ -17,6 +17,10 @@ const RECONNECT_DELAY_MS = 1000; // 1 second initial delay
 const MAX_RECONNECT_DELAY_MS = 30000; // 30 seconds max delay
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+// WebSocket close codes for multi-server routing
+const WS_CLOSE_SERVER_SHUTDOWN = 4301;
+const WS_CLOSE_REDIRECT = 4302;
+
 export class GameWebSocketClient {
   private ws: WebSocket | null = null;
   private options: WebSocketClientOptions;
@@ -26,6 +30,7 @@ export class GameWebSocketClient {
   private reconnectAttempts = 0;
   private intentionalClose = false;
   private hasConnectedBefore = false;
+  private serverHint: string | null = null;
 
   constructor(options: WebSocketClientOptions) {
     this.options = options;
@@ -49,6 +54,13 @@ export class GameWebSocketClient {
 
     if (this.options.playerKey) {
       url += `?player_key=${encodeURIComponent(this.options.playerKey)}`;
+    }
+
+    // Append server routing hint if set (one-shot, cleared after use)
+    if (this.serverHint) {
+      const separator = url.includes('?') ? '&' : '?';
+      url += `${separator}server=${encodeURIComponent(this.serverHint)}`;
+      this.serverHint = null;
     }
 
     try {
@@ -206,12 +218,28 @@ export class GameWebSocketClient {
     }
   }
 
-  private handleClose(): void {
+  private handleClose(event: CloseEvent): void {
     this.stopPing();
     this.ws = null;
 
     if (this.intentionalClose) {
       this.setConnectionState('disconnected');
+      return;
+    }
+
+    if (event.code === WS_CLOSE_SERVER_SHUTDOWN) {
+      // Server shutting down — reconnect with jitter (round-robin, no routing hint)
+      this.serverHint = null;
+      this.reconnectAttempts = 0;
+      setTimeout(() => this.connect(), Math.random() * 500);
+      return;
+    }
+
+    if (event.code === WS_CLOSE_REDIRECT) {
+      // Redirect to specific server — reconnect immediately with routing hint
+      this.serverHint = event.reason;
+      this.reconnectAttempts = 0;
+      this.connect();
       return;
     }
 

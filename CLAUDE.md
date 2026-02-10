@@ -32,6 +32,9 @@ npm test                     # Run tests
 - **Knight mechanics**: Airborne (invisible) for 85% of move, can only capture at 85%+ progress.
 - **Speed configs**: Standard (1s/square, 10s cooldown) vs Lightning (0.2s/square, 2s cooldown).
 
+## Code Style
+- **Imports**: Always use top-level module imports. Do not use local/inline imports inside functions. The only exception is `TYPE_CHECKING` blocks for type-only imports that would cause circular dependencies.
+
 ## Environment
 - `DEV_MODE=true` bypasses authentication (auto-logs in as DEV_USER_ID)
 - Frontend proxies `/api` and `/ws` to backend in dev mode (vite.config.ts)

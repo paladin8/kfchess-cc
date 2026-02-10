@@ -950,13 +950,14 @@ The migration from single-server to multi-server can be done incrementally:
 - 74 tests (`tests/unit/redis/`, `tests/unit/test_game_restore.py`, `tests/unit/test_startup_restore.py`, `tests/unit/ws/test_handler_snapshot.py`)
 - **Low risk**: Single server, Redis adds persistence but doesn't change behavior
 
-### Phase 3: Game Routing (multi-server games)
-- Add `game:{id}:server` registration on game creation
-- Add redirect logic in WebSocket handler (check Redis, redirect if wrong server)
-- Add `server` query param handling in nginx config
-- Add client-side handling for close codes 4301/4302
-- Deploy nginx config and deployment script
-- Test: Create game on Server 1, connect from Server 2, verify redirect works
+### Phase 3: Game Routing (multi-server games) ✅ DONE
+- Redis routing module (`redis/routing.py`): `game:{id}:server` key CRUD with 2h TTL
+- Routing key registered fire-and-forget at all 4 game creation points (quickplay, campaign, lobby, restored games on startup)
+- Game loop refreshes routing key alongside snapshots (same fire-and-forget task); deletes on game finish (both paths)
+- WebSocket redirect: if game not in local memory, checks Redis `game:{id}:server` — redirects to other server with close code 4302 (reason = server_id); stale self-routing falls through to 4004
+- Client handles close code 4301 (server shutdown: reconnect with jitter, no routing hint) and 4302 (redirect: reconnect immediately with `?server=` param, one-shot)
+- nginx config (`deploy/nginx/kfchess.conf`): `$arg_server` map routes `?server=workerN` to correct upstream
+- 30 new tests (11 Redis routing CRUD, 7 WS redirect logic, 12 client close code handling)
 - **Medium risk**: Routing errors could cause extra round-trips but are self-correcting
 
 ### Phase 4: Lobby Migration to Redis

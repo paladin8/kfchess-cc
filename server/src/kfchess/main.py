@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         from kfchess.redis.client import get_redis
         from kfchess.redis.heartbeat import is_server_alive, start_heartbeat
+        from kfchess.redis.routing import register_game_routing
         from kfchess.redis.snapshot_store import list_snapshot_game_ids, load_snapshot
         from kfchess.services.game_registry import register_game_fire_and_forget
         from kfchess.services.game_service import get_game_service
@@ -124,6 +125,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         players=players_info,
                         campaign_level_id=snapshot.campaign_level_id,
                     )
+                    # Register routing key pointing to us (claiming the game)
+                    await register_game_routing(r, gid, server_id)
         if restored:
             logger.info(f"Restored {restored} games from Redis snapshots")
     except Exception:

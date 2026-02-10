@@ -233,7 +233,13 @@ class TestFireAndForget:
             # Let the fire-and-forget task run
             await asyncio.sleep(0.05)
 
-        mock_redis.set.assert_called_once()
+        # Snapshot save + routing key refresh = 2 SET calls
+        assert mock_redis.set.call_count == 2
+        # First call is the snapshot, second is the routing key
+        snapshot_call = mock_redis.set.call_args_list[0]
+        assert "game:FF_SAVE1:snapshot" in str(snapshot_call)
+        routing_call = mock_redis.set.call_args_list[1]
+        assert "game:FF_SAVE1:server" in str(routing_call)
 
     @pytest.mark.asyncio
     async def test_save_snapshot_error_does_not_propagate(self) -> None:
@@ -269,7 +275,11 @@ class TestFireAndForget:
             _delete_snapshot_fire_and_forget("DEL_TEST")
             await asyncio.sleep(0.05)
 
-        mock_redis.delete.assert_called_once()
+        # Snapshot delete + routing key delete = 2 DELETE calls
+        assert mock_redis.delete.call_count == 2
+        delete_calls = [str(c) for c in mock_redis.delete.call_args_list]
+        assert any("game:DEL_TEST:snapshot" in c for c in delete_calls)
+        assert any("game:DEL_TEST:server" in c for c in delete_calls)
 
     @pytest.mark.asyncio
     async def test_delete_snapshot_error_does_not_propagate(self) -> None:
