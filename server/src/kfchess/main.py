@@ -129,6 +129,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     await register_game_routing(r, gid, server_id)
         if restored:
             logger.info(f"Restored {restored} games from Redis snapshots")
+
+        # Clean up stale lobbies from previous runs
+        from kfchess.lobby.manager import get_lobby_manager
+
+        lobby_manager = get_lobby_manager()
+        stale_lobbies = await lobby_manager.cleanup_stale_lobbies()
+        if stale_lobbies:
+            logger.info(f"Cleaned up {stale_lobbies} stale lobbies from Redis")
     except Exception:
         logger.exception("Failed to initialize Redis / restore games on startup")
 

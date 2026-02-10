@@ -1,10 +1,26 @@
 """Tests for the lobbies API endpoints."""
 
+from __future__ import annotations
+
+import json
+from collections.abc import Generator
+from unittest.mock import patch
+
 import pytest
+from fakeredis import FakeRedis as SyncFakeRedis
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 from fastapi.testclient import TestClient
 
-from kfchess.lobby.manager import get_lobby_manager
+from kfchess.lobby.manager import reset_lobby_manager
 from kfchess.main import app
+from kfchess.services.game_service import get_game_service
+
+_fake_server = FakeServer()
+
+
+async def _fake_get_redis() -> FakeRedis:
+    return FakeRedis(server=_fake_server, decode_responses=True, version=(7,))
 
 
 @pytest.fixture
@@ -14,18 +30,20 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def clear_lobbies() -> None:
+def clear_state() -> Generator[None, None, None]:
     """Clear lobbies and games before each test."""
-    from kfchess.services.game_service import get_game_service
+    global _fake_server
+    _fake_server = FakeServer()
 
-    manager = get_lobby_manager()
-    manager._lobbies.clear()
-    manager._player_keys.clear()
-    manager._key_to_slot.clear()
-    manager._player_to_lobby.clear()
+    reset_lobby_manager()
+    service = get_game_service()
+    service.games.clear()
 
-    game_service = get_game_service()
-    game_service.games.clear()
+    with (
+        patch("kfchess.redis.lobby_store.get_redis", _fake_get_redis),
+        patch("kfchess.ws.lobby_handler.get_redis", _fake_get_redis),
+    ):
+        yield
 
 
 class TestCreateLobby:
@@ -136,8 +154,8 @@ class TestCreateLobby:
 
         assert response.status_code == 400
 
-    def test_create_lobby_player_lock(self, client: TestClient) -> None:
-        """Test that creating a new lobby leaves the old one."""
+    def test_create_multiple_lobbies(self, client: TestClient) -> None:
+        """Test that a player can create multiple lobbies (no lock)."""
         guest_id = "test-guest-123"
 
         # Create first lobby
@@ -158,10 +176,11 @@ class TestCreateLobby:
 
         assert code1 != code2
 
-        # First lobby should be deleted (no human players left)
-        manager = get_lobby_manager()
-        assert manager.get_lobby(code1) is None
-        assert manager.get_lobby(code2) is not None
+        # Both lobbies should exist (no one-lobby-per-player restriction)
+        get1 = client.get(f"/api/lobbies/{code1}")
+        get2 = client.get(f"/api/lobbies/{code2}")
+        assert get1.status_code == 200
+        assert get2.status_code == 200
 
 
 class TestListLobbies:
@@ -357,8 +376,8 @@ class TestJoinLobby:
         assert response.status_code == 409
         assert "full" in response.json()["detail"].lower()
 
-    def test_join_lobby_player_lock(self, client: TestClient) -> None:
-        """Test that joining a new lobby leaves the old one."""
+    def test_join_multiple_lobbies(self, client: TestClient) -> None:
+        """Test that a player can join multiple lobbies (no lock)."""
         guest_id = "test-guest-456"
 
         # Create first lobby
@@ -376,26 +395,27 @@ class TestJoinLobby:
         code2 = response2.json()["code"]
 
         # Join first lobby
-        client.post(
+        join1 = client.post(
             f"/api/lobbies/{code1}/join",
             json={"guestId": guest_id},
         )
+        assert join1.status_code == 200
 
         # Join second lobby with same guest
-        join_response = client.post(
+        join2 = client.post(
             f"/api/lobbies/{code2}/join",
             json={"guestId": guest_id},
         )
+        assert join2.status_code == 200
 
-        assert join_response.status_code == 200
+        # Player should be in both lobbies
+        get1 = client.get(f"/api/lobbies/{code1}")
+        get2 = client.get(f"/api/lobbies/{code2}")
+        lobby1 = get1.json()["lobby"]
+        lobby2 = get2.json()["lobby"]
 
-        # Player should be in second lobby, not first
-        manager = get_lobby_manager()
-        lobby1 = manager.get_lobby(code1)
-        lobby2 = manager.get_lobby(code2)
-
-        assert 2 not in lobby1.players  # Left first lobby
-        assert 2 in lobby2.players  # Joined second lobby
+        assert "2" in lobby1["players"]
+        assert "2" in lobby2["players"]
 
     def test_join_private_lobby_allowed(self, client: TestClient) -> None:
         """Test that private lobbies can be joined via direct link/code."""
@@ -444,8 +464,8 @@ class TestDeleteLobby:
         assert response.json()["success"] is True
 
         # Verify lobby is deleted
-        manager = get_lobby_manager()
-        assert manager.get_lobby(code) is None
+        get_response = client.get(f"/api/lobbies/{code}")
+        assert get_response.status_code == 404
 
     def test_delete_lobby_not_host(self, client: TestClient) -> None:
         """Test that non-host cannot delete lobby."""
@@ -499,8 +519,6 @@ class TestDeleteLobby:
 
     def test_delete_lobby_during_game(self, client: TestClient) -> None:
         """Test that lobbies cannot be deleted during games."""
-        from kfchess.lobby.models import LobbyStatus
-
         # Create a lobby
         create_response = client.post(
             "/api/lobbies",
@@ -510,10 +528,14 @@ class TestDeleteLobby:
         code = data["code"]
         player_key = data["playerKey"]
 
-        # Manually set lobby status to IN_GAME
-        manager = get_lobby_manager()
-        lobby = manager.get_lobby(code)
-        lobby.status = LobbyStatus.IN_GAME
+        # Directly set lobby status to in_game via sync Redis
+        sync_redis = SyncFakeRedis(
+            server=_fake_server, decode_responses=True, version=(7,)
+        )
+        raw = sync_redis.get(f"lobby:{code}")
+        lobby_data = json.loads(raw)
+        lobby_data["status"] = "in_game"
+        sync_redis.set(f"lobby:{code}", json.dumps(lobby_data))
 
         # Try to delete lobby
         response = client.delete(

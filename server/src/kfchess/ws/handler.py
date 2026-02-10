@@ -680,9 +680,9 @@ async def _save_replay(game_id: str, service: Any) -> None:
         # Get is_ranked from lobby if available
         try:
             manager = get_lobby_manager()
-            lobby_code = manager.find_lobby_by_game(game_id)
+            lobby_code = await manager.find_lobby_by_game(game_id)
             if lobby_code is not None:
-                lobby = manager.get_lobby(lobby_code)
+                lobby = await manager.get_lobby(lobby_code)
                 if lobby is not None:
                     replay.is_ranked = lobby.is_ranked
                 else:
@@ -817,7 +817,7 @@ async def _notify_lobby_game_ended(game_id: str, winner: int | None, reason: str
     """
     try:
         manager = get_lobby_manager()
-        lobby_code = manager.find_lobby_by_game(game_id)
+        lobby_code = await manager.find_lobby_by_game(game_id)
 
         if lobby_code is None:
             # Game wasn't started from a lobby (e.g., quick play)
@@ -846,13 +846,13 @@ async def _update_ratings(
     """
     try:
         manager = get_lobby_manager()
-        lobby_code = manager.find_lobby_by_game(game_id)
+        lobby_code = await manager.find_lobby_by_game(game_id)
 
         if lobby_code is None:
             logger.debug(f"Game {game_id}: No lobby found for rating update")
             return None
 
-        lobby = manager.get_lobby(lobby_code)
+        lobby = await manager.get_lobby(lobby_code)
         if lobby is None:
             logger.debug(f"Game {game_id}: Lobby {lobby_code} not found for rating update")
             return None

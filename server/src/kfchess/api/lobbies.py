@@ -165,7 +165,7 @@ async def list_lobbies(
     """
     manager = get_lobby_manager()
 
-    lobbies = manager.get_public_lobbies(
+    lobbies = await manager.get_public_lobbies(
         speed=speed,
         player_count=player_count,
         is_ranked=is_ranked,
@@ -200,7 +200,7 @@ async def get_lobby(code: str) -> dict[str, Any]:
     """Get lobby details by code."""
     manager = get_lobby_manager()
 
-    lobby = manager.get_lobby(code)
+    lobby = await manager.get_lobby(code)
     if lobby is None:
         raise HTTPException(status_code=404, detail="Lobby not found")
 
@@ -222,7 +222,7 @@ async def join_lobby(
     manager = get_lobby_manager()
 
     # Check if lobby exists
-    lobby = manager.get_lobby(code)
+    lobby = await manager.get_lobby(code)
     if lobby is None:
         raise HTTPException(status_code=404, detail="Lobby not found")
 
@@ -278,11 +278,11 @@ async def delete_lobby(
     manager = get_lobby_manager()
 
     # Validate player key and check if host
-    slot = manager.validate_player_key(code, player_key)
+    slot = await manager.validate_player_key(code, player_key)
     if slot is None:
         raise HTTPException(status_code=403, detail="Invalid player key")
 
-    lobby = manager.get_lobby(code)
+    lobby = await manager.get_lobby(code)
     if lobby is None:
         raise HTTPException(status_code=404, detail="Lobby not found")
 

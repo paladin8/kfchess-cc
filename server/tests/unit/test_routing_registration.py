@@ -7,15 +7,24 @@ created via quickplay, campaign, and lobby paths.
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 from fastapi.testclient import TestClient
 
 from kfchess.auth import current_active_user
 from kfchess.lobby.manager import reset_lobby_manager
 from kfchess.main import app
 from kfchess.services.game_service import get_game_service
+
+_fake_server = FakeServer()
+
+
+async def _fake_get_redis() -> FakeRedis:
+    return FakeRedis(server=_fake_server, decode_responses=True, version=(7,))
 
 
 @pytest.fixture
@@ -25,11 +34,20 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def clear_state() -> None:
+def clear_state() -> Generator[None, None, None]:
     """Clear games and lobbies before each test."""
+    global _fake_server
+    _fake_server = FakeServer()
+
     service = get_game_service()
     service.games.clear()
     reset_lobby_manager()
+
+    with (
+        patch("kfchess.redis.lobby_store.get_redis", _fake_get_redis),
+        patch("kfchess.ws.lobby_handler.get_redis", _fake_get_redis),
+    ):
+        yield
 
 
 class TestQuickplayRoutingRegistration:

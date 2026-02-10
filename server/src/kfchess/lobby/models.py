@@ -4,9 +4,12 @@ This module contains the core data structures for the lobby system.
 Lobbies are waiting rooms where players gather before starting a game.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 
 class LobbyStatus(Enum):
@@ -43,6 +46,7 @@ class LobbyPlayer:
     is_connected: bool = True
     disconnected_at: datetime | None = None
     joined_at: datetime = field(default_factory=datetime.utcnow)
+    player_id: str | None = None
 
     @property
     def is_ready(self) -> bool:
@@ -57,6 +61,45 @@ class LobbyPlayer:
     def is_ready(self, value: bool) -> None:
         """Set ready state (only affects non-AI players)."""
         self._is_ready = value
+
+    def to_redis_dict(self) -> dict[str, Any]:
+        """Serialize for Redis storage (snake_case, all internal fields)."""
+        return {
+            "slot": self.slot,
+            "user_id": self.user_id,
+            "username": self.username,
+            "picture_url": self.picture_url,
+            "is_ai": self.is_ai,
+            "ai_type": self.ai_type,
+            "is_ready": self._is_ready,
+            "is_connected": self.is_connected,
+            "disconnected_at": self.disconnected_at.isoformat() if self.disconnected_at else None,
+            "joined_at": self.joined_at.isoformat(),
+            "player_id": self.player_id,
+        }
+
+    @classmethod
+    def from_redis_dict(cls, data: dict[str, Any]) -> LobbyPlayer:
+        """Deserialize from Redis storage."""
+        disconnected_at = None
+        if data.get("disconnected_at"):
+            disconnected_at = datetime.fromisoformat(data["disconnected_at"])
+        joined_at = datetime.fromisoformat(data["joined_at"]) if data.get("joined_at") else datetime.utcnow()
+
+        player = cls(
+            slot=data["slot"],
+            user_id=data.get("user_id"),
+            username=data["username"],
+            picture_url=data.get("picture_url"),
+            is_ai=data.get("is_ai", False),
+            ai_type=data.get("ai_type"),
+            is_connected=data.get("is_connected", True),
+            disconnected_at=disconnected_at,
+            joined_at=joined_at,
+            player_id=data.get("player_id"),
+        )
+        player._is_ready = data.get("is_ready", False)
+        return player
 
 
 @dataclass
@@ -81,6 +124,25 @@ class LobbySettings:
             raise ValueError(f"Invalid speed: {self.speed}")
         if self.player_count not in (2, 4):
             raise ValueError(f"Invalid player_count: {self.player_count}")
+
+    def to_redis_dict(self) -> dict[str, Any]:
+        """Serialize for Redis storage."""
+        return {
+            "is_public": self.is_public,
+            "speed": self.speed,
+            "player_count": self.player_count,
+            "is_ranked": self.is_ranked,
+        }
+
+    @classmethod
+    def from_redis_dict(cls, data: dict[str, Any]) -> LobbySettings:
+        """Deserialize from Redis storage."""
+        return cls(
+            is_public=data.get("is_public", True),
+            speed=data.get("speed", "standard"),
+            player_count=data.get("player_count", 2),
+            is_ranked=data.get("is_ranked", False),
+        )
 
 
 @dataclass
@@ -178,3 +240,48 @@ class Lobby:
             "currentGameId": self.current_game_id,
             "gamesPlayed": self.games_played,
         }
+
+    def to_redis_dict(self) -> dict[str, Any]:
+        """Serialize for Redis storage (snake_case, all internal fields)."""
+        return {
+            "id": self.id,
+            "code": self.code,
+            "host_slot": self.host_slot,
+            "settings": self.settings.to_redis_dict(),
+            "players": {
+                str(slot): p.to_redis_dict()
+                for slot, p in self.players.items()
+            },
+            "status": self.status.value,
+            "current_game_id": self.current_game_id,
+            "games_played": self.games_played,
+            "created_at": self.created_at.isoformat(),
+            "game_finished_at": self.game_finished_at.isoformat() if self.game_finished_at else None,
+        }
+
+    @classmethod
+    def from_redis_dict(cls, data: dict[str, Any]) -> Lobby:
+        """Deserialize from Redis storage."""
+        settings = LobbySettings.from_redis_dict(data["settings"])
+        players: dict[int, LobbyPlayer] = {}
+        for slot_str, player_data in data.get("players", {}).items():
+            slot = int(slot_str)
+            players[slot] = LobbyPlayer.from_redis_dict(player_data)
+
+        created_at = datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.utcnow()
+        game_finished_at = None
+        if data.get("game_finished_at"):
+            game_finished_at = datetime.fromisoformat(data["game_finished_at"])
+
+        return cls(
+            id=data["id"],
+            code=data["code"],
+            host_slot=data["host_slot"],
+            settings=settings,
+            players=players,
+            status=LobbyStatus(data["status"]),
+            current_game_id=data.get("current_game_id"),
+            games_played=data.get("games_played", 0),
+            created_at=created_at,
+            game_finished_at=game_finished_at,
+        )

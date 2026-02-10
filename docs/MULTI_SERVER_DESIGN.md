@@ -646,6 +646,8 @@ game:{game_id}:snapshot      → String: JSON game snapshot    TTL: 2h (refreshe
 lobby:{code}                 → String: JSON lobby state      TTL: 24h
 lobby:{code}:keys            → Hash: {slot → player_key}     TTL: 24h
 lobby:public_index           → Sorted Set: {code → timestamp} (no TTL, lazy cleanup: stale entries removed when lobby key is found missing during reads)
+lobby:next_id                → Counter (INCR for sequential lobby IDs, no TTL)
+lobby:game:{game_id}         → String: lobby_code            TTL: 2h (maps game back to its lobby)
 
 # Lobby pub/sub
 lobby_events:{code}          → Pub/Sub channel (no storage)
@@ -960,13 +962,19 @@ The migration from single-server to multi-server can be done incrementally:
 - 30 new tests (11 Redis routing CRUD, 7 WS redirect logic, 12 client close code handling)
 - **Medium risk**: Routing errors could cause extra round-trips but are self-correcting
 
-### Phase 4: Lobby Migration to Redis
-- Replace in-memory `LobbyManager` with `RedisLobbyManager` (all-async interface)
-- Remove one-lobby-per-player restriction (`_player_to_lobby` tracking)
-- Implement Redis Pub/Sub relay in lobby WebSocket handler
-- Update REST endpoints to use Redis-backed manager
-- Test: Create lobby on Server 1, join from Server 2, start game
-- **Higher risk**: Lobby system is complex, thorough testing needed
+### Phase 4: Lobby Migration to Redis ✅ DONE
+- `RedisLobbyManager` (`redis/lobby_store.py`): all lobby operations backed by Redis with WATCH/MULTI/EXEC for atomic read-modify-write; max 3 retries on WatchError
+- Lobby model serialization (`lobby/models.py`): `to_redis_dict()` / `from_redis_dict()` on `Lobby`, `LobbyPlayer`, `LobbySettings` with `player_id` field for game creation
+- Singleton swap (`lobby/manager.py`): removed 1100-line `LobbyManager` class; `get_lobby_manager()` returns `RedisLobbyManager`; kept `LobbyError`, code/key generators, constants
+- REST endpoints (`api/lobbies.py`): async-ified all calls to manager (method signatures unchanged)
+- WS handler rewrite (`ws/lobby_handler.py`): pub/sub relay architecture — each connection runs two concurrent tasks via `asyncio.TaskGroup` (pub/sub relay + WS message handler); events published to `lobby_events:{code}` channel; `game_starting` published by WS handler after game creation + routing registration (ensures game exists before clients connect); direct error responses to originating WebSocket (not via pub/sub)
+- Removed one-lobby-per-player restriction (disconnected-player cleanup handles stale memberships)
+- Stale lobby cleanup on startup via `cleanup_stale_lobbies()`
+- 68 tests in `tests/unit/redis/test_lobby_store.py` (CRUD, pub/sub events, WatchError retry, stale cleanup, ranked validation, corrupted data)
+- 14 tests in `tests/unit/redis/test_lobby_serialization.py` (round-trip for all model types)
+- 33 tests in `tests/unit/test_lobby_websocket.py` (WS operations, disconnect/reconnect, AI management, pub/sub relay)
+- 29 tests in `tests/unit/test_api_lobbies.py` (REST endpoints with fakeredis)
+- **Higher risk (mitigated)**: Comprehensive test coverage including WatchError retry, pub/sub delivery, and disconnect/reconnect flows
 
 ### Phase 5: Deploy & Recovery
 - Add drain mode (SIGTERM handler, health check endpoint)

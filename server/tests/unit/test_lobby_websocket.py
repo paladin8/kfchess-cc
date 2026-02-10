@@ -1,8 +1,16 @@
-"""Tests for lobby WebSocket functionality."""
+"""Tests for lobby WebSocket functionality.
+
+These tests use fakeredis to provide a Redis backend for the
+RedisLobbyManager, and Starlette's sync TestClient for WebSocket testing.
+"""
 
 import json
+from collections.abc import Generator
+from unittest.mock import patch
 
 import pytest
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -10,11 +18,17 @@ from kfchess.lobby.manager import reset_lobby_manager
 from kfchess.main import app
 from kfchess.services.game_service import get_game_service
 from kfchess.ws.lobby_handler import (
-    LobbyConnectionManager,
     serialize_lobby,
     serialize_player,
     serialize_settings,
 )
+
+_fake_server = FakeServer()
+
+
+async def _fake_get_redis() -> FakeRedis:
+    """Return a fakeredis client backed by the shared FakeServer."""
+    return FakeRedis(server=_fake_server, decode_responses=True, version=(7,))
 
 
 @pytest.fixture
@@ -24,11 +38,20 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def clear_state() -> None:
-    """Clear lobbies and games before each test."""
+def clear_state() -> Generator[None, None, None]:
+    """Clear lobbies, games, and Redis before each test."""
+    global _fake_server
+    _fake_server = FakeServer()
+
     reset_lobby_manager()
     service = get_game_service()
     service.games.clear()
+
+    with (
+        patch("kfchess.redis.lobby_store.get_redis", _fake_get_redis),
+        patch("kfchess.ws.lobby_handler.get_redis", _fake_get_redis),
+    ):
+        yield
 
 
 class TestSerialization:
@@ -122,35 +145,6 @@ class TestSerialization:
         assert 1 in result["players"]
 
 
-class TestLobbyConnectionManager:
-    """Tests for LobbyConnectionManager."""
-
-    @pytest.mark.asyncio
-    async def test_connection_tracking(self) -> None:
-        """Test that connections are tracked correctly."""
-        manager = LobbyConnectionManager()
-
-        # Initially no connections
-        assert not manager.has_connections("ABC123")
-
-    @pytest.mark.asyncio
-    async def test_has_connections_empty(self) -> None:
-        """Test has_connections returns False for empty lobby."""
-        manager = LobbyConnectionManager()
-        assert not manager.has_connections("nonexistent")
-
-    @pytest.mark.asyncio
-    async def test_remove_lobby_cleans_up(self) -> None:
-        """Test that remove_lobby cleans up connections."""
-        manager = LobbyConnectionManager()
-        # Manually add connection tracking
-        manager.connections["ABC123"] = set()
-        assert "ABC123" in manager.connections
-
-        await manager.remove_lobby("ABC123")
-        assert "ABC123" not in manager.connections
-
-
 class TestLobbyWebSocketEndpoint:
     """Tests for lobby WebSocket endpoint."""
 
@@ -162,14 +156,12 @@ class TestLobbyWebSocketEndpoint:
 
     def test_websocket_connect_missing_key(self, client: TestClient) -> None:
         """Test connecting without a player key (should fail)."""
-        # Note: The endpoint requires player_key, so this should fail
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/lobby/NOTFOUND"):
                 pass
 
     def test_websocket_connect_valid_lobby(self, client: TestClient) -> None:
         """Test connecting to a valid lobby."""
-        # Create a lobby first
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -178,9 +170,7 @@ class TestLobbyWebSocketEndpoint:
         code = data["code"]
         player_key = data["playerKey"]
 
-        # Connect to the lobby
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # First message should be lobby_state
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "lobby_state"
@@ -189,7 +179,6 @@ class TestLobbyWebSocketEndpoint:
 
     def test_websocket_ping_pong(self, client: TestClient) -> None:
         """Test ping/pong functionality."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -199,20 +188,16 @@ class TestLobbyWebSocketEndpoint:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Send ping
             websocket.send_text(json.dumps({"type": "ping"}))
 
-            # Should receive pong
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "pong"
 
     def test_websocket_invalid_json(self, client: TestClient) -> None:
         """Test sending invalid JSON."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -222,13 +207,10 @@ class TestLobbyWebSocketEndpoint:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Send invalid JSON
             websocket.send_text("not valid json")
 
-            # Should receive error
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "error"
@@ -236,7 +218,6 @@ class TestLobbyWebSocketEndpoint:
 
     def test_websocket_unknown_message_type(self, client: TestClient) -> None:
         """Test sending unknown message type."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -246,13 +227,10 @@ class TestLobbyWebSocketEndpoint:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Send unknown message type
             websocket.send_text(json.dumps({"type": "unknown_type"}))
 
-            # Should receive error
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "error"
@@ -264,7 +242,6 @@ class TestLobbyReadyState:
 
     def test_set_ready(self, client: TestClient) -> None:
         """Test setting ready state via WebSocket."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -274,13 +251,10 @@ class TestLobbyReadyState:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Set ready
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
 
-            # Should receive player_ready broadcast
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "player_ready"
@@ -289,7 +263,6 @@ class TestLobbyReadyState:
 
     def test_set_unready(self, client: TestClient) -> None:
         """Test unsetting ready state via WebSocket."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -299,17 +272,13 @@ class TestLobbyReadyState:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Set ready first
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
-            websocket.receive_text()
+            websocket.receive_text()  # player_ready
 
-            # Set unready
             websocket.send_text(json.dumps({"type": "ready", "ready": False}))
 
-            # Should receive player_ready broadcast
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "player_ready"
@@ -322,7 +291,6 @@ class TestLobbyHostActions:
 
     def test_update_settings(self, client: TestClient) -> None:
         """Test updating settings via WebSocket (host only)."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -332,10 +300,8 @@ class TestLobbyHostActions:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Update settings
             websocket.send_text(
                 json.dumps({
                     "type": "update_settings",
@@ -348,7 +314,6 @@ class TestLobbyHostActions:
                 })
             )
 
-            # Should receive settings_updated broadcast
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "settings_updated"
@@ -358,7 +323,6 @@ class TestLobbyHostActions:
 
     def test_add_ai_player(self, client: TestClient) -> None:
         """Test adding an AI player via WebSocket (host only)."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -368,13 +332,10 @@ class TestLobbyHostActions:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Add AI
             websocket.send_text(json.dumps({"type": "add_ai", "aiType": "bot:dummy"}))
 
-            # Should receive player_joined broadcast
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "player_joined"
@@ -384,7 +345,6 @@ class TestLobbyHostActions:
 
     def test_remove_ai_player(self, client: TestClient) -> None:
         """Test removing an AI player via WebSocket (host only)."""
-        # Create a lobby with AI
         response = client.post(
             "/api/lobbies",
             json={
@@ -397,13 +357,10 @@ class TestLobbyHostActions:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Remove AI from slot 2
             websocket.send_text(json.dumps({"type": "remove_ai", "slot": 2}))
 
-            # Should receive player_left broadcast
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "player_left"
@@ -414,9 +371,8 @@ class TestLobbyHostActions:
 class TestLobbyGameStart:
     """Tests for starting a game from a lobby via WebSocket."""
 
-    def test_start_game_not_ready(self, client: TestClient) -> None:
-        """Test starting game when not all players are ready."""
-        # Create a lobby with AI
+    def test_start_game_with_ai(self, client: TestClient) -> None:
+        """Test starting game with AI (host auto-readied)."""
         response = client.post(
             "/api/lobbies",
             json={
@@ -429,16 +385,13 @@ class TestLobbyGameStart:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Try to start without being ready
+            # Host auto-readied on start_game
             websocket.send_text(json.dumps({"type": "start_game"}))
 
-            # Host should be auto-readied, but AI is already ready, so game should start
             response = websocket.receive_text()
             msg = json.loads(response)
-            # Game should start since AI is ready and host will be auto-readied
             assert msg["type"] == "game_starting"
             assert "gameId" in msg
             assert "playerKey" in msg
@@ -446,7 +399,6 @@ class TestLobbyGameStart:
 
     def test_start_game_all_ready(self, client: TestClient) -> None:
         """Test starting game when all players are ready."""
-        # Create a lobby with AI
         response = client.post(
             "/api/lobbies",
             json={
@@ -459,17 +411,13 @@ class TestLobbyGameStart:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Set ready first
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
-            websocket.receive_text()  # Skip player_ready broadcast
+            websocket.receive_text()  # player_ready
 
-            # Start game
             websocket.send_text(json.dumps({"type": "start_game"}))
 
-            # Should receive game_starting message
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "game_starting"
@@ -483,7 +431,6 @@ class TestLobbyNonHostErrors:
 
     def test_non_host_cannot_update_settings(self, client: TestClient) -> None:
         """Test that non-host cannot update settings."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -491,16 +438,13 @@ class TestLobbyNonHostErrors:
         data = response.json()
         code = data["code"]
 
-        # Join as second player
         response = client.post(f"/api/lobbies/{code}/join", json={})
         data = response.json()
         player2_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player2_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Try to update settings
             websocket.send_text(
                 json.dumps({
                     "type": "update_settings",
@@ -508,7 +452,6 @@ class TestLobbyNonHostErrors:
                 })
             )
 
-            # Should receive error
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "error"
@@ -516,7 +459,6 @@ class TestLobbyNonHostErrors:
 
     def test_non_host_cannot_start_game(self, client: TestClient) -> None:
         """Test that non-host cannot start game."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -524,19 +466,15 @@ class TestLobbyNonHostErrors:
         data = response.json()
         code = data["code"]
 
-        # Join as second player
         response = client.post(f"/api/lobbies/{code}/join", json={})
         data = response.json()
         player2_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player2_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Try to start game
             websocket.send_text(json.dumps({"type": "start_game"}))
 
-            # Should receive error
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "error"
@@ -548,7 +486,6 @@ class TestLobbyKick:
 
     def test_kick_player(self, client: TestClient) -> None:
         """Test kicking a player via WebSocket."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -557,17 +494,13 @@ class TestLobbyKick:
         code = data["code"]
         host_key = data["playerKey"]
 
-        # Join as second player
         client.post(f"/api/lobbies/{code}/join", json={})
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Kick player 2
             websocket.send_text(json.dumps({"type": "kick", "slot": 2}))
 
-            # Should receive player_left broadcast
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "player_left"
@@ -576,7 +509,6 @@ class TestLobbyKick:
 
     def test_cannot_kick_self(self, client: TestClient) -> None:
         """Test that host cannot kick themselves."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -586,50 +518,14 @@ class TestLobbyKick:
         host_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Try to kick self
             websocket.send_text(json.dumps({"type": "kick", "slot": 1}))
 
-            # Should receive error
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "error"
             assert msg["code"] == "invalid_action"
-
-
-class TestLobbyLeave:
-    """Tests for leaving a lobby via WebSocket."""
-
-    def test_leave_lobby(self, client: TestClient) -> None:
-        """Test leaving a lobby via WebSocket."""
-        # Create a lobby
-        response = client.post(
-            "/api/lobbies",
-            json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
-        )
-        data = response.json()
-        code = data["code"]
-        host_key = data["playerKey"]
-
-        # Join as second player
-        response = client.post(f"/api/lobbies/{code}/join", json={})
-        player2_key = data["playerKey"]
-
-        # First, connect as host to watch for leave message
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
-            # Skip initial state
-            host_ws.receive_text()
-
-            # Connect player 2 and leave
-            with client.websocket_connect(f"/ws/lobby/{code}?player_key={player2_key}") as p2_ws:
-                p2_ws.receive_text()  # Skip initial state
-                p2_ws.send_text(json.dumps({"type": "leave"}))
-
-            # Host should receive player_left message
-            # Note: Due to test ordering, this may not work perfectly
-            # The test verifies that leave message handling works
 
 
 class TestLobbyReturnToLobby:
@@ -637,10 +533,6 @@ class TestLobbyReturnToLobby:
 
     def test_return_to_lobby(self, client: TestClient) -> None:
         """Test returning to lobby after game finished."""
-        from kfchess.lobby.manager import get_lobby_manager
-        from kfchess.lobby.models import LobbyStatus
-
-        # Create a lobby with AI and start a game
         response = client.post(
             "/api/lobbies",
             json={
@@ -653,34 +545,34 @@ class TestLobbyReturnToLobby:
         player_key = data["playerKey"]
 
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
-            # Skip initial state
-            websocket.receive_text()
+            websocket.receive_text()  # lobby_state
 
-            # Set ready and start game
+            # Start game
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
             websocket.receive_text()  # player_ready
             websocket.send_text(json.dumps({"type": "start_game"}))
             websocket.receive_text()  # game_starting
 
-            # Simulate game ending by directly calling manager
-            manager = get_lobby_manager()
-            lobby = manager.get_lobby(code)
-            assert lobby is not None
-            assert lobby.status == LobbyStatus.IN_GAME
-
-            # End the game manually
+            # Simulate game ending via the notify_game_ended path
+            # (normally called by game handler, here we call manager directly)
             import asyncio
 
-            asyncio.get_event_loop().run_until_complete(
-                manager.end_game(code, winner=1)
-            )
+            from kfchess.ws.lobby_handler import notify_game_ended
+
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(notify_game_ended(code, winner=1, reason="king_captured"))
+            loop.close()
+
+            # Should receive game_ended via pub/sub
+            response_text = websocket.receive_text()
+            msg = json.loads(response_text)
+            assert msg["type"] == "game_ended"
 
             # Return to lobby
             websocket.send_text(json.dumps({"type": "return_to_lobby"}))
 
-            # Should receive updated lobby_state
-            response = websocket.receive_text()
-            msg = json.loads(response)
+            response_text = websocket.receive_text()
+            msg = json.loads(response_text)
             assert msg["type"] == "lobby_state"
             assert msg["lobby"]["status"] == "waiting"
 
@@ -690,7 +582,6 @@ class TestPlayerJoinedBroadcast:
 
     def test_player_joined_broadcast_to_host(self, client: TestClient) -> None:
         """Test that host receives player_joined when second player connects."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -699,27 +590,22 @@ class TestPlayerJoinedBroadcast:
         code = data["code"]
         host_key = data["playerKey"]
 
-        # Join as second player (via REST)
         response = client.post(f"/api/lobbies/{code}/join", json={})
         player2_data = response.json()
         player2_key = player2_data["playerKey"]
         player2_slot = player2_data["slot"]
 
-        # Connect host first
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
-            # Host gets initial lobby_state
             response = host_ws.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "lobby_state"
 
-            # Now connect player 2
             with client.websocket_connect(
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
-                # Player 2 gets initial state
-                p2_ws.receive_text()
+                p2_ws.receive_text()  # lobby_state
 
-                # Host should receive player_joined broadcast
+                # Host should receive player_joined via pub/sub
                 response = host_ws.receive_text()
                 msg = json.loads(response)
                 assert msg["type"] == "player_joined"
@@ -728,27 +614,11 @@ class TestPlayerJoinedBroadcast:
                 assert msg["player"]["slot"] == player2_slot
 
 
-class TestBroadcastToOthers:
-    """Tests for broadcast_to_others functionality."""
-
-    @pytest.mark.asyncio
-    async def test_broadcast_to_others_excludes_sender(self) -> None:
-        """Test that broadcast_to_others excludes the specified slot."""
-        manager = LobbyConnectionManager()
-
-        # Just verify the method exists and has correct signature
-        # (Full testing requires mock WebSockets which is complex)
-        assert hasattr(manager, "broadcast_to_others")
-
-
 class TestFindLobbyByGame:
     """Tests for finding lobby by game ID."""
 
     def test_find_lobby_by_game_after_start(self, client: TestClient) -> None:
         """Test finding lobby code by game ID after game starts."""
-        from kfchess.lobby.manager import get_lobby_manager
-
-        # Create a lobby with AI
         response = client.post(
             "/api/lobbies",
             json={
@@ -760,30 +630,38 @@ class TestFindLobbyByGame:
         code = data["code"]
         player_key = data["playerKey"]
 
-        # Start the game via WebSocket
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
             websocket.receive_text()  # player_ready
             websocket.send_text(json.dumps({"type": "start_game"}))
 
-            # Get game_starting message with game ID
-            response = websocket.receive_text()
-            msg = json.loads(response)
+            response_text = websocket.receive_text()
+            msg = json.loads(response_text)
             assert msg["type"] == "game_starting"
             game_id = msg["gameId"]
 
             # Verify lobby can be found by game ID
+            import asyncio
+
+            from kfchess.lobby.manager import get_lobby_manager
+
             manager = get_lobby_manager()
-            found_code = manager.find_lobby_by_game(game_id)
+            loop = asyncio.new_event_loop()
+            found_code = loop.run_until_complete(manager.find_lobby_by_game(game_id))
+            loop.close()
             assert found_code == code
 
-    def test_find_lobby_by_game_not_found(self, client: TestClient) -> None:
+    def test_find_lobby_by_game_not_found(self) -> None:
         """Test finding lobby returns None for unknown game ID."""
+        import asyncio
+
         from kfchess.lobby.manager import get_lobby_manager
 
         manager = get_lobby_manager()
-        result = manager.find_lobby_by_game("UNKNOWN_GAME")
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(manager.find_lobby_by_game("UNKNOWN_GAME"))
+        loop.close()
         assert result is None
 
 
@@ -792,7 +670,6 @@ class TestMultipleHumanPlayers:
 
     def test_two_humans_receive_game_starting(self, client: TestClient) -> None:
         """Test that both human players receive game_starting message."""
-        # Create a lobby
         response = client.post(
             "/api/lobbies",
             json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
@@ -801,12 +678,10 @@ class TestMultipleHumanPlayers:
         code = data["code"]
         host_key = data["playerKey"]
 
-        # Join as second player
         response = client.post(f"/api/lobbies/{code}/join", json={})
         player2_data = response.json()
         player2_key = player2_data["playerKey"]
 
-        # Connect both players
         with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
             host_ws.receive_text()  # lobby_state
 
@@ -820,9 +695,7 @@ class TestMultipleHumanPlayers:
                 host_ws.send_text(json.dumps({"type": "ready", "ready": True}))
                 p2_ws.send_text(json.dumps({"type": "ready", "ready": True}))
 
-                # Receive ready broadcasts (2 broadcasts for host, 2 for player 2)
-                # Host receives: their own ready, player 2's ready
-                # Player 2 receives: host's ready, their own ready
+                # Receive ready broadcasts (each player sees both readys via pub/sub)
                 host_ws.receive_text()  # player_ready
                 host_ws.receive_text()  # player_ready
                 p2_ws.receive_text()  # player_ready
@@ -842,5 +715,236 @@ class TestMultipleHumanPlayers:
                 p2_msg = json.loads(p2_response)
                 assert p2_msg["type"] == "game_starting"
                 assert p2_msg["gameId"] == host_msg["gameId"]
-                # Player 2 should also have a player key
                 assert "playerKey" in p2_msg
+
+
+class TestChangeAiType:
+    """Tests for changing AI type via WebSocket."""
+
+    def test_change_ai_type(self, client: TestClient) -> None:
+        """Test changing AI difficulty via WebSocket."""
+        response = client.post(
+            "/api/lobbies",
+            json={
+                "settings": {"isPublic": True, "speed": "standard", "playerCount": 2},
+                "addAi": True,
+            },
+        )
+        data = response.json()
+        code = data["code"]
+        host_key = data["playerKey"]
+
+        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+            websocket.receive_text()  # lobby_state
+
+            websocket.send_text(
+                json.dumps({"type": "change_ai_type", "slot": 2, "aiType": "bot:expert"})
+            )
+
+            msg = json.loads(websocket.receive_text())
+            assert msg["type"] == "ai_type_changed"
+            assert msg["slot"] == 2
+            assert msg["aiType"] == "bot:expert"
+            assert "Expert" in msg["player"]["username"]
+
+    def test_change_ai_type_missing_slot(self, client: TestClient) -> None:
+        """Test change_ai_type with missing slot returns error."""
+        response = client.post(
+            "/api/lobbies",
+            json={
+                "settings": {"isPublic": True, "speed": "standard", "playerCount": 2},
+                "addAi": True,
+            },
+        )
+        data = response.json()
+        code = data["code"]
+        host_key = data["playerKey"]
+
+        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+            websocket.receive_text()  # lobby_state
+
+            websocket.send_text(json.dumps({"type": "change_ai_type", "aiType": "bot:expert"}))
+
+            msg = json.loads(websocket.receive_text())
+            assert msg["type"] == "error"
+            assert msg["code"] == "missing_slot"
+
+
+class TestLeaveViaWebSocket:
+    """Tests for the leave message type via WebSocket."""
+
+    def test_leave_publishes_player_left(self, client: TestClient) -> None:
+        """Test that sending leave publishes player_left to other players."""
+        response = client.post(
+            "/api/lobbies",
+            json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
+        )
+        data = response.json()
+        code = data["code"]
+        host_key = data["playerKey"]
+
+        # Join a second player
+        response = client.post(f"/api/lobbies/{code}/join", json={})
+        player2_data = response.json()
+        player2_key = player2_data["playerKey"]
+
+        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+            host_ws.receive_text()  # lobby_state
+
+            with client.websocket_connect(
+                f"/ws/lobby/{code}?player_key={player2_key}"
+            ) as p2_ws:
+                p2_ws.receive_text()  # lobby_state
+                host_ws.receive_text()  # player_joined for p2
+
+                # Player 2 sends leave
+                p2_ws.send_text(json.dumps({"type": "leave"}))
+
+                # Both should receive player_left via pub/sub
+                # (player 2 sees their own leave since it's not filtered)
+                p2_msg = json.loads(p2_ws.receive_text())
+                assert p2_msg["type"] == "player_left"
+                assert p2_msg["slot"] == 2
+                assert p2_msg["reason"] == "left"
+
+            # Host should also receive player_left
+            host_msg = json.loads(host_ws.receive_text())
+            assert host_msg["type"] == "player_left"
+            assert host_msg["slot"] == 2
+
+    def test_last_human_leave_deletes_lobby(self, client: TestClient) -> None:
+        """Test that the last human leaving deletes the lobby."""
+        response = client.post(
+            "/api/lobbies",
+            json={
+                "settings": {"isPublic": True, "speed": "standard", "playerCount": 2},
+                "addAi": True,
+            },
+        )
+        data = response.json()
+        code = data["code"]
+        host_key = data["playerKey"]
+
+        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+            websocket.receive_text()  # lobby_state
+
+            websocket.send_text(json.dumps({"type": "leave"}))
+
+        # Lobby should be deleted
+        get_response = client.get(f"/api/lobbies/{code}")
+        assert get_response.status_code == 404
+
+
+class TestDisconnectFlow:
+    """Tests for WebSocket disconnect handling."""
+
+    def test_disconnect_publishes_player_disconnected(self, client: TestClient) -> None:
+        """Test that disconnecting publishes player_disconnected to other players."""
+        response = client.post(
+            "/api/lobbies",
+            json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
+        )
+        data = response.json()
+        code = data["code"]
+        host_key = data["playerKey"]
+
+        # Join a second player
+        response = client.post(f"/api/lobbies/{code}/join", json={})
+        player2_data = response.json()
+        player2_key = player2_data["playerKey"]
+
+        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+            host_ws.receive_text()  # lobby_state
+
+            with client.websocket_connect(
+                f"/ws/lobby/{code}?player_key={player2_key}"
+            ) as p2_ws:
+                p2_ws.receive_text()  # lobby_state
+                host_ws.receive_text()  # player_joined for p2
+
+            # Player 2 WS disconnected (exited context manager)
+            # Host should receive player_disconnected via pub/sub
+            msg = json.loads(host_ws.receive_text())
+            assert msg["type"] == "player_disconnected"
+            assert msg["slot"] == 2
+
+
+class TestReconnectFlow:
+    """Tests for WebSocket reconnection handling."""
+
+    def test_reconnect_publishes_player_reconnected(self, client: TestClient) -> None:
+        """Test that reconnecting publishes player_reconnected to other players."""
+        response = client.post(
+            "/api/lobbies",
+            json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
+        )
+        data = response.json()
+        code = data["code"]
+        host_key = data["playerKey"]
+
+        # Join a second player
+        response = client.post(f"/api/lobbies/{code}/join", json={})
+        player2_data = response.json()
+        player2_key = player2_data["playerKey"]
+
+        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+            host_ws.receive_text()  # lobby_state
+
+            # Player 2 connects then disconnects
+            with client.websocket_connect(
+                f"/ws/lobby/{code}?player_key={player2_key}"
+            ) as p2_ws:
+                p2_ws.receive_text()  # lobby_state
+                host_ws.receive_text()  # player_joined for p2
+
+            # Player 2 disconnected
+            host_ws.receive_text()  # player_disconnected
+
+            # Player 2 reconnects
+            with client.websocket_connect(
+                f"/ws/lobby/{code}?player_key={player2_key}"
+            ) as p2_ws:
+                p2_lobby_state = json.loads(p2_ws.receive_text())
+                assert p2_lobby_state["type"] == "lobby_state"
+
+                # Host should receive player_reconnected
+                msg = json.loads(host_ws.receive_text())
+                assert msg["type"] == "player_reconnected"
+                assert msg["slot"] == 2
+
+    def test_reconnecting_player_does_not_see_own_reconnect(self, client: TestClient) -> None:
+        """Test that the reconnecting player doesn't receive their own player_reconnected."""
+        response = client.post(
+            "/api/lobbies",
+            json={"settings": {"isPublic": True, "speed": "standard", "playerCount": 2}},
+        )
+        data = response.json()
+        code = data["code"]
+        host_key = data["playerKey"]
+
+        response = client.post(f"/api/lobbies/{code}/join", json={})
+        player2_key = response.json()["playerKey"]
+
+        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+            host_ws.receive_text()  # lobby_state
+
+            # Player 2 connects then disconnects
+            with client.websocket_connect(
+                f"/ws/lobby/{code}?player_key={player2_key}"
+            ) as p2_ws:
+                p2_ws.receive_text()  # lobby_state
+                host_ws.receive_text()  # player_joined
+
+            host_ws.receive_text()  # player_disconnected
+
+            # Player 2 reconnects
+            with client.websocket_connect(
+                f"/ws/lobby/{code}?player_key={player2_key}"
+            ) as p2_ws:
+                p2_ws.receive_text()  # lobby_state
+
+                # Player 2 should NOT see their own player_reconnected
+                # Send a ping to verify the next message is pong (not player_reconnected)
+                p2_ws.send_text(json.dumps({"type": "ping"}))
+                msg = json.loads(p2_ws.receive_text())
+                assert msg["type"] == "pong"

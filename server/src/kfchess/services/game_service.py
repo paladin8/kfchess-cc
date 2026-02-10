@@ -182,6 +182,7 @@ class GameService:
         player_keys: dict[int, str],
         player_ids: dict[int, str] | None = None,
         ai_players_config: dict[int, str] | None = None,
+        game_id: str | None = None,
     ) -> str:
         """Create a game from a lobby with multiple human players.
 
@@ -192,11 +193,13 @@ class GameService:
             player_ids: Map of player number to player ID (e.g., "u:123", "guest:xxx")
                         Used for replay storage. If not provided, falls back to key-based IDs.
             ai_players_config: Map of player number to AI type (e.g., {2: "dummy"})
+            game_id: Optional pre-generated game ID (e.g., from Redis lobby manager)
 
         Returns:
             The game_id
         """
-        game_id = _generate_game_id()
+        if game_id is None:
+            game_id = _generate_game_id()
 
         # Ensure unique game ID
         while game_id in self.games:
