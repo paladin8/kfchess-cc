@@ -18,10 +18,13 @@ from kfchess.game.collision import (
     is_piece_moving,
     is_piece_on_cooldown,
 )
+from kfchess.game.snapshot import GameSnapshot
 from kfchess.game.state import TICK_RATE_HZ, GameStatus
 from kfchess.lobby.manager import get_lobby_manager
+from kfchess.redis.client import get_redis
+from kfchess.redis.snapshot_store import delete_snapshot, save_snapshot
 from kfchess.services.game_registry import deregister_game_fire_and_forget
-from kfchess.services.game_service import get_game_service
+from kfchess.services.game_service import ManagedGame, get_game_service
 from kfchess.services.rating_service import RatingService
 from kfchess.ws.lobby_handler import notify_game_ended
 from kfchess.ws.protocol import (
@@ -54,6 +57,62 @@ _game_loop_locks: dict[str, asyncio.Lock] = {}
 
 # Track games currently in countdown phase (moves rejected during countdown)
 _games_in_countdown: set[str] = set()
+
+# Snapshot every N ticks (once per second at 30 Hz)
+SNAPSHOT_INTERVAL_TICKS = 30
+
+# Background tasks for fire-and-forget snapshot operations
+_snapshot_tasks: set[asyncio.Task] = set()
+
+
+def _build_snapshot(game_id: str, managed_game: ManagedGame) -> GameSnapshot:
+    """Build a GameSnapshot from a ManagedGame."""
+    from kfchess.settings import get_settings
+
+    state = managed_game.state
+
+    return GameSnapshot(
+        game_id=game_id,
+        state=state.to_snapshot_dict(),
+        player_keys=dict(managed_game.player_keys),
+        ai_config=dict(managed_game.ai_config),
+        campaign_level_id=managed_game.campaign_level_id,
+        campaign_user_id=managed_game.campaign_user_id,
+        initial_board_str=managed_game.initial_board_str,
+        resigned_piece_ids=list(managed_game.resigned_piece_ids),
+        draw_offers=set(managed_game.draw_offers),
+        force_broadcast=managed_game.force_broadcast,
+        server_id=get_settings().effective_server_id,
+        snapshot_tick=state.current_tick,
+    )
+
+
+def _save_snapshot_fire_and_forget(snapshot: GameSnapshot) -> None:
+    """Schedule a snapshot save as a fire-and-forget task."""
+    async def _save() -> None:
+        try:
+            r = await get_redis()
+            await save_snapshot(r, snapshot)
+        except Exception:
+            logger.exception(f"Failed to save snapshot for game {snapshot.game_id}")
+
+    task = asyncio.create_task(_save())
+    _snapshot_tasks.add(task)
+    task.add_done_callback(_snapshot_tasks.discard)
+
+
+def _delete_snapshot_fire_and_forget(game_id: str) -> None:
+    """Schedule a snapshot deletion as a fire-and-forget task."""
+    async def _delete() -> None:
+        try:
+            r = await get_redis()
+            await delete_snapshot(r, game_id)
+        except Exception:
+            logger.exception(f"Failed to delete snapshot for game {game_id}")
+
+    task = asyncio.create_task(_delete())
+    _snapshot_tasks.add(task)
+    task.add_done_callback(_snapshot_tasks.discard)
 
 
 def _has_state_changed(
@@ -958,6 +1017,7 @@ async def _run_game_loop(game_id: str) -> None:
                 logger.info(f"Game {game_id} finished (external), winner: {state.winner}")
 
                 await _save_replay(game_id, service)
+                _delete_snapshot_fire_and_forget(game_id)
 
                 # Update campaign progress if this is a campaign game
                 await _handle_campaign_completion(game_id, state.winner)
@@ -1094,6 +1154,11 @@ async def _run_game_loop(game_id: str) -> None:
             prev_cooldown_ids = curr_cooldown_ids
             is_first_tick = False
 
+            # Periodic snapshot to Redis (fire-and-forget)
+            if state.current_tick % SNAPSHOT_INTERVAL_TICKS == 0:
+                snapshot = _build_snapshot(game_id, managed_game)
+                _save_snapshot_fire_and_forget(snapshot)
+
             # Check for game over after tick
             if state.status == GameStatus.FINISHED:
                 reason = state.win_reason.value if state.win_reason else "king_captured"
@@ -1108,6 +1173,7 @@ async def _run_game_loop(game_id: str) -> None:
 
                 # Save replay to database
                 await _save_replay(game_id, service)
+                _delete_snapshot_fire_and_forget(game_id)
 
                 # Update campaign progress if this is a campaign game
                 await _handle_campaign_completion(game_id, state.winner)

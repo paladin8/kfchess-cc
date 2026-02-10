@@ -72,10 +72,78 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.exception("Failed to clean up stale active games on startup")
 
+    # Connect to Redis, start heartbeat, and restore games from snapshots
+    try:
+        from kfchess.redis.client import get_redis
+        from kfchess.redis.heartbeat import is_server_alive, start_heartbeat
+        from kfchess.redis.snapshot_store import list_snapshot_game_ids, load_snapshot
+        from kfchess.services.game_registry import register_game_fire_and_forget
+        from kfchess.services.game_service import get_game_service
+
+        r = await get_redis()
+        await start_heartbeat(r, server_id)
+
+        # Restore games from Redis snapshots whose owning server is dead.
+        # This works for both single-server crash recovery (our own previous
+        # PID died, heartbeat expired) and multi-server failover (another
+        # server died, we claim its orphaned games).
+        # NOTE: Phase 5 will add atomic CAS on game:{id}:server to prevent
+        # two servers from claiming the same game during simultaneous restarts.
+        game_ids = await list_snapshot_game_ids(r)
+        game_service = get_game_service()
+        restored = 0
+        for gid in game_ids:
+            snapshot = await load_snapshot(r, gid)
+            if snapshot is None:
+                continue
+            # Skip games owned by a server that is still alive
+            if snapshot.server_id and await is_server_alive(r, snapshot.server_id):
+                continue
+            if game_service.restore_game(snapshot):
+                restored += 1
+                # Re-register in active_games so restored games appear in live list
+                managed = game_service.get_managed_game(gid)
+                if managed is not None:
+                    state = managed.state
+                    players_info = []
+                    for pnum, pid in state.players.items():
+                        is_ai = pnum in managed.ai_players
+                        name = pid.split(":", 1)[1] if ":" in pid else pid
+                        if is_ai:
+                            name = f"Bot ({name})"
+                        players_info.append(
+                            {"slot": pnum, "username": name, "is_ai": is_ai}
+                        )
+                    game_type = "campaign" if snapshot.campaign_level_id else "restored"
+                    register_game_fire_and_forget(
+                        game_id=gid,
+                        game_type=game_type,
+                        speed=state.speed.value,
+                        player_count=len(state.players),
+                        board_type=state.board.board_type.value,
+                        players=players_info,
+                        campaign_level_id=snapshot.campaign_level_id,
+                    )
+        if restored:
+            logger.info(f"Restored {restored} games from Redis snapshots")
+    except Exception:
+        logger.exception("Failed to initialize Redis / restore games on startup")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Kung Fu Chess server")
+
+    # Stop heartbeat and close Redis
+    try:
+        from kfchess.redis.client import close_redis
+        from kfchess.redis.heartbeat import stop_heartbeat
+
+        await stop_heartbeat()
+        await close_redis()
+    except Exception:
+        logger.exception("Failed to shut down Redis on shutdown")
+
     try:
         from kfchess.db.repositories.active_games import ActiveGameRepository
         from kfchess.db.session import async_session_factory

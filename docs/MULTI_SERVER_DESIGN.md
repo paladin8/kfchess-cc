@@ -583,7 +583,7 @@ end
 
 ### Countdown Phase
 
-If a recovered game is at tick 0, skip countdown and start immediately. The countdown is cosmetic - players already saw it before the crash.
+If a recovered game is at tick 0, the countdown replays when the game loop restarts. This is acceptable — the countdown is brief (3 seconds) and re-establishes client synchronization after reconnection. Snapshots fire at tick 0 to ensure games that crash during or just after countdown are recoverable.
 
 ### Unrecoverable Scenarios
 
@@ -940,12 +940,14 @@ The migration from single-server to multi-server can be done incrementally:
 - 43 round-trip tests covering individual types, full game states, JSON round-trips, 4-player with eliminations, and end-to-end pipeline (`tests/unit/game/test_snapshot.py`)
 - **Zero risk**: No behavior changes, just new code paths
 
-### Phase 2: Redis Integration (single server, no routing)
-- Add Redis client to the application
-- Add periodic game state snapshots to Redis from the game loop
-- Add game restoration from Redis snapshot on startup
-- Add server heartbeat to Redis
-- Test: Kill server, restart, verify games resume from snapshot
+### Phase 2: Redis Integration (single server, no routing) ✅ DONE
+- Async Redis client singleton (`redis/client.py`) using `settings.redis_url`
+- Snapshot store (`redis/snapshot_store.py`): save/load/delete/list with `game:{id}:snapshot` keys (2h TTL); corrupted data handled gracefully (returns None)
+- Server heartbeat (`redis/heartbeat.py`): `server:{id}:heartbeat` key (5s TTL, refreshed every 1s); `is_server_alive()` check for liveness
+- Periodic snapshots in game loop: every 30 ticks (1/second at 30 Hz), including tick 0 for early crash coverage
+- Startup restoration: scans all snapshots, claims games whose owning server has no live heartbeat (forward-compatible with multi-server failover); skips finished games; re-registers restored games in `active_games` table. Phase 5 will add atomic CAS on `game:{id}:server` to prevent races during simultaneous multi-server restarts.
+- `ManagedGame.ai_config: dict[int, str]` stores AI type names at creation time; `restore_game()` uses it to recreate AI instances via `_create_ai()`
+- 74 tests (`tests/unit/redis/`, `tests/unit/test_game_restore.py`, `tests/unit/test_startup_restore.py`, `tests/unit/ws/test_handler_snapshot.py`)
 - **Low risk**: Single server, Redis adds persistence but doesn't change behavior
 
 ### Phase 3: Game Routing (multi-server games)

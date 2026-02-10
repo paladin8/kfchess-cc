@@ -11,7 +11,10 @@ import random
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from kfchess.game.snapshot import GameSnapshot
 
 from kfchess.ai.base import AIPlayer
 from kfchess.ai.dummy import DummyAI
@@ -54,6 +57,7 @@ class ManagedGame:
     state: GameState
     player_keys: dict[int, str] = field(default_factory=dict)
     ai_players: dict[int, AIPlayer] = field(default_factory=dict)
+    ai_config: dict[int, str] = field(default_factory=dict)
     loop_task: asyncio.Task[Any] | None = None
     created_at: datetime = field(default_factory=datetime.now)
     last_activity: datetime = field(default_factory=datetime.now)
@@ -152,8 +156,10 @@ class GameService:
 
         # Set up AI instances
         ai_players: dict[int, AIPlayer] = {}
+        ai_config: dict[int, str] = {}
         for bot_player in bot_players:
             ai_players[bot_player] = self._create_ai(bot_name, speed)
+            ai_config[bot_player] = bot_name
         logger.debug(f"AI players created: {list(ai_players.keys())}")
 
         # Create managed game
@@ -161,6 +167,7 @@ class GameService:
             state=state,
             player_keys={human_player: player_key},
             ai_players=ai_players,
+            ai_config=ai_config,
         )
 
         self.games[game_id] = managed_game
@@ -237,6 +244,7 @@ class GameService:
             state=state,
             player_keys=dict(player_keys),  # Copy all human player keys
             ai_players=ai_instances,
+            ai_config=dict(ai_players_config),
         )
 
         self.games[game_id] = managed_game
@@ -277,10 +285,12 @@ class GameService:
         # Build players dict - human player + AI opponents
         players: dict[int, str] = {1: f"u:{user_id}"}
         ai_instances: dict[int, AIPlayer] = {}
+        ai_config: dict[int, str] = {}
 
         for p in range(2, level.player_count + 1):
             players[p] = "bot:campaign"
             ai_instances[p] = self._create_ai("campaign", speed)
+            ai_config[p] = "campaign"
 
         # Create game with custom board
         state = GameEngine.create_game_from_board(
@@ -304,6 +314,7 @@ class GameService:
             state=state,
             player_keys={human_player: player_key},
             ai_players=ai_instances,
+            ai_config=ai_config,
             campaign_level_id=level.level_id,
             campaign_user_id=user_id,
             initial_board_str=level.board_str,
@@ -316,6 +327,68 @@ class GameService:
         )
 
         return game_id, player_key, human_player
+
+    def restore_game(self, snapshot: "GameSnapshot") -> bool:
+        """Restore a game from a Redis snapshot.
+
+        Reconstructs a ManagedGame from snapshot data including AI instances.
+        The game loop is NOT started here — it starts when a player reconnects
+        via _start_game_loop_if_needed().
+
+        Args:
+            snapshot: The game snapshot to restore from
+
+        Returns:
+            True if the game was restored successfully
+        """
+        game_id = snapshot.game_id
+
+        if game_id in self.games:
+            logger.warning(f"Game {game_id} already exists, skipping restore")
+            return False
+
+        try:
+            state = GameState.from_snapshot_dict(snapshot.state)
+        except Exception:
+            logger.exception(f"Failed to deserialize game state for {game_id}")
+            return False
+
+        # Skip finished games (stale snapshot that wasn't cleaned up)
+        if state.is_finished:
+            logger.info(f"Skipping restore of finished game {game_id}")
+            return False
+
+        # Rebuild AI instances from ai_config
+        ai_instances: dict[int, AIPlayer] = {}
+        for player_num, ai_type in snapshot.ai_config.items():
+            try:
+                ai_instances[player_num] = self._create_ai(ai_type, state.speed)
+            except Exception:
+                logger.exception(
+                    f"Failed to create AI '{ai_type}' for player {player_num} "
+                    f"in game {game_id}"
+                )
+                return False
+
+        managed_game = ManagedGame(
+            state=state,
+            player_keys=dict(snapshot.player_keys),
+            ai_players=ai_instances,
+            ai_config=dict(snapshot.ai_config),
+            campaign_level_id=snapshot.campaign_level_id,
+            campaign_user_id=snapshot.campaign_user_id,
+            initial_board_str=snapshot.initial_board_str,
+            resigned_piece_ids=list(snapshot.resigned_piece_ids),
+            draw_offers=set(snapshot.draw_offers),
+            force_broadcast=snapshot.force_broadcast,
+        )
+
+        self.games[game_id] = managed_game
+        logger.info(
+            f"Restored game {game_id} from snapshot "
+            f"(tick={snapshot.snapshot_tick}, players={len(state.players)})"
+        )
+        return True
 
     # Difficulty names → KungFuAI levels
     _DIFFICULTY_MAP: dict[str, int] = {
