@@ -1,6 +1,6 @@
 """Tests that routing registration is called at all game creation sites.
 
-Verifies that register_routing_fire_and_forget is called when games are
+Verifies that register_routing is awaited when games are
 created via quickplay, campaign, and lobby paths.
 """
 
@@ -54,34 +54,34 @@ class TestQuickplayRoutingRegistration:
     """Routing registration on quickplay game creation."""
 
     def test_create_game_registers_routing(self, client: TestClient) -> None:
-        """POST /api/games calls register_routing_fire_and_forget."""
+        """POST /api/games calls register_routing."""
         with patch(
-            "kfchess.api.games.register_routing_fire_and_forget"
+            "kfchess.api.games.register_routing", new_callable=AsyncMock
         ) as mock_register:
             response = client.post("/api/games", json={})
 
         assert response.status_code == 200
         game_id = response.json()["game_id"]
-        mock_register.assert_called_once_with(game_id)
+        mock_register.assert_awaited_once_with(game_id)
 
     def test_create_game_with_ai_registers_routing(self, client: TestClient) -> None:
-        """Quickplay vs AI also calls register_routing_fire_and_forget."""
+        """Quickplay vs AI also calls register_routing."""
         with patch(
-            "kfchess.api.games.register_routing_fire_and_forget"
+            "kfchess.api.games.register_routing", new_callable=AsyncMock
         ) as mock_register:
             response = client.post(
                 "/api/games", json={"opponent": "novice"}
             )
 
         assert response.status_code == 200
-        mock_register.assert_called_once()
+        mock_register.assert_awaited_once()
 
 
 class TestCampaignRoutingRegistration:
     """Routing registration on campaign game creation."""
 
     def test_start_campaign_registers_routing(self, client: TestClient) -> None:
-        """Starting a campaign game calls register_routing_fire_and_forget."""
+        """Starting a campaign game calls register_routing."""
         # Create a fake authenticated user
         fake_user = MagicMock()
         fake_user.id = 1
@@ -93,7 +93,7 @@ class TestCampaignRoutingRegistration:
         try:
             with (
                 patch(
-                    "kfchess.api.campaign.register_routing_fire_and_forget"
+                    "kfchess.api.campaign.register_routing", new_callable=AsyncMock
                 ) as mock_register,
                 # Bypass DB progress check — level 0 is always unlocked
                 patch("kfchess.api.campaign.async_session_factory") as mock_session_factory,
@@ -120,7 +120,7 @@ class TestCampaignRoutingRegistration:
 
             assert response.status_code == 200
             game_id = response.json()["gameId"]
-            mock_register.assert_called_once_with(game_id)
+            mock_register.assert_awaited_once_with(game_id)
         finally:
             app.dependency_overrides.pop(current_active_user, None)
 
@@ -129,7 +129,7 @@ class TestLobbyRoutingRegistration:
     """Routing registration on lobby game creation."""
 
     def test_lobby_game_start_registers_routing(self, client: TestClient) -> None:
-        """Starting a game from lobby calls register_routing_fire_and_forget."""
+        """Starting a game from lobby calls register_routing."""
         # Create a lobby with AI
         response = client.post(
             "/api/lobbies",
@@ -147,7 +147,7 @@ class TestLobbyRoutingRegistration:
         player_key = data["playerKey"]
 
         with patch(
-            "kfchess.ws.lobby_handler.register_routing_fire_and_forget"
+            "kfchess.ws.lobby_handler.register_routing", new_callable=AsyncMock
         ) as mock_register:
             with client.websocket_connect(
                 f"/ws/lobby/{code}?player_key={player_key}"
@@ -166,4 +166,4 @@ class TestLobbyRoutingRegistration:
                 msg = json.loads(websocket.receive_text())
                 assert msg["type"] == "game_starting"
 
-            mock_register.assert_called_once()
+            mock_register.assert_awaited_once()

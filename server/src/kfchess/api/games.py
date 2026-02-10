@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from kfchess.db.repositories.active_games import ActiveGameRepository
 from kfchess.db.repositories.replays import ReplayRepository
 from kfchess.db.session import async_session_factory
+from kfchess.drain import is_draining
 from kfchess.game.board import BoardType
 from kfchess.game.collision import (
     get_interpolated_position,
@@ -16,7 +17,7 @@ from kfchess.game.collision import (
     is_piece_on_cooldown,
 )
 from kfchess.game.state import Speed
-from kfchess.redis.routing import register_routing_fire_and_forget
+from kfchess.redis.routing import register_routing
 from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
 from kfchess.utils.display_name import resolve_player_info
@@ -107,6 +108,9 @@ class LiveGamesResponse(BaseModel):
 @router.post("", response_model=CreateGameResponse)
 async def create_game(request: CreateGameRequest) -> CreateGameResponse:
     """Create a new game against AI."""
+    if is_draining():
+        raise HTTPException(status_code=503, detail="Server is shutting down")
+
     logger.info(f"Creating game: speed={request.speed}, board_type={request.board_type}, opponent={request.opponent}")
 
     # Validate speed
@@ -153,7 +157,7 @@ async def create_game(request: CreateGameRequest) -> CreateGameResponse:
                 board_type=request.board_type,
                 players=players_info,
             )
-            register_routing_fire_and_forget(game_id)
+            await register_routing(game_id)
     except Exception as err:
         logger.exception(f"Failed to create game: {err}")
         raise HTTPException(status_code=500, detail=f"Failed to create game: {err}") from err

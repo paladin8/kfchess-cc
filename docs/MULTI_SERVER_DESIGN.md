@@ -947,14 +947,14 @@ The migration from single-server to multi-server can be done incrementally:
 - Snapshot store (`redis/snapshot_store.py`): save/load/delete/list with `game:{id}:snapshot` keys (2h TTL); corrupted data handled gracefully (returns None)
 - Server heartbeat (`redis/heartbeat.py`): `server:{id}:heartbeat` key (5s TTL, refreshed every 1s); `is_server_alive()` check for liveness
 - Periodic snapshots in game loop: every 30 ticks (1/second at 30 Hz), including tick 0 for early crash coverage
-- Startup restoration: scans all snapshots, claims games whose owning server has no live heartbeat (forward-compatible with multi-server failover); skips finished games; re-registers restored games in `active_games` table. Phase 5 will add atomic CAS on `game:{id}:server` to prevent races during simultaneous multi-server restarts.
+- Startup restoration: scans all snapshots, claims games whose owning server has no live heartbeat (forward-compatible with multi-server failover); skips finished games; re-registers restored games in `active_games` table. Phase 5 added atomic CAS (`claim_game_routing()`) on `game:{id}:server` to prevent races during simultaneous multi-server restarts.
 - `ManagedGame.ai_config: dict[int, str]` stores AI type names at creation time; `restore_game()` uses it to recreate AI instances via `_create_ai()`
 - 74 tests (`tests/unit/redis/`, `tests/unit/test_game_restore.py`, `tests/unit/test_startup_restore.py`, `tests/unit/ws/test_handler_snapshot.py`)
 - **Low risk**: Single server, Redis adds persistence but doesn't change behavior
 
 ### Phase 3: Game Routing (multi-server games) ✅ DONE
 - Redis routing module (`redis/routing.py`): `game:{id}:server` key CRUD with 2h TTL
-- Routing key registered fire-and-forget at all 4 game creation points (quickplay, campaign, lobby, restored games on startup)
+- Routing key registered synchronously (awaited) at all 3 game creation endpoints (quickplay, campaign, lobby) to guarantee the key exists before the client's WebSocket connection arrives; fire-and-forget used only for restored games on startup
 - Game loop refreshes routing key alongside snapshots (same fire-and-forget task); deletes on game finish (both paths)
 - WebSocket redirect: if game not in local memory, checks Redis `game:{id}:server` — redirects to other server with close code 4302 (reason = server_id); stale self-routing falls through to 4004
 - Client handles close code 4301 (server shutdown: reconnect with jitter, no routing hint) and 4302 (redirect: reconnect immediately with `?server=` param, one-shot)
@@ -976,9 +976,18 @@ The migration from single-server to multi-server can be done incrementally:
 - 29 tests in `tests/unit/test_api_lobbies.py` (REST endpoints with fakeredis)
 - **Higher risk (mitigated)**: Comprehensive test coverage including WatchError retry, pub/sub delivery, and disconnect/reconnect flows
 
-### Phase 5: Deploy & Recovery
-- Add drain mode (SIGTERM handler, health check endpoint)
-- Add synchronous final snapshot on drain
-- Add crash recovery flow (claim game from dead server)
-- Test: Deploy with active games, verify <1s blip
-- Test: Kill server process, verify game recovery on reconnect
+### Phase 5: Deploy & Recovery ✅
+- **Drain mode**: `drain.py` module with `is_draining()`/`set_draining()` flag; SIGTERM handler wraps uvicorn's handler to set drain flag before lifespan shutdown
+- **Health check 503**: `GET /health` returns 503 when draining (nginx stops routing new traffic)
+- **Drain guards**: Game creation (`POST /api/games`, `POST /api/campaign/levels/.../start`) returns 503; lobby `start_game` WS message returns `server_draining` error
+- **Drain shutdown sequence**: Save final snapshots synchronously for all active games → stop heartbeat → close all game WS (code 4301) → close all lobby WS (code 4301) → leave routing keys intact for crash recovery
+- **Lua CAS claiming**: `claim_game_routing()` in `redis/routing.py` uses Lua script for atomic compare-and-swap on routing keys (prevents race conditions during multi-server restarts)
+- **Startup restore with CAS**: Scans orphaned snapshots, uses `claim_game_routing()` to atomically claim from dead servers before restoring
+- **On-demand crash recovery**: `handle_websocket()` detects dead server via heartbeat check → CAS claims game → loads snapshot → restores game in-memory → continues with normal join flow; CAS failure redirects to winner via 4302; orphaned routing key cleaned up on restore failure
+- **Split-brain protection**: `_check_routing_ownership()` in game loop checks routing key every 90 ticks (~3s at 30 Hz); if another server has claimed the game, removes from local state and stops the loop; on Redis failure, continues running (avoids compounding transient issues)
+- **Synchronous routing registration**: `register_routing()` in `redis/routing.py` is awaited in all game creation endpoints (quickplay, campaign, lobby) to guarantee the routing key exists before the game_id is returned to the client
+- **Lobby WS registry**: Module-level `_active_lobby_websockets` set tracks connections; `close_all_lobby_websockets()` for drain shutdown
+- **ConnectionManager.close_all()**: Closes all game WS connections with configurable code/reason
+- **Files**: `drain.py` (new), `redis/routing.py`, `main.py`, `ws/handler.py`, `ws/lobby_handler.py`, `api/games.py`, `api/campaign.py`, `services/game_registry.py`
+- **Unit tests**: 42 tests across 8 test files (drain flag, CAS routing, close_all, lobby WS registry, drain mode guards, drain shutdown sequence, startup restore with CAS, on-demand crash recovery)
+- **Integration tests**: 18 tests in `tests/integration/test_multi_server.py` (snapshot round-trip, drain shutdown, crash recovery, startup restore, concurrent CAS, full failover cycle, split-brain protection, restore failure cleanup)

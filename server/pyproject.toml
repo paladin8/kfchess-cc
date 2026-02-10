@@ -84,3 +84,8 @@ module = [
     "httpx_oauth.*",
 ]
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "fakeredis[lua]>=2.33.0",
+]

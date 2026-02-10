@@ -13,17 +13,38 @@ from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from kfchess.drain import is_draining
 from kfchess.game.board import BoardType
 from kfchess.game.state import Speed
 from kfchess.lobby.manager import LobbyError, get_lobby_manager
 from kfchess.lobby.models import Lobby, LobbyPlayer, LobbySettings, LobbyStatus
 from kfchess.redis.client import get_redis
 from kfchess.redis.lobby_store import RedisLobbyManager, _pubsub_channel
-from kfchess.redis.routing import register_routing_fire_and_forget
+from kfchess.redis.routing import register_routing
 from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
 
 logger = logging.getLogger(__name__)
+
+# Track active lobby WebSocket connections for drain mode
+_active_lobby_websockets: set[WebSocket] = set()
+
+
+async def close_all_lobby_websockets(code: int = 1000, reason: str = "") -> None:
+    """Close all active lobby WebSocket connections.
+
+    Used during server drain to gracefully disconnect all lobby clients.
+    The finally block in handle_lobby_websocket will handle Redis cleanup
+    (marking players as disconnected) when each WS is closed.
+    """
+    closed = 0
+    for ws in list(_active_lobby_websockets):
+        try:
+            await ws.close(code=code, reason=reason)
+            closed += 1
+        except Exception:
+            pass  # Client may already be disconnected
+    logger.info(f"Closed {closed} lobby WebSocket connections (code={code})")
 
 
 def serialize_player(player: LobbyPlayer) -> dict[str, Any]:
@@ -107,6 +128,7 @@ async def handle_lobby_websocket(
 
     # 4. Accept WebSocket
     await websocket.accept()
+    _active_lobby_websockets.add(websocket)
     logger.info(f"Player slot {slot} connected to lobby {code}")
 
     # 5. Subscribe to pub/sub before sending state (avoid missing events)
@@ -151,6 +173,7 @@ async def handle_lobby_websocket(
             if not isinstance(exc, WebSocketDisconnect):
                 logger.exception(f"Error in lobby WebSocket handler for {code}: {exc}")
     finally:
+        _active_lobby_websockets.discard(websocket)
         await pubsub.unsubscribe(_pubsub_channel(code))
         await pubsub.aclose()
         await _handle_disconnect(manager, code, slot)
@@ -408,6 +431,12 @@ async def _handle_message(
             )
 
     elif msg_type == "start_game":
+        if is_draining():
+            await websocket.send_text(
+                json.dumps({"type": "error", "code": "server_draining", "message": "Server is shutting down"})
+            )
+            return
+
         result = await manager.start_game(code, player_key)
 
         if isinstance(result, LobbyError):
@@ -515,7 +544,7 @@ async def _create_game_from_lobby(
         players=players_info,
         lobby_code=code,
     )
-    register_routing_fire_and_forget(game_id_created)
+    await register_routing(game_id_created)
 
     # Publish game_starting via pub/sub with ALL player keys
     # The relay task will filter to send only the relevant key to each player

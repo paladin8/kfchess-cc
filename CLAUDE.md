@@ -27,7 +27,7 @@ npm test                     # Run tests
 
 ## Game Engine Gotchas
 - **Mutable state**: Engine functions mutate `GameState` in place for performance. Use `GameState.copy()` if you need to preserve state (e.g., for AI lookahead).
-- **Tick-based**: 10 ticks/second (100ms period). All timing is in ticks, not milliseconds.
+- **Tick-based**: 30 ticks/second (33ms period). All timing is in ticks, not milliseconds.
 - **Collision threshold**: Pieces capture when within 0.4 squares distance.
 - **Knight mechanics**: Airborne (invisible) for 85% of move, can only capture at 85%+ progress.
 - **Speed configs**: Standard (1s/square, 10s cooldown) vs Lightning (0.2s/square, 2s cooldown).

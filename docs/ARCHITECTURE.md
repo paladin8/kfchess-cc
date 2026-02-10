@@ -8,12 +8,12 @@ This document describes the system architecture for Kung Fu Chess.
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Game state storage | In-memory (Redis planned) | Fast access, real-time updates |
+| Game state storage | In-memory + Redis snapshots | Fast access with crash recovery via periodic snapshots |
 | Game tick ownership | Async task per game | Clear ownership, explicit handoff |
-| WebSocket routing | Direct connection | MVP simplicity (Redis pub/sub planned for multi-server) |
+| WebSocket routing | Redis routing keys + nginx | `game:{id}:server` keys with client-side redirect (code 4302) |
 | Frontend state | Zustand | Lightweight, excellent TypeScript support |
 | Auth | FastAPI-Users | Handles email + OAuth, battle-tested |
-| Lobby persistence | PostgreSQL | Reliable storage, ACID transactions |
+| Lobby persistence | Redis | Atomic operations via WATCH/MULTI/EXEC, Pub/Sub for real-time sync |
 
 ---
 
@@ -23,7 +23,7 @@ This document describes the system architecture for Kung Fu Chess.
 
 **Frontend**: React 19, TypeScript, Vite, Zustand, PixiJS, React Router 7, Vitest
 
-**Infrastructure**: PostgreSQL 15+, Redis 7+ (dev-ready via docker-compose)
+**Infrastructure**: PostgreSQL 15+, Redis 7+, nginx (WebSocket routing), docker-compose for dev
 
 ---
 
@@ -35,15 +35,17 @@ kfchess-cc/
 │   ├── src/kfchess/
 │   │   ├── main.py            # FastAPI entry point
 │   │   ├── auth/              # Authentication (FastAPI-Users)
-│   │   ├── api/               # REST endpoints (games, lobbies, replays, users)
+│   │   ├── api/               # REST endpoints (games, lobbies, campaign, replays, users)
 │   │   ├── ws/                # WebSocket handlers (game, lobby, replay)
-│   │   ├── game/              # Game engine (board, pieces, moves, collision, state, replay)
-│   │   ├── ai/                # AI system (base interface, dummy AI, KungFuAI planned)
-│   │   ├── services/          # Business logic (game_service)
+│   │   ├── game/              # Game engine (board, pieces, moves, collision, state, snapshot)
+│   │   ├── ai/                # AI system (DummyAI, KungFuAI L1-L3)
+│   │   ├── campaign/          # Campaign mode (levels, service)
+│   │   ├── services/          # Business logic (game_service, game_registry)
+│   │   ├── redis/             # Redis integration (client, routing, snapshots, heartbeat, lobby store)
 │   │   ├── db/                # Database (models, session, repositories/)
 │   │   ├── lobby/             # Lobby system (manager, models)
 │   │   └── replay/            # Replay playback (session)
-│   └── tests/                 # 532+ tests
+│   └── tests/                 # 1250+ tests
 │
 ├── client/                    # TypeScript frontend
 │   ├── src/
@@ -53,7 +55,7 @@ kfchess-cc/
 │   │   ├── game/              # PixiJS rendering (renderer, sprites, interpolation)
 │   │   ├── components/        # React components
 │   │   └── pages/             # Route pages
-│   └── tests/                 # 1800+ test cases
+│   └── tests/                 # 420+ test cases
 │
 └── docs/                      # Documentation
 ```
@@ -63,23 +65,31 @@ kfchess-cc/
 ## Backend Layers
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    FastAPI Application                   │
-├──────────────────────────┬──────────────────────────────┤
-│  API Layer (api/)        │  WebSocket Layer (ws/)       │
-│  - REST endpoints        │  - Connection management     │
-│  - Request validation    │  - Message routing           │
-├──────────────────────────┴──────────────────────────────┤
-│                   Service Layer (services/)              │
-│  - Game server management, business logic               │
-├──────────────────────────┬──────────────────────────────┤
-│  Game Engine (game/)     │  AI System (ai/)             │
-│  - Board state           │  - AI interface              │
-│  - Move validation       │  - DummyAI (random moves)    │
-│  - Collision detection   │  - KungFuAI (L1-L3)         │
-├──────────────────────────┴──────────────────────────────┤
-│  Data Layer: PostgreSQL (persistent) + Redis (planned)  │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     nginx (load balancer)                        │
+│  - Round-robin across uvicorn workers                            │
+│  - ?server= param routing for WebSocket redirects                │
+├──────────────────────────────────────────────────────────────────┤
+│                      FastAPI Application                         │
+├───────────────────────────┬──────────────────────────────────────┤
+│  API Layer (api/)         │  WebSocket Layer (ws/)               │
+│  - REST endpoints         │  - Connection management             │
+│  - Drain guards (503)     │  - Game routing + crash recovery     │
+│  - Request validation     │  - Lobby pub/sub relay               │
+├───────────────────────────┴──────────────────────────────────────┤
+│                    Service Layer (services/)                     │
+│  - Game lifecycle, active game registry, drain shutdown          │
+├───────────────────────────┬──────────────────────────────────────┤
+│  Game Engine (game/)      │  AI System (ai/)                     │
+│  - Board state + snapshot │  - DummyAI (random moves)            │
+│  - Move validation        │  - KungFuAI (L1-L3 tactical)         │
+│  - Collision detection    │                                      │
+├───────────────────────────┴──────────────────────────────────────┤
+│  Redis (real-time)                │  PostgreSQL (persistent)     │
+│  - Game snapshots + routing keys  │  - Users, replays, ratings   │
+│  - Server heartbeats              │  - Active games registry     │
+│  - Lobby state + pub/sub          │  - Campaign progress         │
+└───────────────────────────────────┴──────────────────────────────┘
 ```
 
 ---
@@ -157,18 +167,20 @@ class GameEngine:
 ### Core Tables
 
 - **users**: id, email, username, password_hash, google_id, ratings (JSONB), is_verified, is_active
-- **lobbies**: id, code, name, host_id, speed, player_count, is_public, is_ranked, status, game_id
-- **lobby_players**: lobby_id, user_id, player_slot, is_ready
 - **game_replays**: id (=game_id), speed, board_type, players (JSONB), moves (JSONB), total_ticks, winner
+- **active_games**: game_id, game_type, speed, player_count, board_type, players (JSONB), server_id, started_at
+- **campaign_progress**: user_id, level_id, completed_at (tracks campaign completion)
 - **oauth_account**: user_id, oauth_name, account_id, account_email (for Google OAuth)
 
-### Relationships
+Note: Lobbies have migrated from PostgreSQL to Redis (Phase 4). The `lobbies` and `lobby_players` tables are no longer used.
 
-```
-users 1──N lobby_players N──1 lobbies
-users 1──N oauth_account
-game_replays (standalone, players stored as JSONB)
-```
+### Redis Keys
+
+- `game:{id}:snapshot` — serialized game state for crash recovery (2h TTL)
+- `game:{id}:server` — routing key mapping game to server_id (2h TTL)
+- `server:{id}:heartbeat` — server liveness indicator (5s TTL, refreshed every 1s)
+- `lobby:{code}` — lobby state (hash)
+- `lobby_events:{code}` — lobby pub/sub channel
 
 ---
 
@@ -199,6 +211,36 @@ See `docs/REPLAY_DESIGN.md` for full details.
 
 ---
 
+## Multi-Server Architecture
+
+Multiple uvicorn workers run behind nginx, sharing state via Redis. See `docs/MULTI_SERVER_DESIGN.md` for full design.
+
+### Game Routing
+- Each game has a Redis routing key (`game:{id}:server`) mapping it to its owning worker
+- When a WebSocket connects to the wrong worker, it receives close code **4302** with the correct server_id as reason
+- The client reconnects with `?server=workerN` query param; nginx routes to the correct upstream
+- Routing keys are registered synchronously (awaited) at game creation to prevent races in multi-worker deployments
+
+### Crash Recovery
+- **Periodic snapshots**: Every 30 ticks (~1s at 30 Hz), full game state is saved to Redis
+- **Server heartbeat**: Each worker writes a 5s-TTL heartbeat key, refreshed every 1s
+- **On-demand recovery**: When a WebSocket arrives for a game on a dead server (no heartbeat), the receiving worker atomically claims the game via Lua CAS, loads the snapshot, and resumes the game loop
+- **Startup restore**: On boot, workers scan for orphaned snapshots from dead servers and restore them
+- **Split-brain protection**: Game loops periodically check their routing key ownership (every ~3s) and stop if another server has claimed the game
+
+### Graceful Shutdown (Drain Mode)
+- SIGTERM sets a drain flag; `/health` returns 503 (nginx stops routing new traffic)
+- Game creation endpoints return 503; lobby `start_game` returns an error
+- Final snapshots saved for all active games; heartbeat stopped; all WebSockets closed with code **4301**
+- Routing keys are preserved so other workers can claim games via CAS
+
+### Lobby System
+- All lobby state lives in Redis with WATCH/MULTI/EXEC for atomic operations
+- Real-time updates via Redis Pub/Sub relay per lobby channel
+- Each WebSocket runs two concurrent tasks: pub/sub listener + message handler
+
+---
+
 ## 4-Player Mode
 
 Engine supports 12x12 board with corners cut (128 valid squares). Players at N/S/E/W positions.
@@ -215,15 +257,15 @@ See `docs/FOUR_PLAYER_DESIGN.md` for board layout and implementation plan.
 - React/TypeScript/PixiJS frontend with Zustand state
 - Replay system (recording, storage, WebSocket playback with seek)
 - Authentication (email/password, Google OAuth, verification, password reset)
-- Lobby system (create/join/leave, ready states, AI slots, persistence)
+- Lobby system (Redis-backed with Pub/Sub for real-time sync)
 - AI opponents: 3 difficulty levels with arrival fields, tactical scoring, dodge/recapture analysis (see `docs/AI_DESIGN.md`)
+- Campaign mode (belt progression, AI opponents per level)
 - 4-player UI
-- Comprehensive tests (532+ backend, 1800+ frontend)
+- Multi-server support (game routing, crash recovery, drain mode, split-brain protection)
+- ELO rating system with belt progression
+- Comprehensive tests (1250+ backend, 420+ frontend)
 
 ### Next Steps
 1. Game sound/music + volume controls
 2. Analytics + instrumentation
-3. ELO rating system
-4. Campaign mode
-5. Redis for distributed scaling
-6. Production deployment
+3. Production deployment

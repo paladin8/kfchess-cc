@@ -12,7 +12,8 @@ from kfchess.campaign.service import CampaignService
 from kfchess.db.models import User
 from kfchess.db.repositories.campaign import CampaignProgressRepository
 from kfchess.db.session import async_session_factory
-from kfchess.redis.routing import register_routing_fire_and_forget
+from kfchess.drain import is_draining
+from kfchess.redis.routing import register_routing
 from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
 
@@ -207,6 +208,9 @@ async def start_level(
     Creates a new game with the campaign board and AI opponent(s).
     Requires authentication and the level must be unlocked.
     """
+    if is_draining():
+        raise HTTPException(status_code=503, detail="Server is shutting down")
+
     # Check level exists
     level = get_level(level_id)
     if level is None:
@@ -249,7 +253,7 @@ async def start_level(
         players=players_info,
         campaign_level_id=level.level_id,
     )
-    register_routing_fire_and_forget(game_id)
+    await register_routing(game_id)
 
     return StartGameResponse(
         game_id=game_id,

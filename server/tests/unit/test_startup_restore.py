@@ -15,6 +15,11 @@ from kfchess.game.engine import GameEngine
 from kfchess.game.snapshot import GameSnapshot
 from kfchess.game.state import Speed
 from kfchess.redis.heartbeat import is_server_alive, start_heartbeat, stop_heartbeat
+from kfchess.redis.routing import (
+    claim_game_routing,
+    get_game_server,
+    register_game_routing,
+)
 from kfchess.redis.snapshot_store import load_snapshot, save_snapshot
 from kfchess.services.game_service import GameService
 
@@ -189,3 +194,109 @@ class TestStartupRestorePipeline:
         state, events, finished = service.tick("FUNC0001")
         assert state is not None
         assert state.current_tick == 11  # Was at 10
+
+
+async def _run_cas_restore_pipeline(
+    redis: fakeredis.aioredis.FakeRedis,
+    service: GameService,
+    my_server_id: str = "my-server",
+) -> int:
+    """Simulate the CAS-based startup restoration pipeline from main.py (Phase 5)."""
+    from kfchess.redis.snapshot_store import list_snapshot_game_ids
+
+    game_ids = await list_snapshot_game_ids(redis)
+    restored = 0
+    for gid in game_ids:
+        snapshot = await load_snapshot(redis, gid)
+        if snapshot is None:
+            continue
+        if snapshot.server_id and await is_server_alive(redis, snapshot.server_id):
+            continue
+
+        # Atomically claim the routing key from the dead server
+        if snapshot.server_id:
+            claimed = await claim_game_routing(
+                redis, gid, snapshot.server_id, my_server_id
+            )
+            if not claimed:
+                continue
+        else:
+            await register_game_routing(redis, gid, my_server_id)
+
+        if service.restore_game(snapshot):
+            restored += 1
+    return restored
+
+
+class TestStartupRestoreWithCAS:
+    """Tests for CAS-based startup restoration pipeline (Phase 5)."""
+
+    @pytest.mark.asyncio
+    async def test_cas_claims_routing_key(self, redis) -> None:
+        """CAS restore claims the routing key from the dead server."""
+        snapshot = _make_snapshot("CAS00001", server_id="dead-server")
+        await save_snapshot(redis, snapshot)
+        await register_game_routing(redis, "CAS00001", "dead-server")
+
+        service = GameService()
+        restored = await _run_cas_restore_pipeline(redis, service, "my-server")
+
+        assert restored == 1
+        assert await get_game_server(redis, "CAS00001") == "my-server"
+
+    @pytest.mark.asyncio
+    async def test_cas_failure_skips_game(self, redis) -> None:
+        """CAS failure (another server claimed) skips the game."""
+        snapshot = _make_snapshot("CAS00002", server_id="dead-server")
+        await save_snapshot(redis, snapshot)
+        # Another server already claimed this game
+        await register_game_routing(redis, "CAS00002", "other-server")
+
+        service = GameService()
+        restored = await _run_cas_restore_pipeline(redis, service, "my-server")
+
+        assert restored == 0
+        assert service.get_game("CAS00002") is None
+        # Routing key still points to other-server
+        assert await get_game_server(redis, "CAS00002") == "other-server"
+
+    @pytest.mark.asyncio
+    async def test_empty_server_id_uses_direct_register(self, redis) -> None:
+        """Snapshot with empty server_id uses register_game_routing (no CAS needed)."""
+        snapshot = _make_snapshot("CAS00003", server_id="")
+        await save_snapshot(redis, snapshot)
+
+        service = GameService()
+        restored = await _run_cas_restore_pipeline(redis, service, "my-server")
+
+        assert restored == 1
+        assert await get_game_server(redis, "CAS00003") == "my-server"
+
+    @pytest.mark.asyncio
+    async def test_cas_concurrent_servers(self, redis) -> None:
+        """Two servers racing to claim the same game — only one succeeds."""
+        snapshot = _make_snapshot("CAS00004", server_id="dead-server")
+        await save_snapshot(redis, snapshot)
+        await register_game_routing(redis, "CAS00004", "dead-server")
+
+        service_a = GameService()
+        service_b = GameService()
+
+        # Run both restore pipelines
+        import asyncio
+        restored_a, restored_b = await asyncio.gather(
+            _run_cas_restore_pipeline(redis, service_a, "server-A"),
+            _run_cas_restore_pipeline(redis, service_b, "server-B"),
+        )
+
+        # Exactly one should have restored the game
+        assert restored_a + restored_b == 1
+
+        # The routing key should point to the winner
+        owner = await get_game_server(redis, "CAS00004")
+        if restored_a == 1:
+            assert owner == "server-A"
+            assert service_a.get_game("CAS00004") is not None
+        else:
+            assert owner == "server-B"
+            assert service_b.get_game("CAS00004") is not None

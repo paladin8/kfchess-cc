@@ -1,7 +1,13 @@
 """Fire-and-forget helpers for active game registration."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from kfchess.game.state import GameState
 
 from kfchess.db.repositories.active_games import ActiveGameRepository
 from kfchess.db.session import async_session_factory
@@ -88,3 +94,40 @@ def deregister_game_fire_and_forget(game_id: str) -> None:
     task = asyncio.create_task(_deregister_game(game_id))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+def register_restored_game(
+    game_id: str,
+    state: GameState,
+    ai_player_nums: set[int],
+    campaign_level_id: int | None,
+) -> None:
+    """Register a restored game in the active_games DB table.
+
+    Shared by startup restore (main.py) and on-demand crash recovery
+    (ws/handler.py). Uses fire-and-forget registration.
+
+    Args:
+        game_id: The game ID
+        state: The restored GameState
+        ai_player_nums: Set of player numbers that are AI
+        campaign_level_id: Campaign level ID or None
+    """
+    players_info = []
+    for pnum, pid in state.players.items():
+        is_ai = pnum in ai_player_nums
+        name = pid.split(":", 1)[1] if ":" in pid else pid
+        if is_ai:
+            name = f"Bot ({name})"
+        players_info.append({"slot": pnum, "username": name, "is_ai": is_ai})
+
+    game_type = "campaign" if campaign_level_id else "restored"
+    register_game_fire_and_forget(
+        game_id=game_id,
+        game_type=game_type,
+        speed=state.speed.value,
+        player_count=len(state.players),
+        board_type=state.board.board_type.value,
+        players=players_info,
+        campaign_level_id=campaign_level_id,
+    )

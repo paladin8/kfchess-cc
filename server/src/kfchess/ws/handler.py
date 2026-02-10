@@ -22,9 +22,15 @@ from kfchess.game.snapshot import GameSnapshot
 from kfchess.game.state import TICK_RATE_HZ, GameStatus
 from kfchess.lobby.manager import get_lobby_manager
 from kfchess.redis.client import get_redis
-from kfchess.redis.routing import delete_game_routing, get_game_server, register_game_routing
-from kfchess.redis.snapshot_store import delete_snapshot, save_snapshot
-from kfchess.services.game_registry import deregister_game_fire_and_forget
+from kfchess.redis.heartbeat import is_server_alive
+from kfchess.redis.routing import (
+    claim_game_routing,
+    delete_game_routing,
+    get_game_server,
+    register_game_routing,
+)
+from kfchess.redis.snapshot_store import delete_snapshot, load_snapshot, save_snapshot
+from kfchess.services.game_registry import deregister_game_fire_and_forget, register_restored_game
 from kfchess.services.game_service import ManagedGame, get_game_service
 from kfchess.services.rating_service import RatingService
 from kfchess.settings import get_settings
@@ -62,6 +68,11 @@ _games_in_countdown: set[str] = set()
 
 # Snapshot every N ticks (once per second at 30 Hz)
 SNAPSHOT_INTERVAL_TICKS = 30
+
+# Check routing ownership every N ticks (~3 seconds at 30 Hz).
+# Detects split-brain after transient heartbeat loss: if another server
+# CAS-claimed this game, we stop our loop to avoid dual processing.
+OWNERSHIP_CHECK_INTERVAL_TICKS = 90
 
 # Background tasks for fire-and-forget snapshot operations
 _snapshot_tasks: set[asyncio.Task] = set()
@@ -115,6 +126,33 @@ def _delete_snapshot_fire_and_forget(game_id: str) -> None:
     task = asyncio.create_task(_delete())
     _snapshot_tasks.add(task)
     task.add_done_callback(_snapshot_tasks.discard)
+
+
+async def _check_routing_ownership(game_id: str) -> bool:
+    """Check that this server still owns the routing key for a game.
+
+    Returns True if we are still the owner (or the key is missing/check fails).
+    Returns False if another server has claimed this game — the caller
+    should stop the game loop to avoid split-brain dual processing.
+    """
+    try:
+        r = await get_redis()
+        my_server_id = get_settings().effective_server_id
+        owner = await get_game_server(r, game_id)
+        if owner is not None and owner != my_server_id:
+            logger.warning(
+                f"Split-brain detected: game {game_id} routing owned by "
+                f"{owner}, not us ({my_server_id}). Stopping game loop."
+            )
+            return False
+    except Exception:
+        # If Redis is unreachable, keep running — don't kill game loops
+        # on transient Redis failures (which is what caused this in the first place)
+        logger.warning(
+            f"Failed to check routing ownership for game {game_id}, "
+            f"continuing game loop"
+        )
+    return True
 
 
 def _has_state_changed(
@@ -263,6 +301,31 @@ class ConnectionManager:
         """Check if a game has any connections."""
         return game_id in self.connections and len(self.connections[game_id]) > 0
 
+    async def close_all(self, code: int = 1000, reason: str = "") -> None:
+        """Close all WebSocket connections across all games.
+
+        Used during server drain to gracefully disconnect all clients.
+        """
+        async with self._lock:
+            all_connections = {
+                game_id: conns.copy()
+                for game_id, conns in self.connections.items()
+            }
+
+        closed = 0
+        for _game_id, connections in all_connections.items():
+            for websocket, _player in connections:
+                try:
+                    await websocket.close(code=code, reason=reason)
+                    closed += 1
+                except Exception:
+                    pass  # Client may already be disconnected
+
+        async with self._lock:
+            self.connections.clear()
+
+        logger.info(f"Closed {closed} game WebSocket connections (code={code})")
+
 
 # Global connection manager instance
 connection_manager = ConnectionManager()
@@ -391,30 +454,86 @@ async def handle_websocket(
 
     service = get_game_service()
 
-    # Validate game exists (locally or via Redis routing)
+    # Validate game exists (locally, via crash recovery, or via redirect)
     state = service.get_game(game_id)
     if state is None:
         # Must accept before close so the client receives the custom close code.
         # Without accept(), ASGI servers send HTTP 403 and the client sees code 1006.
         await websocket.accept()
 
-        # Not on this server — check Redis for routing to another server
+        # Not on this server — check Redis for routing to another server,
+        # and attempt crash recovery if the owning server is dead.
         try:
             r = await get_redis()
             owner = await get_game_server(r, game_id)
-            if owner is not None and owner != get_settings().effective_server_id:
-                logger.info(
-                    f"WebSocket redirect: game {game_id} is on {owner}, "
-                    f"sending 4302"
+            my_server_id = get_settings().effective_server_id
+
+            if owner is not None and owner != my_server_id:
+                # Check if owning server is alive
+                if await is_server_alive(r, owner):
+                    # Server is alive — redirect client there
+                    logger.info(
+                        f"WebSocket redirect: game {game_id} is on {owner}, "
+                        f"sending 4302"
+                    )
+                    await websocket.close(code=4302, reason=owner)
+                    return
+
+                # Owner is dead — attempt CAS crash recovery
+                claimed = await claim_game_routing(
+                    r, game_id, owner, my_server_id
                 )
-                await websocket.close(code=4302, reason=owner)
-                return
+                if claimed:
+                    snapshot = await load_snapshot(r, game_id)
+                    if snapshot is not None and service.restore_game(snapshot):
+                        logger.info(
+                            f"Crash recovery: claimed game {game_id} "
+                            f"from dead server {owner}"
+                        )
+                        managed = service.get_managed_game(game_id)
+                        if managed is not None:
+                            register_restored_game(
+                                game_id=game_id,
+                                state=managed.state,
+                                ai_player_nums=set(managed.ai_players.keys()),
+                                campaign_level_id=snapshot.campaign_level_id,
+                            )
+                        # Game restored — fall through to normal join flow
+                        state = service.get_game(game_id)
+                    else:
+                        logger.warning(
+                            f"Crash recovery failed for game {game_id}: "
+                            f"snapshot missing or restore failed"
+                        )
+                        # CAS claimed the routing key but restore failed —
+                        # delete it so future reconnects don't get stuck
+                        # hitting this server with 4004 until TTL expires.
+                        await delete_game_routing(r, game_id)
+                        await websocket.close(
+                            code=4004, reason="Game not found"
+                        )
+                        return
+                else:
+                    # Another server won the CAS race — redirect to them
+                    new_owner = await get_game_server(r, game_id)
+                    if new_owner and new_owner != my_server_id:
+                        logger.info(
+                            f"CAS race lost for game {game_id}, "
+                            f"redirecting to {new_owner}"
+                        )
+                        await websocket.close(code=4302, reason=new_owner)
+                    else:
+                        await websocket.close(
+                            code=4004, reason="Game not found"
+                        )
+                    return
         except Exception:
             logger.exception(f"Failed to check routing for game {game_id}")
 
-        logger.warning(f"WebSocket rejected: game {game_id} not found")
-        await websocket.close(code=4004, reason="Game not found")
-        return
+        if state is None:
+            logger.warning(f"WebSocket rejected: game {game_id} not found")
+            await websocket.close(code=4004, reason="Game not found")
+            return
 
     # Validate player key if provided
     player: int | None = None
@@ -1179,6 +1298,14 @@ async def _run_game_loop(game_id: str) -> None:
             if state.current_tick % SNAPSHOT_INTERVAL_TICKS == 0:
                 snapshot = _build_snapshot(game_id, managed_game)
                 _save_snapshot_fire_and_forget(snapshot)
+
+            # Periodic routing ownership check (split-brain protection)
+            if state.current_tick % OWNERSHIP_CHECK_INTERVAL_TICKS == 0:
+                if not await _check_routing_ownership(game_id):
+                    # Another server claimed this game — remove from local
+                    # state and stop to avoid dual processing.
+                    service.games.pop(game_id, None)
+                    break
 
             # Check for game over after tick
             if state.status == GameStatus.FINISHED:
