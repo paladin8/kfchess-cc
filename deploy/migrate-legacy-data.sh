@@ -94,7 +94,7 @@ sed \
 log "Migrating users"
 psql_cmd << 'SQL'
 INSERT INTO users (id, email, username, picture_url, ratings, created_at, last_online,
-                   hashed_password, is_active, is_verified, is_superuser)
+                   hashed_password, google_id, is_active, is_verified, is_superuser)
 SELECT
     id,
     email,
@@ -104,8 +104,9 @@ SELECT
     COALESCE(join_time, NOW()),
     COALESCE(last_online, NOW()),
     NULL,       -- hashed_password: users must use OAuth or forgot-password
+    email,      -- google_id: set to email so legacy Google OAuth login works
     true,       -- is_active
-    false,      -- is_verified
+    true,       -- is_verified (they authenticated via Google originally)
     false       -- is_superuser
 FROM _legacy_users
 ON CONFLICT (id) DO NOTHING;

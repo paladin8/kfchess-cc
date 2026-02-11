@@ -167,7 +167,8 @@ bash /var/www/kfchess/deploy/migrate-legacy-data.sh legacy_data.sql
 This creates staging tables, loads the dump, transforms the data (mapping old columns to new schema), resets sequences, and prints row counts. No host `psql` needed — it runs inside the Docker Postgres container.
 
 **User migration notes:**
-- Old users have no password — they must re-link Google OAuth or use "forgot password" to set one
+- Old users have no password but their `google_id` is set to their email, so Google OAuth login works immediately
+- Users who want to use email/password login can use "forgot password" to set one
 - `join_time` maps to `created_at`; `current_game` is dropped (transient state)
 - User IDs are preserved so campaign progress and game history stay linked
 
