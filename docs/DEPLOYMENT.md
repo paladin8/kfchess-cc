@@ -112,13 +112,39 @@ Also set the Amplitude key in `client/.env` if using analytics:
 sudo -u kfchess vim /var/www/kfchess/client/.env
 ```
 
-### 5. Redeploy after config changes
+### 5. Test before DNS cutover (optional)
+
+If DNS still points to the old server, use HTTP-only mode to test:
+
+```bash
+sudo bash /var/www/kfchess/deploy/generate-caddyfile.sh --http-only --install
+sudo systemctl reload caddy
+```
+
+Then visit `http://<instance-ip>/` in your browser or:
+
+```bash
+curl http://<instance-ip>/caddy-health      # should return "ok"
+curl http://<instance-ip>/api/replays       # test API routing
+```
+
+When ready to go live, switch to production mode and flip DNS:
+
+```bash
+sudo bash /var/www/kfchess/deploy/generate-caddyfile.sh --install
+sudo systemctl reload caddy
+# Then update DNS A records for kfchess.com (and www) to the instance IP
+```
+
+Caddy will automatically obtain Let's Encrypt certificates once DNS resolves to the instance.
+
+### 6. Redeploy after config changes
 
 ```bash
 sudo bash /var/www/kfchess/deploy/deploy.sh
 ```
 
-### 6. Verify
+### 7. Verify
 
 ```bash
 curl https://kfchess.com/caddy-health     # should return "ok"
