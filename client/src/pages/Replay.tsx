@@ -200,7 +200,7 @@ export function Replay() {
 
   return (
     <div className="replay-page">
-      <div className="replay-content">
+      <div className={`replay-content${boardType === 'four_player' ? ' four-player' : ''}`}>
         <div className="replay-board-area" ref={boardAreaRef}>
           <div className="replay-board-wrapper">
             <ReplayBoard boardType={boardType} squareSize={squareSize} />

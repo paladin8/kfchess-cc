@@ -24,6 +24,12 @@
   gap: 2rem;
   align-items: flex-start;
   width: 100%;
+  max-width: 832px;
+  margin: 0 auto;
+}
+
+.game-content.four-player {
+  max-width: 1088px;
 }
 
 .game-board-area {

@@ -199,7 +199,7 @@ export function Game() {
 
   return (
     <div className="game-page">
-      <div className="game-content">
+      <div className={`game-content${boardType === 'four_player' ? ' four-player' : ''}`}>
         <div className="game-board-area" ref={boardAreaRef}>
           <div className="game-board-wrapper">
             <GameBoard boardType={boardType} squareSize={squareSize} />

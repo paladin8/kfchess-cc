@@ -117,12 +117,12 @@ function Header() {
               <NavLink to="/lobbies" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Lobbies</NavLink>
               <NavLink to="/campaign" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Campaign</NavLink>
               <NavLink to="/watch" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Watch</NavLink>
-              {!isLoading && !isAuthenticated && (
-                <NavLink to="/login" className={({ isActive }) => isActive ? 'nav-link-active' : ''} onClick={() => track('Click Login')}>Login</NavLink>
-              )}
               <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" className="nav-secondary" onClick={() => track('Click Reddit Link')}>Reddit</a>
               <NavLink to="/about" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>About</NavLink>
               <NavLink to="/privacy" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>Privacy</NavLink>
+              {!isLoading && !isAuthenticated && (
+                <NavLink to="/login" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`} onClick={() => track('Click Login')}>Login</NavLink>
+              )}
             </nav>
 
             {isLoading ? (
