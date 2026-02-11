@@ -22,16 +22,25 @@ from kfchess.ws.replay_handler import handle_replay_websocket
 
 
 def setup_logging() -> None:
-    """Configure logging for the application."""
-    # Create formatter
+    """Configure logging for the application.
+
+    Log level is controlled by the LOG_LEVEL env var / setting (default: INFO).
+    Third-party libraries are kept at WARNING to reduce noise.
+    Set LOG_LEVEL=DEBUG for development or troubleshooting.
+    """
+    settings = get_settings()
+    app_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+
+    # Create formatter — includes server ID for multi-worker disambiguation
+    server_id = settings.effective_server_id
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        f"%(asctime)s [{server_id}] %(name)s %(levelname)s  %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Configure root logger
+    # Configure root logger — WARNING for third-party libraries
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
+    root_logger.setLevel(logging.WARNING)
 
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
@@ -39,10 +48,19 @@ def setup_logging() -> None:
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    # Set specific loggers
-    logging.getLogger("kfchess").setLevel(logging.DEBUG)
+    # Application logger — uses configured level
+    logging.getLogger("kfchess").setLevel(app_level)
+
+    # Uvicorn — INFO for startup messages and access logs
     logging.getLogger("uvicorn").setLevel(logging.INFO)
     logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
+    # Quiet known noisy libraries even in DEBUG mode
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("hpack").setLevel(logging.WARNING)
 
 
 # Set up logging on import

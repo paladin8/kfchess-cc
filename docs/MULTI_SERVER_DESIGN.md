@@ -1,5 +1,7 @@
 # Multi-Server Design
 
+> **Note:** This document describes the abstract multi-server architecture (game routing, crash recovery, drain mode). For the current production deployment setup using Caddy + Lightsail, see [DEPLOYMENT.md](DEPLOYMENT.md). The nginx/ALB references below reflect the original design; the production implementation uses Caddy with equivalent routing.
+
 This document describes the design for running multiple Kung Fu Chess server instances behind a load balancer, supporting rolling deploys and crash recovery with minimal game disruption.
 
 ---

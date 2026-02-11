@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Rate limiting (disable for tests)
     rate_limiting_enabled: bool = True
 
+    # Logging
+    log_level: str = "INFO"
+
     @property
     def effective_server_id(self) -> str:
         """Get server ID for active game tracking.

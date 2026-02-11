@@ -1,0 +1,26 @@
+[Unit]
+Description=Kung Fu Chess Server (%i)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=exec
+User=kfchess
+Group=kfchess
+WorkingDirectory=/var/www/kfchess/server
+Environment=KFCHESS_SERVER_ID=%i
+EnvironmentFile=/var/www/kfchess/server/.env
+ExecStart=/var/www/kfchess/deploy/kfchess-worker.sh
+
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kfchess-%i
+
+[Install]
+WantedBy=multi-user.target
