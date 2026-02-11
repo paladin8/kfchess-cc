@@ -1,6 +1,6 @@
 """Improve replay browse indexes with partial indexes.
 
-Revision ID: 015_improve_replay_browse_indexes
+Revision ID: 015_replay_browse_indexes
 Revises: 014_add_active_games
 Create Date: 2026-02-10
 
@@ -14,7 +14,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "015_improve_replay_browse_indexes"
+revision: str = "015_replay_browse_indexes"
 down_revision: str | None = "014_add_active_games"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
