@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as api from '../api/client';
+import { identify, reset as resetAnalytics } from '../analytics';
 import type { ApiUser, ApiRatingStats } from '../api/types';
 
 export interface UserRatingStats {
@@ -76,6 +77,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const apiUser = await api.getCurrentUser();
       if (apiUser) {
+        identify(String(apiUser.id), { username: apiUser.username, pictureUrl: apiUser.picture_url });
         set({
           user: toUser(apiUser),
           isAuthenticated: true,
@@ -110,6 +112,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Fetch user after successful login
       const apiUser = await api.getCurrentUser();
       if (apiUser) {
+        identify(String(apiUser.id), { username: apiUser.username, pictureUrl: apiUser.picture_url });
         set({
           user: toUser(apiUser),
           isAuthenticated: true,
@@ -146,6 +149,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await api.login(email, password);
         const apiUser = await api.getCurrentUser();
         if (apiUser) {
+          identify(String(apiUser.id), { username: apiUser.username, pictureUrl: apiUser.picture_url });
           set({
             user: toUser(apiUser),
             isAuthenticated: true,
@@ -199,6 +203,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // The server may have failed but we should still log out locally
       console.error('Server logout may have failed. Local session cleared.');
     } finally {
+      resetAnalytics();
       set({
         user: null,
         isAuthenticated: false,

@@ -4,6 +4,7 @@
  * Volume sliders for music and sound effects.
  */
 
+import { track } from '../../analytics';
 import './AudioControls.css';
 
 interface AudioControlsProps {
@@ -29,7 +30,7 @@ export function AudioControls({
           min="0"
           max="100"
           value={musicVolume}
-          onChange={(e) => onMusicVolumeChange(parseInt(e.target.value, 10))}
+          onChange={(e) => { const v = parseInt(e.target.value, 10); onMusicVolumeChange(v); track('Change Volume', { source: 'game', type: 'music', volume: v }); }}
         />
       </div>
       <div className="audio-control">
@@ -40,7 +41,7 @@ export function AudioControls({
           min="0"
           max="100"
           value={soundVolume}
-          onChange={(e) => onSoundVolumeChange(parseInt(e.target.value, 10))}
+          onChange={(e) => { const v = parseInt(e.target.value, 10); onSoundVolumeChange(v); track('Change Volume', { source: 'game', type: 'sound', volume: v }); }}
         />
       </div>
     </div>

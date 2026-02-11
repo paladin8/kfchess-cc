@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
+import { track } from '../analytics';
 
 
 function Register() {
@@ -35,6 +36,7 @@ function Register() {
       return;
     }
 
+    track('Click Register', { method: 'email' });
     try {
       const loggedIn = await register(email, password, username || undefined);
       if (loggedIn) {
@@ -54,6 +56,7 @@ function Register() {
   const handleGoogleLogin = async () => {
     clearError();
     setLocalError(null);
+    track('Click Register', { method: 'google' });
     try {
       await loginWithGoogle();
     } catch {

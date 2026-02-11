@@ -11,6 +11,7 @@ import {
 } from '../utils/ratings';
 import BeltIcon from '../components/BeltIcon';
 import ReplayCard from '../components/ReplayCard';
+import { track } from '../analytics';
 import { staticUrl } from '../config';
 import type { ApiRatingStats, ApiPublicUser, ApiReplaySummary, CampaignProgress } from '../api/types';
 
@@ -60,6 +61,13 @@ function Profile() {
       navigate('/login', { replace: true });
     }
   }, [isAuthLoading, isOwnProfile, currentUser, navigate]);
+
+  // Track profile visit
+  useEffect(() => {
+    if (targetUserId) {
+      track('Visit Profile Page', { userId: targetUserId, isSelf: !!isOwnProfile });
+    }
+  }, [targetUserId, isOwnProfile]);
 
   // Reset form when user changes
   useEffect(() => {
@@ -157,6 +165,7 @@ function Profile() {
         ratings,
         isVerified: updatedUser.is_verified,
       });
+      track('Upload Profile Pic');
       setSuccess('Profile picture updated!');
     } catch (err) {
       if (err instanceof api.ApiClientError && err.detail) {
@@ -221,6 +230,7 @@ function Profile() {
         ratings,
         isVerified: updatedUser.is_verified,
       });
+      track('Update User', { username: updatedUser.username });
       setIsEditing(false);
       setSuccess('Username updated successfully!');
     } catch (err) {
@@ -348,7 +358,7 @@ function Profile() {
                     <button
                       type="button"
                       className="btn btn-link btn-sm"
-                      onClick={() => setIsEditing(true)}
+                      onClick={() => { track('Click Edit Username'); setIsEditing(true); }}
                     >
                       Edit
                     </button>
@@ -363,7 +373,7 @@ function Profile() {
                 alt={currentUser.username}
                 width={100}
                 height={100}
-                onClick={!isUploadingPicture ? () => fileInputRef.current?.click() : undefined}
+                onClick={!isUploadingPicture ? () => { track('Click Edit Profile Pic'); fileInputRef.current?.click(); } : undefined}
               />
               <input
                 ref={fileInputRef}

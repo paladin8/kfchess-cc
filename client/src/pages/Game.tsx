@@ -10,6 +10,7 @@ import { useGameStore } from '../stores/game';
 import { GameBoard, GameStatus, GameOverModal, AudioControls, ResignButton, DrawOfferButton } from '../components/game';
 import { useAudio } from '../hooks/useAudio';
 import { useSquareSize } from '../hooks/useSquareSize';
+import { track } from '../analytics';
 import './Game.css';
 
 function getConnectionColor(connectionState: string): string {
@@ -45,6 +46,9 @@ export function Game() {
   const countdown = useGameStore((s) => s.countdown);
   const captureCount = useGameStore((s) => s.captureCount);
   const playerNumber = useGameStore((s) => s.playerNumber);
+  const winner = useGameStore((s) => s.winner);
+  const winReason = useGameStore((s) => s.winReason);
+  const campaignLevel = useGameStore((s) => s.campaignLevel);
   const boardAreaRef = useRef<HTMLDivElement>(null);
 
   // Dynamic board sizing
@@ -77,6 +81,29 @@ export function Game() {
     }
     prevCaptureCountRef.current = captureCount;
   }, [captureCount, playCaptureSound]);
+
+  // Analytics: track game start
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (status === 'playing' && prevStatusRef.current !== 'playing') {
+      track('Start Game', {
+        gameId: storeGameId,
+        player: playerNumber,
+        level: campaignLevel?.level_id ?? null,
+      });
+    }
+    if (status === 'finished' && prevStatusRef.current !== 'finished') {
+      track('Finish Game', {
+        gameId: storeGameId,
+        player: playerNumber,
+        won: winner === playerNumber && playerNumber > 0,
+        winner,
+        winReason,
+        level: campaignLevel?.level_id ?? null,
+      });
+    }
+    prevStatusRef.current = status;
+  }, [status, storeGameId, playerNumber, winner, winReason, campaignLevel]);
 
   // Stable action callbacks that don't change between renders
   const doConnect = useCallback(() => {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
+import { track } from '../../analytics';
 import * as api from '../../api/client';
 import { staticUrl } from '../../config';
 
@@ -52,6 +53,7 @@ function Header() {
   }, [showDropdown]);
 
   const handleLogout = async () => {
+    track('Logout');
     setShowDropdown(false);
     await logout();
   };
@@ -59,6 +61,7 @@ function Header() {
   const handleResendVerification = async () => {
     if (!user?.email || sendingVerification || verificationSent) return;
 
+    track('Resend Verification Email');
     setSendingVerification(true);
     try {
       await api.requestVerificationEmail(user.email);
@@ -98,17 +101,23 @@ function Header() {
       )}
       <header className="header">
         <div className="header-content">
-          <Link to="/" className="logo">
-            <span className="logo-img"><img src={staticUrl('logo.png')} alt="" /></span>
-            <span className="logo-text">Kung Fu Chess</span>
-          </Link>
+          <div className="logo-group">
+            <Link to="/" className="logo">
+              <span className="logo-img"><img src={staticUrl('logo.png')} alt="" /></span>
+              <span className="logo-text">Kung Fu Chess</span>
+            </Link>
+            <a href="https://amplitude.com" target="_blank" rel="noopener noreferrer" className="header-amp" onClick={() => track('Click Amplitude Link')}>
+              <span className="header-amp-text">Powered by</span>
+              <span className="header-amp-img"><img src={staticUrl('amplitude.png')} alt="Amplitude" /></span>
+            </a>
+          </div>
           <div className="header-right">
             <nav className="nav">
               <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Home</NavLink>
               <NavLink to="/lobbies" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Lobbies</NavLink>
               <NavLink to="/campaign" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Campaign</NavLink>
               <NavLink to="/watch" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Watch</NavLink>
-              <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" className="nav-secondary">Reddit</a>
+              <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" className="nav-secondary" onClick={() => track('Click Reddit Link')}>Reddit</a>
               <NavLink to="/about" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>About</NavLink>
               <NavLink to="/privacy" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>Privacy</NavLink>
             </nav>
@@ -120,7 +129,7 @@ function Header() {
               <div className="header-menu-wrapper" ref={dropdownRef}>
                 <button
                   className="profile-pic-button"
-                  onClick={() => setShowDropdown(!showDropdown)}
+                  onClick={() => { if (!showDropdown) track('Click Profile Pic'); setShowDropdown(!showDropdown); }}
                   aria-expanded={showDropdown}
                 >
                   <div className="profile-pic">
@@ -138,7 +147,7 @@ function Header() {
                     <div className="header-dropdown-secondary">
                       <div className="header-dropdown-divider"></div>
                       <div className="header-dropdown-option">
-                        <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" onClick={() => setShowDropdown(false)}>Reddit</a>
+                        <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" onClick={() => { track('Click Reddit Link'); setShowDropdown(false); }}>Reddit</a>
                       </div>
                       <div className="header-dropdown-option">
                         <Link to="/about" onClick={() => setShowDropdown(false)}>About</Link>
@@ -153,7 +162,7 @@ function Header() {
             ) : (
               /* Unauthenticated: Login link on desktop, hamburger on mobile */
               <>
-                <NavLink to="/login" className={({ isActive }) => `login-link ${isActive ? 'nav-link-active' : ''}`}>Login</NavLink>
+                <NavLink to="/login" className={({ isActive }) => `login-link ${isActive ? 'nav-link-active' : ''}`} onClick={() => track('Click Login')}>Login</NavLink>
                 <div className="header-menu-wrapper mobile-only" ref={dropdownRef}>
                   <button
                     className="hamburger-button"
@@ -174,7 +183,7 @@ function Header() {
                       </div>
                       <div className="header-dropdown-divider"></div>
                       <div className="header-dropdown-option">
-                        <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" onClick={() => setShowDropdown(false)}>Reddit</a>
+                        <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" onClick={() => { track('Click Reddit Link'); setShowDropdown(false); }}>Reddit</a>
                       </div>
                       <div className="header-dropdown-option">
                         <Link to="/about" onClick={() => setShowDropdown(false)}>About</Link>

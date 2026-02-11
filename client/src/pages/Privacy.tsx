@@ -1,6 +1,10 @@
+import { useEffect } from 'react';
+import { track } from '../analytics';
 import './Privacy.css';
 
 function Privacy() {
+  useEffect(() => { track('Visit Privacy Policy Page'); }, []);
+
   return (
     <div className="privacy-policy">
       <div className="privacy-policy-text">

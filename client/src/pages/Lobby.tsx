@@ -18,6 +18,7 @@ import {
 import { useAuthStore } from '../stores/auth';
 import type { LobbyPlayer, LobbySettings as LobbySettingsType } from '../api/types';
 import { formatDisplayName } from '../utils/displayName';
+import { track } from '../analytics';
 import PlayerBadge from '../components/PlayerBadge';
 import './Lobby.css';
 
@@ -368,23 +369,26 @@ export function Lobby() {
   }, [navigate]);
 
   const handleLeave = useCallback(() => {
+    track('Lobby Leave', { code: urlCode });
     leaveLobby();
     navigate('/lobbies');
-  }, [leaveLobby, navigate]);
+  }, [leaveLobby, navigate, urlCode]);
 
   const handleKick = useCallback(
     (slot: number) => {
       const player = lobby?.players[slot];
+      track('Lobby Kick Player', { code: urlCode, slot, isAi: !!player?.isAi });
       if (player?.isAi) {
         removeAi(slot);
       } else {
         kickPlayer(slot);
       }
     },
-    [lobby?.players, kickPlayer, removeAi]
+    [lobby?.players, kickPlayer, removeAi, urlCode]
   );
 
   const handleCopyLink = useCallback(async () => {
+    track('Copy Friend Link', { source: 'lobby', lobbyCode: urlCode });
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopyFeedback(true);
@@ -400,7 +404,7 @@ export function Lobby() {
       setCopyFeedback(true);
       setTimeout(() => setCopyFeedback(false), 2000);
     }
-  }, []);
+  }, [urlCode]);
 
   // Show join modal for direct URL navigation
   if (showJoinModal && urlCode) {
@@ -488,7 +492,7 @@ export function Lobby() {
           isHost={isHost}
           disabled={lobby.status !== 'waiting' || !isConnected}
           canEnableRated={canEnableRated}
-          onUpdate={updateSettings}
+          onUpdate={(settings) => { track('Lobby Update Settings', { code: urlCode, ...settings }); updateSettings(settings); }}
         />
 
         <div className="player-slots">
@@ -497,7 +501,7 @@ export function Lobby() {
             {isHost && (
               <button
                 className="btn btn-sm btn-secondary"
-                onClick={() => addAi('bot:novice')}
+                onClick={() => { track('Lobby Add AI', { code: urlCode }); addAi('bot:novice'); }}
                 disabled={isFull || !isConnected}
               >
                 Add AI
@@ -514,7 +518,7 @@ export function Lobby() {
                 isMe={slot === mySlot}
                 canKick={isHost && isConnected && slot !== mySlot && !!lobby.players[slot]}
                 onKick={handleKick}
-                onChangeAiDifficulty={isHost && isConnected ? changeAiDifficulty : undefined}
+                onChangeAiDifficulty={isHost && isConnected ? (slot: number, difficulty: string) => { track('Change AI Difficulty', { code: urlCode, slot, difficulty }); changeAiDifficulty(slot, difficulty); } : undefined}
               />
             ))}
           </div>
@@ -523,20 +527,20 @@ export function Lobby() {
         <div className="lobby-actions">
           {/* Non-host players can toggle their ready status */}
           {myPlayer && !isHost && !myPlayer.isReady && (
-            <button className="btn btn-primary" onClick={() => setReady(true)} disabled={!isConnected}>
+            <button className="btn btn-primary" onClick={() => { track('Click Ready', { source: 'lobby', code: urlCode }); setReady(true); }} disabled={!isConnected}>
               Ready
             </button>
           )}
 
           {myPlayer?.isReady && !isHost && (
-            <button className="btn btn-secondary" onClick={() => setReady(false)} disabled={!isConnected}>
+            <button className="btn btn-secondary" onClick={() => { track('Lobby Cancel Ready', { code: urlCode }); setReady(false); }} disabled={!isConnected}>
               Cancel Ready
             </button>
           )}
 
           {/* Host is always ready and just clicks Start Game */}
           {isHost && (
-            <button className="btn btn-primary" onClick={startGame} disabled={!canStart || !isConnected}>
+            <button className="btn btn-primary" onClick={() => { track('Lobby Start Game', { code: urlCode, speed: lobby.settings.speed, playerCount: lobby.settings.playerCount, isRanked: lobby.settings.isRanked }); startGame(); }} disabled={!canStart || !isConnected}>
               Start Game
             </button>
           )}

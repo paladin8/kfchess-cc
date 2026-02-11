@@ -17,6 +17,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@amplitude/analytics-browser": "^2.34.1",
+    "@amplitude/plugin-session-replay-browser": "^1.25.11",
     "pixi.js": "^8.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

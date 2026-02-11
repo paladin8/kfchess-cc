@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
+import { track } from '../analytics';
 
 /**
  * Validate that a redirect path is safe (internal only)
@@ -35,6 +36,7 @@ function Login() {
     e.preventDefault();
     clearError();
 
+    track('Click Login', { method: 'email' });
     try {
       await login(email, password);
       navigate(from, { replace: true });
@@ -47,6 +49,7 @@ function Login() {
 
   const handleGoogleLogin = async () => {
     clearError();
+    track('Click Login', { method: 'google' });
     try {
       await loginWithGoogle();
     } catch {

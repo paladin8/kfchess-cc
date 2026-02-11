@@ -9,6 +9,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { fetchLiveGames, listReplays } from '../api/client';
 import type { LiveGameItem, ApiReplaySummary } from '../api/types';
 import { Leaderboard } from '../components/Leaderboard';
+import { track } from '../analytics';
 import PlayerBadge from '../components/PlayerBadge';
 import ReplayCard from '../components/ReplayCard';
 import './Watch.css';
@@ -123,7 +124,7 @@ function LiveGameCard({ game }: { game: LiveGameItem }) {
     : game.settings.speed;
 
   return (
-    <Link to={`/game/${game.game_id}`} className="match-history-item">
+    <Link to={`/game/${game.game_id}`} className="match-history-item" onClick={() => track('Click Spectate Game', { source: 'watch_live', gameId: game.game_id })}>
       <div className="match-info">
         <span className="match-date">{formatElapsed(game.started_at)}</span>
         <span className="match-speed">{modeLabel}</span>
@@ -280,7 +281,10 @@ export function Watch() {
   const liveGamesRef = useRef<LiveGamesTabHandle>(null);
   const [liveCanRefresh, setLiveCanRefresh] = useState(false);
 
+  useEffect(() => { track('Visit Live Page'); }, []);
+
   const handleTabChange = (tab: TabId) => {
+    track('Watch Tab Change', { tab });
     setActiveTab(tab);
     setSearchParams({ tab });
   };

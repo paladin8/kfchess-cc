@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLobbyStore } from '../stores/lobby';
 import { useAuthStore } from '../stores/auth';
+import { track } from '../analytics';
 import type { LobbyListItem } from '../api/types';
 import './Lobby.css';
 
@@ -95,6 +96,8 @@ export function Lobbies() {
   const [canRefresh, setCanRefresh] = useState(false);
   const lastRefreshRef = useRef<number>(0);
 
+  useEffect(() => { track('Visit Lobbies Page'); }, []);
+
   // Fetch lobbies on mount and when filters change
   useEffect(() => {
     fetchPublicLobbies(speedFilter || undefined, playerCountFilter, ratedFilter);
@@ -131,6 +134,7 @@ export function Lobbies() {
 
       try {
         await joinLobby(selectedLobby.code);
+        track('Lobby Join', { code: selectedLobby.code, speed: selectedLobby.settings.speed, playerCount: selectedLobby.settings.playerCount });
         const state = useLobbyStore.getState();
         if (state.playerKey) {
           connect(selectedLobby.code, state.playerKey);
@@ -151,6 +155,7 @@ export function Lobbies() {
       const code = joinCode.trim().toUpperCase();
       if (!code) return;
 
+      track('Lobby Join By Code', { code });
       // Navigate to lobby page which will handle joining
       navigate(`/lobby/${code}`);
     },
@@ -158,6 +163,7 @@ export function Lobbies() {
   );
 
   const handleCreateLobby = useCallback(async () => {
+    track('Lobby Create', { source: 'lobbies_page' });
     setIsCreating(true);
     setCreateError(null);
     try {

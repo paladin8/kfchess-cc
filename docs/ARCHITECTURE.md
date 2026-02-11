@@ -14,6 +14,7 @@ This document describes the system architecture for Kung Fu Chess.
 | Frontend state | Zustand | Lightweight, excellent TypeScript support |
 | Auth | FastAPI-Users | Handles email + OAuth, battle-tested |
 | Lobby persistence | Redis | Atomic operations via WATCH/MULTI/EXEC, Pub/Sub for real-time sync |
+| Analytics | Amplitude | Session replay, auto-capture, no-op when API key absent |
 
 ---
 
@@ -21,7 +22,7 @@ This document describes the system architecture for Kung Fu Chess.
 
 **Backend**: FastAPI, SQLAlchemy 2.0, Alembic, FastAPI-Users, Python 3.12+, uv, Ruff, pytest
 
-**Frontend**: React 19, TypeScript, Vite, Zustand, PixiJS, React Router 7, Vitest
+**Frontend**: React 19, TypeScript, Vite, Zustand, PixiJS, React Router 7, Amplitude, Vitest
 
 **Infrastructure**: PostgreSQL 15+, Redis 7+, nginx (WebSocket routing), docker-compose for dev
 
@@ -249,6 +250,25 @@ See `docs/FOUR_PLAYER_DESIGN.md` for board layout and implementation plan.
 
 ---
 
+## Analytics
+
+Client-side instrumentation via Amplitude (`@amplitude/analytics-browser` + session replay plugin). Controlled by the `VITE_AMPLITUDE_API_KEY` env var — when absent, all calls are safe no-ops (dev/test).
+
+**Wrapper:** `client/src/analytics.ts` exports `init`, `identify`, `track`, `reset`. All other files import from here, never from Amplitude directly.
+
+**Identity:** User ID and properties (`username`, `pictureUrl`) are set on login/register/page-load via `identify()`; cleared on logout via `reset()`.
+
+**Events tracked:**
+- Page views (Home, Campaign, Lobbies, Watch, Profile, About, Privacy)
+- Game lifecycle (Start Game, Finish Game, Resign, Offer Draw)
+- Lobby actions (Create, Join, Ready, Start, Leave, Kick, Add AI, Update Settings)
+- Campaign actions (Belt select, Level start)
+- Replay actions (Watch, Like/Unlike, Copy Link)
+- Auth actions (Login, Register, Logout, Resend Verification)
+- UI interactions (Speed change, Volume change, Copy links, Reddit/Amplitude clicks)
+
+---
+
 ## Implementation Status
 
 ### Completed
@@ -266,7 +286,7 @@ See `docs/FOUR_PLAYER_DESIGN.md` for board layout and implementation plan.
 - Game sound/music + volume controls
 - Mobile-responsive UI (dynamic board sizing, touch drag-to-move, collapsible sidebars, landscape support)
 - Comprehensive tests (1250+ backend, 420+ frontend)
+- Amplitude analytics (page views, game lifecycle, lobby actions, auth events, session replay)
 
 ### Next Steps
 1. Production deployment
-2. Analytics + instrumentation

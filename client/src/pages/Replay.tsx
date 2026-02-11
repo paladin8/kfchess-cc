@@ -14,6 +14,7 @@ import { useAudio } from '../hooks/useAudio';
 import { useSquareSize } from '../hooks/useSquareSize';
 import { formatWinReason } from '../utils/format';
 import { getReplayLikeStatus, likeReplay, unlikeReplay } from '../api/client';
+import { track } from '../analytics';
 import PlayerBadge from '../components/PlayerBadge';
 import './Replay.css';
 
@@ -110,6 +111,7 @@ export function Replay() {
 
     // Connect to replay WebSocket
     if (isActiveRef.current) {
+      track('Watch Replay', { historyId: replayId });
       connect(replayId);
     }
 
@@ -137,6 +139,7 @@ export function Replay() {
 
   const copyReplayLink = useCallback(() => {
     if (!replayId) return;
+    track('Copy Replay Link', { source: 'replay', gameId: replayId, historyId: replayId });
     const link = `${window.location.origin}/replay/${replayId}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
@@ -148,6 +151,7 @@ export function Replay() {
     if (!isAuthenticated || isLiking || !replayId) return;
 
     setIsLiking(true);
+    track(userHasLiked ? 'Unlike Replay' : 'Like Replay', { replayId });
     try {
       const response = userHasLiked
         ? await unlikeReplay(replayId)

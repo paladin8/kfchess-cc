@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import { useGameStore, selectIsPlayerEliminated } from '../../stores/game';
+import { track } from '../../analytics';
 
 export function ResignButton() {
   const [showConfirm, setShowConfirm] = useState(false);
@@ -19,6 +20,8 @@ export function ResignButton() {
   }
 
   const handleResign = () => {
+    const { gameId } = useGameStore.getState();
+    track('Resign', { gameId, player: playerNumber });
     useGameStore.getState().resign();
     setShowConfirm(false);
   };

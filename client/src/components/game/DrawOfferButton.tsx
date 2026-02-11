@@ -5,6 +5,7 @@
  */
 
 import { useGameStore, selectIsPlayerEliminated } from '../../stores/game';
+import { track } from '../../analytics';
 
 export function DrawOfferButton() {
   const playerNumber = useGameStore((s) => s.playerNumber);
@@ -50,10 +51,16 @@ export function DrawOfferButton() {
       ? 'Accept Draw'
       : 'Offer Draw';
 
+  const handleClick = () => {
+    const { gameId } = useGameStore.getState();
+    track('Offer Draw', { gameId, player: playerNumber });
+    offerDraw();
+  };
+
   return (
     <button
       className={`draw-offer-button${alreadyOffered ? ' draw-offered' : ''}`}
-      onClick={offerDraw}
+      onClick={handleClick}
       disabled={alreadyOffered}
     >
       {buttonText}

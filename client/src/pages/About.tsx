@@ -1,7 +1,11 @@
+import { useEffect } from 'react';
+import { track } from '../analytics';
 import { staticUrl } from '../config';
 import './About.css';
 
 function About() {
+  useEffect(() => { track('Visit About Page'); }, []);
+
   return (
     <div className="about">
       <div className="about-image">

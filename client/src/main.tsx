@@ -1,7 +1,10 @@
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { init as initAnalytics } from './analytics';
 import './styles/index.css';
+
+initAnalytics(import.meta.env.VITE_AMPLITUDE_API_KEY);
 
 // Note: StrictMode disabled due to conflicts with PixiJS WebGL context management.
 // PixiJS doesn't handle the double-mount/unmount pattern well.

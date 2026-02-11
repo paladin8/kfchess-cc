@@ -105,6 +105,29 @@ a:hover {
   display: block;
 }
 
+.logo-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.header-amp {
+  display: flex;
+  align-items: center;
+  color: var(--color-text);
+}
+
+.header-amp-text {
+  font-size: 13px;
+}
+
+.header-amp-img {
+  height: 25px;
+}
+
+.header-amp-img img {
+  height: 100%;
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -260,6 +283,10 @@ a:hover {
 /* Mobile responsive header */
 @media (max-width: 768px) {
   .logo-text {
+    display: none;
+  }
+
+  .header-amp {
     display: none;
   }
 

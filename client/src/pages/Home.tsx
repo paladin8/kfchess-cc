@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLobbyStore } from '../stores/lobby';
+import { track } from '../analytics';
 import { staticUrl } from '../config';
 import './Home.css';
 
@@ -22,9 +23,12 @@ function Home() {
     return (localStorage.getItem('friendlySpeed') as Speed) || 'standard';
   });
 
+  useEffect(() => { track('Visit Home Page'); }, []);
+
   const handleSpeedChange = (newSpeed: Speed) => {
     setSpeed(newSpeed);
     localStorage.setItem('friendlySpeed', newSpeed);
+    track('Change Friendly Speed', { speed: newSpeed });
   };
 
   const handlePlayVsAI = () => {
@@ -52,6 +56,7 @@ function Home() {
         connect(code, state.playerKey);
       }
       navigate(`/lobby/${code}`);
+      track('Create New Game', { speed, isBot: true, boardType: selectedBoardType, playerCount });
     } catch (error) {
       console.error('Failed to create game:', error);
       alert('Failed to create game. Please try again.');
@@ -81,6 +86,7 @@ function Home() {
         connect(code, state.playerKey);
       }
       navigate(`/lobby/${code}`);
+      track('Create New Game', { speed, isBot: false, playerCount: 2 });
     } catch (error) {
       console.error('Failed to create game:', error);
       alert('Failed to create game. Please try again.');

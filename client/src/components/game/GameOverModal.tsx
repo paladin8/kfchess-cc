@@ -14,6 +14,7 @@ import {
   getRatingChangeClass,
   getBeltDisplayName,
 } from '../../utils/ratings';
+import { track } from '../../analytics';
 import BeltIcon from '../BeltIcon';
 
 export function GameOverModal() {
@@ -86,6 +87,7 @@ export function GameOverModal() {
   };
 
   const handleReturnToLobby = () => {
+    track('Click Play Again', { source: 'game_over', player: playerNumber, gameId, level: campaignLevel?.level_id ?? null });
     // Send return_to_lobby message and navigate
     returnToLobby();
     clearPendingGame();
@@ -105,12 +107,14 @@ export function GameOverModal() {
 
   const handleViewReplay = () => {
     if (gameId) {
+      track('Watch Replay', { historyId: gameId });
       reset();
       navigate(`/replay/${gameId}`);
     }
   };
 
   const handleBackToHome = () => {
+    track('Cancel Game', { source: 'game_over', player: playerNumber, gameId, level: campaignLevel?.level_id ?? null });
     clearPendingGame();
     reset();
     navigate('/');
@@ -121,6 +125,7 @@ export function GameOverModal() {
     if (!campaignLevel.has_next_level) return;
     const nextLevelId = campaignLevel.level_id + 1;
 
+    track('Click Next Level', { source: 'game_over', player: playerNumber, gameId, level: campaignLevel.level_id });
     setIsStartingNext(true);
     try {
       const { gameId: newGameId, playerKey } = await startLevel(nextLevelId);
@@ -134,6 +139,7 @@ export function GameOverModal() {
   const handleRestartLevel = async () => {
     if (!campaignLevel || isStartingNext) return;
 
+    track('Restart Level', { source: 'game_over', player: playerNumber, gameId, level: campaignLevel.level_id });
     setIsStartingNext(true);
     try {
       const { gameId: newGameId, playerKey } = await startLevel(campaignLevel.level_id);
@@ -145,6 +151,7 @@ export function GameOverModal() {
   };
 
   const handleBackToCampaign = () => {
+    track('Cancel Campaign', { source: 'game_over' });
     reset();
     navigate('/campaign');
   };

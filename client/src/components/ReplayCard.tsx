@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import './ReplayCard.css';
 import PlayerBadge from './PlayerBadge';
+import { track } from '../analytics';
 import { formatDate, formatDuration, formatWinReason } from '../utils/format';
 import type { ApiReplaySummary } from '../api/types';
 
@@ -27,7 +28,7 @@ export default function ReplayCard({ replay }: ReplayCardProps) {
   }
 
   return (
-    <Link to={`/replay/${replay.game_id}`} className="match-history-item">
+    <Link to={`/replay/${replay.game_id}`} className="match-history-item" onClick={() => track('Click Watch Replay', { source: 'replay_card', historyId: replay.game_id })}>
       <div className="match-info">
         <span className="match-date">{formatDate(replay.created_at)}</span>
         <span className="match-speed">{modeLabel}</span>

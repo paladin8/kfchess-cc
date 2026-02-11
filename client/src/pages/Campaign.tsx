@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
 import { useCampaignStore, getLevelsForBelt } from '../stores/campaign';
 import { BeltSelector, LevelGrid } from '../components/campaign';
+import { track } from '../analytics';
 import './Campaign.css';
 
 function Campaign() {
@@ -40,15 +41,19 @@ function Campaign() {
     }
   }, [isAuthenticated, init]);
 
+  useEffect(() => { track('Visit Campaign Page'); }, []);
+
   const handleSelectBelt = useCallback(
     (belt: number) => {
       selectBelt(belt);
+      track('Click Campaign Belt', { belt, isCompleted: !!progress?.beltsCompleted[belt] });
     },
-    [selectBelt]
+    [selectBelt, progress?.beltsCompleted]
   );
 
   const handleStartLevel = useCallback(
     async (levelId: number) => {
+      track('Click Campaign Level', { level: levelId, isCompleted: !!progress?.levelsCompleted[levelId] });
       try {
         const { gameId, playerKey } = await startLevel(levelId);
         navigate(`/game/${gameId}?playerKey=${playerKey}`);
@@ -56,7 +61,7 @@ function Campaign() {
         // Error is set in store
       }
     },
-    [startLevel, navigate]
+    [startLevel, navigate, progress?.levelsCompleted]
   );
 
   // Don't render until auth check is complete
