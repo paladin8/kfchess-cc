@@ -17,7 +17,6 @@
 #     (Caddy needs this to obtain a Let's Encrypt certificate)
 #   - Ports 80 and 443 must be open in the Lightsail firewall
 #   - deploy/.env must exist with POSTGRES_PASSWORD set (see deploy/.env.example)
-#   - SSH key for git access (auto-copied from calling user, or pre-configured)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -120,41 +119,7 @@ if ! id kfchess &>/dev/null; then
     usermod -aG docker kfchess
 fi
 
-# ─── 7. Set up SSH key for kfchess user (if using SSH git URL) ──
-
-if [[ "$REPO_URL" == git@* ]]; then
-    KFCHESS_SSH_DIR="/home/kfchess/.ssh"
-    if [[ ! -f "$KFCHESS_SSH_DIR/id_ed25519" && ! -f "$KFCHESS_SSH_DIR/id_rsa" ]]; then
-        log "Setting up SSH key for kfchess user"
-        # Copy the calling user's SSH key (the one used to SSH into this machine)
-        CALLER_HOME=$(eval echo "~${SUDO_USER:-root}")
-        if [[ -d "$CALLER_HOME/.ssh" ]]; then
-            mkdir -p "$KFCHESS_SSH_DIR"
-            # Copy key files (id_ed25519 preferred, fallback to id_rsa)
-            for keyfile in id_ed25519 id_rsa; do
-                if [[ -f "$CALLER_HOME/.ssh/$keyfile" ]]; then
-                    cp "$CALLER_HOME/.ssh/$keyfile" "$KFCHESS_SSH_DIR/$keyfile"
-                    [[ -f "$CALLER_HOME/.ssh/${keyfile}.pub" ]] && \
-                        cp "$CALLER_HOME/.ssh/${keyfile}.pub" "$KFCHESS_SSH_DIR/${keyfile}.pub"
-                    break
-                fi
-            done
-            # Copy known_hosts to avoid host verification prompt
-            [[ -f "$CALLER_HOME/.ssh/known_hosts" ]] && \
-                cp "$CALLER_HOME/.ssh/known_hosts" "$KFCHESS_SSH_DIR/known_hosts"
-            chown -R kfchess:kfchess "$KFCHESS_SSH_DIR"
-            chmod 700 "$KFCHESS_SSH_DIR"
-            chmod 600 "$KFCHESS_SSH_DIR"/*
-        else
-            die "No SSH keys found in $CALLER_HOME/.ssh/. Either:
-  1. Set up SSH keys for kfchess: sudo -u kfchess ssh-keygen -t ed25519
-     Then add the public key to your git provider and re-run bootstrap.
-  2. Use HTTPS: set REPO_URL=https://github.com/... in config.sh"
-        fi
-    fi
-fi
-
-# ─── 8. Clone repo ───────────────────────────────────────────
+# ─── 7. Clone repo ───────────────────────────────────────────
 
 if [[ ! -d "$DEPLOY_DIR/.git" ]]; then
     log "Cloning repo to $DEPLOY_DIR"
@@ -171,7 +136,7 @@ cp "$DEPLOY_ENV" "$DEPLOY_DIR/deploy/.env"
 chown kfchess:kfchess "$DEPLOY_DIR/deploy/.env"
 chmod 600 "$DEPLOY_DIR/deploy/.env"
 
-# ─── 9. Environment files ────────────────────────────────────
+# ─── 8. Environment files ────────────────────────────────────
 
 if [[ ! -f "$DEPLOY_DIR/server/.env" ]]; then
     log "Creating server .env from template"
@@ -210,7 +175,7 @@ EOF
     chown kfchess:kfchess "$DEPLOY_DIR/client/.env"
 fi
 
-# ─── 10. Start Postgres + Redis ───────────────────────────────
+# ─── 9. Start Postgres + Redis ────────────────────────────────
 
 log "Starting Postgres and Redis"
 cd "$DEPLOY_DIR"
@@ -229,7 +194,7 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-# ─── 11. Install dependencies ────────────────────────────────
+# ─── 10. Install dependencies ────────────────────────────────
 
 log "Installing backend dependencies"
 sudo -u kfchess bash -c "cd $DEPLOY_DIR/server && uv sync"
@@ -237,24 +202,24 @@ sudo -u kfchess bash -c "cd $DEPLOY_DIR/server && uv sync"
 log "Installing frontend dependencies and building"
 sudo -u kfchess bash -c "cd $DEPLOY_DIR/client && npm ci && npm run build"
 
-# ─── 12. Run migrations ──────────────────────────────────────
+# ─── 11. Run migrations ──────────────────────────────────────
 
 log "Running database migrations"
 sudo -u kfchess bash -c "cd $DEPLOY_DIR/server && uv run alembic upgrade head"
 
-# ─── 13. Install systemd services ────────────────────────────
+# ─── 12. Install systemd services ────────────────────────────
 
 log "Installing systemd services"
 cp "$DEPLOY_DIR/deploy/systemd/kfchess@.service" /etc/systemd/system/kfchess@.service
 chmod +x "$DEPLOY_DIR/deploy/kfchess-worker.sh"
 systemctl daemon-reload
 
-# ─── 14. Generate and install Caddyfile ───────────────────────
+# ─── 13. Generate and install Caddyfile ───────────────────────
 
 log "Generating Caddyfile"
 bash "$DEPLOY_DIR/deploy/generate-caddyfile.sh" --install
 
-# ─── 15. Start services ──────────────────────────────────────
+# ─── 14. Start services ──────────────────────────────────────
 
 log "Starting worker services"
 for i in $(seq 1 "$NUM_WORKERS"); do

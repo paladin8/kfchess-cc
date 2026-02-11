@@ -15,5 +15,5 @@ DEPLOY_DIR=/var/www/kfchess
 DOMAIN=kfchess.com
 
 # Git remote
-REPO_URL=git@github.com:paladin8/kfchess-cc.git
+REPO_URL=https://github.com/paladin8/kfchess-cc.git
 BRANCH=main

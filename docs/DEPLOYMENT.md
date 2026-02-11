@@ -31,7 +31,7 @@ Docker Compose
 - AWS Lightsail instance running **Ubuntu 24.04 LTS**
 - DNS A record: `kfchess.com` → instance public IP
 - Lightsail firewall: ports **80** and **443** open
-- SSH access to the instance (the bootstrap script copies your SSH key to the `kfchess` user automatically)
+- SSH access to the instance
 
 ## Files
 
@@ -59,7 +59,7 @@ SSH in and clone the repo to a temporary location (or scp the `deploy/` director
 
 ```bash
 ssh user@<instance-ip>
-git clone git@github.com:paladin8/kfchess-cc.git /tmp/kfchess-setup
+git clone https://github.com/paladin8/kfchess-cc /tmp/kfchess-setup
 cd /tmp/kfchess-setup/deploy
 ```
 
@@ -78,7 +78,7 @@ Review `config.sh` — the defaults should be fine for most setups:
 NUM_WORKERS=2                                     # uvicorn worker processes
 DEPLOY_DIR=/var/www/kfchess                       # where the repo lives on the server
 DOMAIN=kfchess.com                                # your domain
-REPO_URL=git@github.com:paladin8/kfchess-cc.git   # git remote
+REPO_URL=https://github.com/paladin8/kfchess-cc.git  # git remote
 ```
 
 ### 3. Bootstrap
