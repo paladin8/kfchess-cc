@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 # See: https://docs.python.org/3/library/asyncio-task.html#creating-tasks
 _background_tasks: set[asyncio.Task] = set()
 
+# Periodic cleanup task
+_cleanup_task: asyncio.Task | None = None
+CLEANUP_INTERVAL_SECONDS = 300  # 5 minutes
+CLEANUP_MAX_AGE_HOURS = 2
+
 
 async def _register_game(
     game_id: str,
@@ -116,10 +121,7 @@ def register_restored_game(
     players_info = []
     for pnum, pid in state.players.items():
         is_ai = pnum in ai_player_nums
-        name = pid.split(":", 1)[1] if ":" in pid else pid
-        if is_ai:
-            name = f"Bot ({name})"
-        players_info.append({"slot": pnum, "username": name, "is_ai": is_ai})
+        players_info.append({"slot": pnum, "player_id": pid, "is_ai": is_ai})
 
     game_type = "campaign" if campaign_level_id else "restored"
     register_game_fire_and_forget(
@@ -131,3 +133,67 @@ def register_restored_game(
         players=players_info,
         campaign_level_id=campaign_level_id,
     )
+
+
+async def deregister_game(game_id: str) -> None:
+    """Deregister a game from the active_games table (awaitable).
+
+    Use this instead of the fire-and-forget variant when you can afford
+    to wait, e.g. at the end of a game loop where reliability matters.
+    """
+    try:
+        async with async_session_factory() as session:
+            repo = ActiveGameRepository(session)
+            await repo.deregister(game_id)
+            await session.commit()
+    except Exception:
+        logger.exception(f"Failed to deregister active game {game_id}")
+
+
+async def _cleanup_loop() -> None:
+    """Background loop that periodically removes stale active_games entries."""
+    try:
+        while True:
+            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+            try:
+                async with async_session_factory() as session:
+                    repo = ActiveGameRepository(session)
+                    removed = await repo.cleanup_stale(
+                        max_age_hours=CLEANUP_MAX_AGE_HOURS,
+                    )
+                    if removed:
+                        await session.commit()
+                        logger.info(
+                            f"Periodic cleanup: removed {removed} stale "
+                            f"active game entries"
+                        )
+            except Exception:
+                logger.exception("Error in periodic active-game cleanup")
+    except asyncio.CancelledError:
+        raise
+
+
+async def start_cleanup_loop() -> None:
+    """Start the periodic stale-game cleanup task."""
+    global _cleanup_task
+    if _cleanup_task is not None and not _cleanup_task.done():
+        return
+    _cleanup_task = asyncio.create_task(_cleanup_loop())
+    logger.info(
+        f"Active-game cleanup loop started "
+        f"(interval={CLEANUP_INTERVAL_SECONDS}s, "
+        f"max_age={CLEANUP_MAX_AGE_HOURS}h)"
+    )
+
+
+async def stop_cleanup_loop() -> None:
+    """Stop the periodic stale-game cleanup task."""
+    global _cleanup_task
+    if _cleanup_task is not None and not _cleanup_task.done():
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+    _cleanup_task = None
+    logger.info("Active-game cleanup loop stopped")

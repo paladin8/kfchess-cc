@@ -577,9 +577,11 @@ class TestLiveGames:
         mock_record.game_id = "test-game-123"
         mock_record.game_type = "lobby"
         mock_record.lobby_code = "ABC123"
+        mock_record.campaign_level_id = None
         mock_record.speed = "standard"
         mock_record.player_count = 2
         mock_record.board_type = "standard"
+        mock_record.server_id = "remote-server"
         mock_record.players = [
             {"slot": 1, "username": "Player1", "is_ai": False},
             {"slot": 2, "username": "Bot", "is_ai": True},
@@ -589,12 +591,18 @@ class TestLiveGames:
         mock_repo = AsyncMock()
         mock_repo.list_active.return_value = [mock_record]
 
-        with patch("kfchess.api.games.async_session_factory") as mock_factory:
+        with patch("kfchess.api.games.async_session_factory") as mock_factory, \
+             patch("kfchess.api.games.ActiveGameRepository", return_value=mock_repo), \
+             patch("kfchess.api.games.get_redis", new_callable=AsyncMock) as mock_redis, \
+             patch("kfchess.api.games.get_game_server", new_callable=AsyncMock, return_value="remote-server"), \
+             patch("kfchess.api.games.is_server_alive", new_callable=AsyncMock, return_value=True), \
+             patch("kfchess.api.games.get_settings") as mock_settings:
             mock_session = AsyncMock()
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
-            with patch("kfchess.api.games.ActiveGameRepository", return_value=mock_repo):
-                response = client.get("/api/games/live")
+            mock_settings.return_value.effective_server_id = "my-server"
+            mock_redis.return_value = MagicMock()
+            response = client.get("/api/games/live")
 
         assert response.status_code == 200
         data = response.json()

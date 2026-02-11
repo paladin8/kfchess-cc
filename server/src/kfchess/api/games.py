@@ -17,10 +17,16 @@ from kfchess.game.collision import (
     is_piece_on_cooldown,
 )
 from kfchess.game.state import Speed
-from kfchess.redis.routing import register_routing
-from kfchess.services.game_registry import register_game_fire_and_forget
+from kfchess.redis.client import get_redis
+from kfchess.redis.heartbeat import is_server_alive
+from kfchess.redis.routing import get_game_server, register_routing
+from kfchess.services.game_registry import (
+    deregister_game_fire_and_forget,
+    register_game_fire_and_forget,
+)
 from kfchess.services.game_service import get_game_service
-from kfchess.utils.display_name import resolve_player_info
+from kfchess.settings import get_settings
+from kfchess.utils.display_name import resolve_player_info, resolve_player_info_batch
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +99,7 @@ class LiveGameItem(BaseModel):
     game_id: str
     game_type: str
     lobby_code: str | None = None
+    campaign_level_id: int | None = None
     players: list[LiveGamePlayer]
     settings: dict
     current_tick: int
@@ -145,10 +152,7 @@ async def create_game(request: CreateGameRequest) -> CreateGameResponse:
             players_info = []
             for pnum, pid in managed.state.players.items():
                 is_ai = pnum in managed.ai_players
-                name = pid.split(":", 1)[1] if ":" in pid else pid
-                if is_ai:
-                    name = f"Bot ({name})"
-                players_info.append({"slot": pnum, "username": name, "is_ai": is_ai})
+                players_info.append({"slot": pnum, "player_id": pid, "is_ai": is_ai})
             register_game_fire_and_forget(
                 game_id=game_id,
                 game_type="quickplay",
@@ -181,10 +185,13 @@ async def list_live_games(
 ) -> LiveGamesResponse:
     """List games currently in progress.
 
-    Queries the active_games database registry, which tracks all running games
-    across all server instances and game types (lobby, campaign, quickplay).
+    Queries the active_games database registry, then validates each entry
+    against in-memory state and Redis routing/heartbeat to filter out stale
+    games. Definitely-dead games (ours but not in memory, or no routing key)
+    are deregistered on the spot.
     """
     service = get_game_service()
+    my_server_id = get_settings().effective_server_id
 
     async with async_session_factory() as session:
         repo = ActiveGameRepository(session)
@@ -194,28 +201,78 @@ async def list_live_games(
             game_type=game_type,
         )
 
-    games = []
+    # Validate each record against live state
+    r = await get_redis()
+    stale_game_ids: list[str] = []
+    valid_records: list[tuple] = []  # (record, current_tick)
     for record in active_records:
-        # Get current tick from in-memory state if on this server
         state = service.get_game(record.game_id)
-        current_tick = state.current_tick if state else 0
 
-        players = [
-            LiveGamePlayer(
-                slot=p["slot"],
-                username=p["username"],
-                is_ai=p.get("is_ai", False),
-                user_id=p.get("user_id"),
-                picture_url=p.get("picture_url"),
-            )
-            for p in record.players
-        ]
+        if state is not None:
+            # Game is in memory on this server — definitely live
+            pass
+        elif record.server_id == my_server_id:
+            # Owned by us but not in memory — definitely dead
+            stale_game_ids.append(record.game_id)
+            continue
+        else:
+            # On a remote server — check routing + heartbeat
+            routing_owner = await get_game_server(r, record.game_id)
+            if routing_owner is None:
+                # No routing key — game is gone
+                stale_game_ids.append(record.game_id)
+                continue
+            if not await is_server_alive(r, routing_owner):
+                # Owner server is dead — omit but don't deregister
+                # (might be recoverable via crash recovery)
+                continue
+
+        valid_records.append((record, state.current_tick if state else 0))
+
+    # Batch-resolve player display names from player_ids
+    players_dicts: list[dict[int, str]] = []
+    for record, _ in valid_records:
+        pid_map: dict[int, str] = {}
+        for p in record.players:
+            player_id = p.get("player_id")
+            if player_id:
+                pid_map[p["slot"]] = player_id
+        players_dicts.append(pid_map)
+
+    async with async_session_factory() as session:
+        resolved_list = await resolve_player_info_batch(session, players_dicts)
+
+    # Build response
+    games = []
+    for (record, current_tick), resolved in zip(valid_records, resolved_list, strict=True):
+        players = []
+        for p in record.players:
+            slot = p["slot"]
+            display = resolved.get(slot)
+            if display:
+                players.append(LiveGamePlayer(
+                    slot=slot,
+                    username=display.name,
+                    is_ai=p.get("is_ai", False),
+                    user_id=display.user_id,
+                    picture_url=display.picture_url,
+                ))
+            else:
+                # Fallback for legacy rows without player_id
+                players.append(LiveGamePlayer(
+                    slot=slot,
+                    username=p.get("username", f"Player {slot}"),
+                    is_ai=p.get("is_ai", False),
+                    user_id=p.get("user_id"),
+                    picture_url=p.get("picture_url"),
+                ))
 
         games.append(
             LiveGameItem(
                 game_id=record.game_id,
                 game_type=record.game_type,
                 lobby_code=record.lobby_code,
+                campaign_level_id=record.campaign_level_id,
                 players=players,
                 settings={
                     "speed": record.speed,
@@ -226,6 +283,10 @@ async def list_live_games(
                 started_at=record.started_at.isoformat() if record.started_at else None,
             )
         )
+
+    # Deregister definitely-dead games in background
+    for game_id in stale_game_ids:
+        deregister_game_fire_and_forget(game_id)
 
     return LiveGamesResponse(games=games)
 

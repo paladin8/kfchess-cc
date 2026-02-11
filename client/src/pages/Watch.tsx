@@ -119,9 +119,14 @@ function formatElapsed(startedAt: string | null): string {
 }
 
 function LiveGameCard({ game }: { game: LiveGameItem }) {
-  const modeLabel = game.settings.playerCount > 2
-    ? `${game.settings.speed} (${game.settings.playerCount}p)`
-    : game.settings.speed;
+  let modeLabel: string;
+  if (game.campaign_level_id !== null && game.campaign_level_id !== undefined) {
+    modeLabel = `Campaign Level ${game.campaign_level_id + 1}`;
+  } else if (game.settings.playerCount > 2) {
+    modeLabel = `${game.settings.speed} (${game.settings.playerCount}p)`;
+  } else {
+    modeLabel = game.settings.speed;
+  }
 
   return (
     <Link to={`/game/${game.game_id}`} className="match-history-item" onClick={() => track('Click Spectate Game', { source: 'watch_live', gameId: game.game_id })}>

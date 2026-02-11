@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kfchess.db.models import ActiveGame
@@ -29,20 +30,38 @@ class ActiveGameRepository:
         lobby_code: str | None = None,
         campaign_level_id: int | None = None,
     ) -> None:
-        """Register a new active game."""
-        record = ActiveGame(
-            game_id=game_id,
-            game_type=game_type,
-            speed=speed,
-            player_count=player_count,
-            board_type=board_type,
-            players=players,
-            lobby_code=lobby_code,
-            campaign_level_id=campaign_level_id,
-            server_id=server_id,
+        """Register an active game (upsert).
+
+        Uses INSERT ... ON CONFLICT UPDATE so that restored games
+        overwrite stale rows left by a crashed server.
+        """
+        values = {
+            "game_id": game_id,
+            "game_type": game_type,
+            "speed": speed,
+            "player_count": player_count,
+            "board_type": board_type,
+            "players": players,
+            "lobby_code": lobby_code,
+            "campaign_level_id": campaign_level_id,
+            "server_id": server_id,
+        }
+        stmt = pg_insert(ActiveGame).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["game_id"],
+            set_={
+                "game_type": stmt.excluded.game_type,
+                "speed": stmt.excluded.speed,
+                "player_count": stmt.excluded.player_count,
+                "board_type": stmt.excluded.board_type,
+                "players": stmt.excluded.players,
+                "lobby_code": stmt.excluded.lobby_code,
+                "campaign_level_id": stmt.excluded.campaign_level_id,
+                "server_id": stmt.excluded.server_id,
+                # started_at intentionally omitted — preserve the original
+            },
         )
-        self.session.add(record)
-        await self.session.flush()
+        await self.session.execute(stmt)
         logger.info(f"Registered active game {game_id} (type={game_type})")
 
     async def deregister(self, game_id: str) -> bool:

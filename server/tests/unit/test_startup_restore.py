@@ -201,7 +201,10 @@ async def _run_cas_restore_pipeline(
     service: GameService,
     my_server_id: str = "my-server",
 ) -> int:
-    """Simulate the CAS-based startup restoration pipeline from main.py (Phase 5)."""
+    """Simulate the CAS-based startup restoration pipeline from main.py.
+
+    Must mirror the logic in main.py lifespan startup.
+    """
     from kfchess.redis.snapshot_store import list_snapshot_game_ids
 
     game_ids = await list_snapshot_game_ids(redis)
@@ -210,17 +213,22 @@ async def _run_cas_restore_pipeline(
         snapshot = await load_snapshot(redis, gid)
         if snapshot is None:
             continue
-        if snapshot.server_id and await is_server_alive(redis, snapshot.server_id):
-            continue
 
-        # Atomically claim the routing key from the dead server
-        if snapshot.server_id:
+        # Skip games owned by a different server that is still alive
+        if snapshot.server_id and snapshot.server_id != my_server_id:
+            if await is_server_alive(redis, snapshot.server_id):
+                continue
+            # Atomically claim the routing key from the dead server
             claimed = await claim_game_routing(
                 redis, gid, snapshot.server_id, my_server_id
             )
             if not claimed:
                 continue
+        elif snapshot.server_id == my_server_id:
+            # Same server restarting — refresh the routing key
+            await register_game_routing(redis, gid, my_server_id)
         else:
+            # No owner (empty server_id) — just register directly
             await register_game_routing(redis, gid, my_server_id)
 
         if service.restore_game(snapshot):
@@ -300,3 +308,33 @@ class TestStartupRestoreWithCAS:
         else:
             assert owner == "server-B"
             assert service_b.get_game("CAS00004") is not None
+
+    @pytest.mark.asyncio
+    async def test_same_server_id_restores_own_games(self, redis) -> None:
+        """Server restarting with the same ID restores its own games.
+
+        When KFCHESS_SERVER_ID is set to a stable value (e.g., 'worker1'),
+        the restarted server must restore games from its previous run even
+        though its own heartbeat is now alive.
+        """
+        server_id = "worker1"
+
+        # Simulate previous run: snapshot and routing key from same server_id
+        snapshot = _make_snapshot("OWNSNAP1", server_id=server_id)
+        await save_snapshot(redis, snapshot)
+        await register_game_routing(redis, "OWNSNAP1", server_id)
+
+        # Start heartbeat (as main.py does before restore)
+        await start_heartbeat(redis, server_id)
+        import asyncio
+        await asyncio.sleep(0.05)
+
+        service = GameService()
+        restored = await _run_cas_restore_pipeline(redis, service, server_id)
+
+        assert restored == 1
+        assert service.get_game("OWNSNAP1") is not None
+        # Routing key still points to us
+        assert await get_game_server(redis, "OWNSNAP1") == server_id
+
+        await stop_heartbeat()

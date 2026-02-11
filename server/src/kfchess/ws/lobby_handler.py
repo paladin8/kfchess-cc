@@ -528,12 +528,18 @@ async def _create_game_from_lobby(
     # Register in active games and routing registries
     players_info = []
     for slot, player in lobby.players.items():
+        if player.player_id:
+            pid = player.player_id
+        elif player.is_ai and player.ai_type:
+            pid = player.ai_type
+        elif player.user_id:
+            pid = f"u:{player.user_id}"
+        else:
+            pid = f"guest:{slot}"
         players_info.append({
             "slot": slot,
-            "username": player.username,
+            "player_id": pid,
             "is_ai": player.is_ai,
-            "user_id": player.user_id,
-            "picture_url": player.picture_url,
         })
     register_game_fire_and_forget(
         game_id=game_id_created,

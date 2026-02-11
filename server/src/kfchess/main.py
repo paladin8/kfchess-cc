@@ -93,6 +93,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.exception("Failed to clean up stale active games on startup")
 
+    # Start periodic cleanup of stale active_games rows (DB-only, no Redis needed)
+    try:
+        from kfchess.services.game_registry import start_cleanup_loop
+
+        await start_cleanup_loop()
+    except Exception:
+        logger.exception("Failed to start active-game cleanup loop")
+
     # Connect to Redis, start heartbeat, and restore games from snapshots
     try:
         from kfchess.redis.client import get_redis
@@ -118,12 +126,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             snapshot = await load_snapshot(r, gid)
             if snapshot is None:
                 continue
-            # Skip games owned by a server that is still alive
-            if snapshot.server_id and await is_server_alive(r, snapshot.server_id):
-                continue
-
-            # Atomically claim the routing key from the dead server
-            if snapshot.server_id:
+            # Skip games owned by a different server that is still alive.
+            # If the snapshot belongs to US (same server_id after restart),
+            # always restore it — our heartbeat is alive because we just
+            # started it, not because the old process is still running.
+            if snapshot.server_id and snapshot.server_id != server_id:
+                if await is_server_alive(r, snapshot.server_id):
+                    continue
+                # Atomically claim the routing key from the dead server
                 claimed = await claim_game_routing(
                     r, gid, snapshot.server_id, server_id
                 )
@@ -132,6 +142,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         f"Game {gid} already claimed by another server, skipping"
                     )
                     continue
+            elif snapshot.server_id == server_id:
+                # Same server restarting — refresh the routing key
+                await register_game_routing(r, gid, server_id)
             else:
                 # No owner (empty server_id) — just register directly
                 await register_game_routing(r, gid, server_id)
@@ -241,7 +254,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         from kfchess.redis.client import close_redis
         from kfchess.redis.heartbeat import stop_heartbeat
+        from kfchess.services.game_registry import stop_cleanup_loop
 
+        await stop_cleanup_loop()
         await stop_heartbeat()  # Idempotent — no-op if already stopped during drain
         await close_redis()
     except Exception:

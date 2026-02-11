@@ -239,11 +239,10 @@ async def start_level(
 
     # Register in active games and routing registries
     players_info = [
-        {"slot": 1, "username": user.username or f"User {user.id}", "is_ai": False,
-         "user_id": user.id, "picture_url": user.picture_url},
+        {"slot": 1, "player_id": f"u:{user.id}", "is_ai": False},
     ]
     for p in range(2, level.player_count + 1):
-        players_info.append({"slot": p, "username": "Campaign Bot", "is_ai": True})
+        players_info.append({"slot": p, "player_id": "bot:campaign", "is_ai": True})
     register_game_fire_and_forget(
         game_id=game_id,
         game_type="campaign",

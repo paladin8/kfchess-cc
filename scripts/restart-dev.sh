@@ -11,10 +11,10 @@ pkill -f "uvicorn kfchess.main:app" 2>/dev/null || true
 pkill -f "vite.*kfchess" 2>/dev/null || true
 sleep 1
 
-# Start backend
+# Start backend (stable server ID so games survive restarts, like production)
 echo "Starting backend..."
 cd "$PROJECT_DIR/server"
-uv run uvicorn kfchess.main:app --reload --port 8000 > /tmp/kfchess-backend.log 2>&1 &
+KFCHESS_SERVER_ID=dev uv run uvicorn kfchess.main:app --reload --port 8000 > /tmp/kfchess-backend.log 2>&1 &
 
 # Start frontend
 echo "Starting frontend..."

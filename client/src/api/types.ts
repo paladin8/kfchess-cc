@@ -353,6 +353,7 @@ export interface LiveGameItem {
   game_id: string;
   game_type: 'lobby' | 'campaign' | 'quickplay';
   lobby_code: string | null;
+  campaign_level_id: number | null;
   players: LiveGamePlayer[];
   settings: {
     speed: string;

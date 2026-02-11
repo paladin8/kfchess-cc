@@ -30,7 +30,7 @@ from kfchess.redis.routing import (
     register_game_routing,
 )
 from kfchess.redis.snapshot_store import delete_snapshot, load_snapshot, save_snapshot
-from kfchess.services.game_registry import deregister_game_fire_and_forget, register_restored_game
+from kfchess.services.game_registry import deregister_game, register_restored_game
 from kfchess.services.game_service import ManagedGame, get_game_service
 from kfchess.services.rating_service import RatingService
 from kfchess.settings import get_settings
@@ -506,9 +506,10 @@ async def handle_websocket(
                             f"snapshot missing or restore failed"
                         )
                         # CAS claimed the routing key but restore failed —
-                        # delete it so future reconnects don't get stuck
-                        # hitting this server with 4004 until TTL expires.
+                        # clean up both Redis routing and the DB active-game
+                        # row so the game doesn't linger in the live list.
                         await delete_game_routing(r, game_id)
+                        await deregister_game(game_id)
                         await websocket.close(
                             code=4004, reason="Game not found"
                         )
@@ -1068,14 +1069,10 @@ async def _run_game_loop(game_id: str) -> None:
             logger.info(f"Game {game_id} starting {COUNTDOWN_SECONDS}s countdown")
 
             for seconds_remaining in range(COUNTDOWN_SECONDS, 0, -1):
-                # Check if game still exists and has connections
+                # Check if game still exists
                 managed_game = service.get_managed_game(game_id)
                 if managed_game is None:
                     logger.info(f"Game {game_id} not found during countdown, stopping")
-                    return
-
-                if not connection_manager.has_connections(game_id):
-                    logger.info(f"No connections for game {game_id} during countdown, stopping")
                     return
 
                 # Broadcast countdown
@@ -1171,11 +1168,6 @@ async def _run_game_loop(game_id: str) -> None:
 
             if state.status != GameStatus.PLAYING:
                 logger.info(f"Game {game_id} is {state.status.value}, stopping loop")
-                break
-
-            # Check if anyone is connected
-            if not connection_manager.has_connections(game_id):
-                logger.info(f"No connections for game {game_id}, stopping loop")
                 break
 
             # Advance the game state
@@ -1349,6 +1341,10 @@ async def _run_game_loop(game_id: str) -> None:
         _games_in_countdown.discard(game_id)
         if game_id in _game_loop_locks:
             del _game_loop_locks[game_id]
-        # Deregister from active games DB (idempotent — no-op if already removed)
-        deregister_game_fire_and_forget(game_id)
+        # Only deregister if the game is actually done. The loop may have
+        # stopped due to no connections — the game is still alive in memory
+        # and the loop will restart when someone reconnects.
+        managed = service.get_managed_game(game_id)
+        if managed is None or managed.state.status == GameStatus.FINISHED:
+            await deregister_game(game_id)
         logger.info(f"Game loop ended for game {game_id}")
