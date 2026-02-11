@@ -82,12 +82,8 @@ fi
 
 if ! command -v uv &>/dev/null; then
     log "Installing uv"
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    # Make uv available system-wide
-    if [[ -f /root/.local/bin/uv ]]; then
-        ln -sf /root/.local/bin/uv /usr/local/bin/uv
-        ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
-    fi
+    # Install directly to /usr/local/bin so it's available to all users
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 fi
 
 # ─── 4. Node.js 20 ───────────────────────────────────────────
