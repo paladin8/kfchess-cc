@@ -11,7 +11,7 @@ const VERIFY_TIMEOUT_MS = 30000; // 30 seconds
  */
 function Verify() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const fetchUser = useAuthStore((s) => s.fetchUser);
 
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
@@ -32,8 +32,11 @@ function Verify() {
       return;
     }
 
-    // Clear token from URL for security (prevents leaking via Referer header)
-    setSearchParams({}, { replace: true });
+    // Clear token from URL for security (prevents leaking via Referer header).
+    // Use replaceState instead of setSearchParams to avoid changing the
+    // searchParams dependency, which would trigger effect cleanup and abort
+    // the in-flight fetch.
+    window.history.replaceState({}, '', window.location.pathname);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
@@ -97,7 +100,7 @@ function Verify() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [searchParams, setSearchParams, fetchUser, navigate]);
+  }, [searchParams, fetchUser, navigate]);
 
   return (
     <div className="auth-page">
