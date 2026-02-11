@@ -1,6 +1,6 @@
 # Kung Fu Chess
 
-A real-time, turn-free chess game where players move pieces simultaneously.
+A real-time, turn-free chess game where players move pieces simultaneously. Play now at [kfchess.com](https://kfchess.com)!
 
 ## Overview
 
@@ -15,7 +15,7 @@ Kung Fu Chess removes the turn-based nature of traditional chess. Both players c
   - **Standard**: 1 second per square, 10 second cooldown
   - **Lightning**: 0.2 seconds per square, 2 second cooldown
 - **Special rules**:
-  - Knights are "airborne" (invisible) for 85% of their move
+  - Knights are "airborne" for the middle 70% of their move
   - Pawns only capture diagonally (straight moves don't capture)
   - Castling and pawn promotion supported
 
@@ -28,7 +28,7 @@ Kung Fu Chess removes the turn-based nature of traditional chess. Both players c
 - [x] AI opponents with 3 difficulty levels (novice, intermediate, advanced)
 - [x] Game replay recording, playback, and browser with likes
 - [x] User authentication (email/password + Google OAuth)
-- [x] Lobby system with matchmaking (create, join, ready, AI slots)
+- [x] Lobby system (create, join, ready, AI slots)
 - [x] Campaign mode (belt progression, AI opponents per level)
 - [x] ELO rating system with belt progression
 - [x] Mobile-responsive UI (touch drag-to-move, collapsible sidebars, landscape)
@@ -53,7 +53,7 @@ Internet (HTTPS :443)
     ▼
 Caddy (auto Let's Encrypt)
 ├── /              → static files from client/dist/
-├── /api/*         → round-robin to workers
+├── /api/*         → ?server=workerN routing (or round-robin)
 ├── /ws/game/*     → ?server=workerN routing (or round-robin)
 ├── /ws/lobby/*    → round-robin
 └── /ws/replay/*   → round-robin
@@ -128,11 +128,11 @@ Or step by step:
 ### Running Tests
 
 ```bash
-# Backend tests (1250+)
+# Backend tests (1000+)
 cd server
 uv run pytest tests/ -v
 
-# Frontend tests (420+)
+# Frontend tests (400+)
 cd client
 npm test
 ```
@@ -206,10 +206,7 @@ kfchess-cc/
 
 - [Architecture](docs/ARCHITECTURE.md) - System design and tech decisions
 - [Deployment](docs/DEPLOYMENT.md) - Production setup, operations, and migration
-- [Multi-Server Design](docs/MULTI_SERVER_DESIGN.md) - Game routing and crash recovery
-- [AI Design](docs/AI_DESIGN.md) - AI opponent difficulty levels
-- [Replay Design](docs/REPLAY_DESIGN.md) - Replay recording and playback
-- [4-Player Design](docs/FOUR_PLAYER_DESIGN.md) - 12x12 board layout
+- A variety of other documents for different parts of the game can be found in [docs/](docs/).
 
 ## License
 
