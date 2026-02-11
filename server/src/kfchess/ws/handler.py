@@ -804,7 +804,7 @@ async def _save_replay(game_id: str, service: Any) -> None:
             if lobby_code is not None:
                 lobby = await manager.get_lobby(lobby_code)
                 if lobby is not None:
-                    replay.is_ranked = lobby.is_ranked
+                    replay.is_ranked = lobby.settings.is_ranked
                 else:
                     logger.warning(
                         f"Lobby {lobby_code} not found when saving replay for game {game_id}, "

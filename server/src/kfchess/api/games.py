@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from kfchess.db.repositories.active_games import ActiveGameRepository
@@ -292,12 +293,31 @@ async def list_live_games(
 
 
 @router.get("/{game_id}")
-async def get_game(game_id: str) -> dict[str, Any]:
+async def get_game(game_id: str, server: str | None = None) -> dict[str, Any]:
     """Get the current game state."""
     service = get_game_service()
     state = service.get_game(game_id)
 
     if state is None:
+        # Not on this server — check Redis routing for cross-server redirect
+        try:
+            r = await get_redis()
+            owner = await get_game_server(r, game_id)
+            my_server_id = get_settings().effective_server_id
+
+            if owner is not None and owner != my_server_id:
+                if await is_server_alive(r, owner):
+                    logger.info(
+                        f"REST redirect: game {game_id} is on {owner}, "
+                        f"sending 307"
+                    )
+                    return RedirectResponse(
+                        url=f"/api/games/{game_id}?server={owner}",
+                        status_code=307,
+                    )
+        except Exception:
+            logger.exception(f"Failed to check routing for game {game_id}")
+
         raise HTTPException(status_code=404, detail="Game not found")
 
     config = state.config

@@ -14,8 +14,14 @@ kfchess.com {
 		respond "ok" 200
 	}
 
-	# ── API (round-robin to all workers) ─────────────────────
+	# ── API (routed by ?server= param, fallback round-robin) ─
+	# Game REST endpoints redirect to ?server=workerN when the
+	# game lives on another worker (307), similar to WS 4302.
 	handle /api/* {
+		@worker1 query server=worker1
+		reverse_proxy @worker1 127.0.0.1:8001
+		@worker2 query server=worker2
+		reverse_proxy @worker2 127.0.0.1:8002
 		reverse_proxy 127.0.0.1:8001 127.0.0.1:8002 {
 			health_uri /health
 			health_interval 5s

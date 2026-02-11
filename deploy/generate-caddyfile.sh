@@ -20,11 +20,11 @@ done
 
 # Build upstream list and per-worker route blocks
 UPSTREAMS=""
-GAME_WS_ROUTES=""
+SERVER_ROUTES=""
 for i in $(seq 1 "$NUM_WORKERS"); do
     PORT=$((8000 + i))
     UPSTREAMS="${UPSTREAMS} 127.0.0.1:${PORT}"
-    GAME_WS_ROUTES="${GAME_WS_ROUTES}
+    SERVER_ROUTES="${SERVER_ROUTES}
 		@worker${i} query server=worker${i}
 		reverse_proxy @worker${i} 127.0.0.1:${PORT}"
 done
@@ -58,8 +58,10 @@ ${WWW_BLOCK}${SITE_ADDRESS} {
 		respond "ok" 200
 	}
 
-	# ── API (round-robin to all workers) ─────────────────────
-	handle /api/* {
+	# ── API (routed by ?server= param, fallback round-robin) ─
+	# Game REST endpoints redirect to ?server=workerN when the
+	# game lives on another worker (307), similar to WS 4302.
+	handle /api/* {${SERVER_ROUTES}
 		reverse_proxy ${UPSTREAMS} {
 			health_uri /health
 			health_interval 5s
@@ -69,7 +71,7 @@ ${WWW_BLOCK}${SITE_ADDRESS} {
 	# ── Game WebSocket (routed by ?server= param) ────────────
 	# If ?server=workerN is present, route to that specific worker.
 	# Otherwise, round-robin (which may redirect via close code 4302).
-	handle /ws/game/* {${GAME_WS_ROUTES}
+	handle /ws/game/* {${SERVER_ROUTES}
 		reverse_proxy ${UPSTREAMS} {
 			health_uri /health
 			health_interval 5s
