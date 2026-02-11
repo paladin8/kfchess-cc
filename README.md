@@ -19,28 +19,59 @@ Kung Fu Chess removes the turn-based nature of traditional chess. Both players c
   - Pawns only capture diagonally (straight moves don't capture)
   - Castling and pawn promotion supported
 
-## Current Status
-
-This is a rebuild of the original Kung Fu Chess. Core features are functional:
+### Features
 
 - [x] Core game engine with tick-based movement and collision detection
-- [x] 2-player and 4-player board support
+- [x] 2-player and 4-player board support (12x12 with corners cut)
 - [x] REST API and WebSocket real-time communication
-- [x] React/PixiJS frontend with smooth rendering
+- [x] React/PixiJS frontend with smooth interpolated rendering
 - [x] AI opponents with 3 difficulty levels (novice, intermediate, advanced)
-- [x] Game replay recording and playback with browser
+- [x] Game replay recording, playback, and browser with likes
 - [x] User authentication (email/password + Google OAuth)
 - [x] Lobby system with matchmaking (create, join, ready, AI slots)
-- [ ] Campaign mode
-- [ ] Mobile support
-- [ ] Multi-server scaling
+- [x] Campaign mode (belt progression, AI opponents per level)
+- [x] ELO rating system with belt progression
+- [x] Mobile-responsive UI (touch drag-to-move, collapsible sidebars, landscape)
+- [x] Multi-server support (game routing, crash recovery, drain mode)
+- [x] Game sound/music with volume controls
+- [x] Amplitude analytics (page views, game lifecycle, session replay)
+- [x] Production deployment (Caddy, systemd, rolling restarts)
 
 ## Tech Stack
 
-- **Backend**: Python 3.12+, FastAPI 0.115+, SQLAlchemy 2.0+
-- **Frontend**: React 19, TypeScript 5.7+, Vite 6, PixiJS 8, Zustand 5
-- **Database**: PostgreSQL 15+
-- **Cache/Pub-Sub**: Redis 7+
+**Backend**: Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, FastAPI-Users, uv, Ruff, pytest
+
+**Frontend**: React 19, TypeScript, Vite, Zustand, PixiJS, React Router 7, Vitest
+
+**Infrastructure**: PostgreSQL 15+, Redis 7+, Caddy (auto Let's Encrypt), Docker Compose, systemd
+
+## Architecture
+
+```
+Internet (HTTPS :443)
+    │
+    ▼
+Caddy (auto Let's Encrypt)
+├── /              → static files from client/dist/
+├── /api/*         → round-robin to workers
+├── /ws/game/*     → ?server=workerN routing (or round-robin)
+├── /ws/lobby/*    → round-robin
+└── /ws/replay/*   → round-robin
+    │
+    ▼
+systemd services
+├── kfchess@worker1 → uvicorn :8001
+└── kfchess@worker2 → uvicorn :8002
+    │
+    ▼
+Docker Compose
+├── postgres:15 → 127.0.0.1:5432
+└── redis:7     → 127.0.0.1:6379
+```
+
+Game state lives in memory for low-latency access, with Redis snapshots every ~1 second for crash recovery. Workers share state via Redis routing keys and Pub/Sub. Rolling restarts are safe — workers save snapshots on SIGTERM, and clients auto-reconnect.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full system design.
 
 ## Development Setup
 
@@ -57,7 +88,7 @@ The easiest way to get started:
 
 ```bash
 # Clone and enter the directory
-git clone <repo-url> kfchess-cc
+git clone https://github.com/paladin8/kfchess-cc.git
 cd kfchess-cc
 
 # Copy environment files
@@ -97,11 +128,11 @@ Or step by step:
 ### Running Tests
 
 ```bash
-# Backend tests
+# Backend tests (1250+)
 cd server
 uv run pytest tests/ -v
 
-# Frontend tests
+# Frontend tests (420+)
 cd client
 npm test
 ```
@@ -124,6 +155,20 @@ Key environment variables (see `server/.env.example` for full list):
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - For Google OAuth (optional)
 - `RESEND_API_KEY` - For sending verification/reset emails (optional)
 
+## Production Deployment
+
+Runs on a single AWS Lightsail instance (Ubuntu 24.04 LTS) with Caddy handling HTTPS via Let's Encrypt.
+
+```bash
+# Initial setup
+sudo bash deploy/bootstrap.sh
+
+# Deploy updates
+sudo bash deploy/deploy.sh
+```
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full instructions including legacy data migration.
+
 ## Project Structure
 
 ```
@@ -136,8 +181,11 @@ kfchess-cc/
 │   │   ├── auth/        # Authentication (FastAPI-Users)
 │   │   ├── lobby/       # Lobby management
 │   │   ├── ai/          # AI opponents
+│   │   ├── campaign/    # Campaign mode (levels, service)
 │   │   ├── replay/      # Replay playback
-│   │   └── services/    # Business logic
+│   │   ├── redis/       # Redis integration (routing, snapshots, heartbeat)
+│   │   ├── services/    # Business logic (game lifecycle, registry)
+│   │   └── db/          # Database (models, repositories)
 │   ├── tests/           # pytest tests (unit + integration)
 │   └── alembic/         # Database migrations
 ├── client/              # TypeScript React frontend
@@ -149,13 +197,19 @@ kfchess-cc/
 │   │   ├── components/  # React components
 │   │   └── pages/       # Route pages
 │   └── tests/           # Vitest tests
+├── deploy/              # Production deployment scripts
 ├── docs/                # Documentation
 └── scripts/             # Development utilities
 ```
 
 ## Documentation
 
-See the [docs/](./docs/) folder for detailed documentation on architecture, design decisions, and implementation details.
+- [Architecture](docs/ARCHITECTURE.md) - System design and tech decisions
+- [Deployment](docs/DEPLOYMENT.md) - Production setup, operations, and migration
+- [Multi-Server Design](docs/MULTI_SERVER_DESIGN.md) - Game routing and crash recovery
+- [AI Design](docs/AI_DESIGN.md) - AI opponent difficulty levels
+- [Replay Design](docs/REPLAY_DESIGN.md) - Replay recording and playback
+- [4-Player Design](docs/FOUR_PLAYER_DESIGN.md) - 12x12 board layout
 
 ## License
 

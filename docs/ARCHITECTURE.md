@@ -24,7 +24,7 @@ This document describes the system architecture for Kung Fu Chess.
 
 **Frontend**: React 19, TypeScript, Vite, Zustand, PixiJS, React Router 7, Amplitude, Vitest
 
-**Infrastructure**: PostgreSQL 15+, Redis 7+, nginx (WebSocket routing), docker-compose for dev
+**Infrastructure**: PostgreSQL 15+, Redis 7+, Caddy (reverse proxy + auto Let's Encrypt), Docker Compose
 
 ---
 
@@ -271,7 +271,6 @@ Client-side instrumentation via Amplitude (`@amplitude/analytics-browser` + sess
 
 ## Implementation Status
 
-### Completed
 - Core game engine (board, pieces, moves, collision, 2P and 4P support)
 - REST API and WebSocket real-time communication
 - React/TypeScript/PixiJS frontend with Zustand state
@@ -287,6 +286,4 @@ Client-side instrumentation via Amplitude (`@amplitude/analytics-browser` + sess
 - Mobile-responsive UI (dynamic board sizing, touch drag-to-move, collapsible sidebars, landscape support)
 - Comprehensive tests (1250+ backend, 420+ frontend)
 - Amplitude analytics (page views, game lifecycle, lobby actions, auth events, session replay)
-
-### Next Steps
-1. Production deployment
+- Production deployment (Caddy + Let's Encrypt, systemd, rolling restarts, legacy data migration)
