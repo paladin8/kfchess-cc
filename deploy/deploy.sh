@@ -7,9 +7,8 @@
 #   2. Install backend/frontend dependencies
 #   3. Build frontend
 #   4. Run database migrations
-#   5. Reload systemd unit files
-#   6. Regenerate Caddyfile and reload
-#   7. Rolling restart workers with health checks
+#   5. Regenerate Caddyfile and reload Caddy
+#   6. Rolling restart workers with health checks
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -47,19 +46,18 @@ sudo -u kfchess bash -c "cd $DEPLOY_DIR/client && npm run build"
 log "Running database migrations"
 sudo -u kfchess bash -c "cd $DEPLOY_DIR/server && uv run alembic upgrade head"
 
-# ─── 5. Reload systemd units ────────────────────────────────
-
-log "Reloading systemd unit files"
-systemctl daemon-reload
-
-# ─── 6. Caddyfile ────────────────────────────────────────────
+# ─── 5. Caddyfile ────────────────────────────────────────────
 
 log "Regenerating Caddyfile"
 bash "$DEPLOY_DIR/deploy/generate-caddyfile.sh" --install
 systemctl daemon-reload
 systemctl reload caddy
 
-# ─── 7. Rolling restart workers ──────────────────────────────
+# ─── 6. Rolling restart workers ──────────────────────────────
+
+# Final daemon-reload right before restarts to ensure systemd has
+# picked up any changes from previous steps (Caddyfile install, etc.)
+systemctl daemon-reload
 
 log "Rolling restart of $NUM_WORKERS workers"
 
