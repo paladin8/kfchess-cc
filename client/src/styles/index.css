@@ -155,21 +155,6 @@ a:hover {
   margin-bottom: -2px;
 }
 
-/* Login link */
-.login-link {
-  color: var(--color-text);
-  font-size: 15px;
-}
-
-.login-link:hover {
-  color: var(--color-secondary);
-}
-
-.login-link.nav-link-active {
-  color: var(--color-secondary);
-  border-bottom: 2px solid var(--color-secondary);
-  margin-bottom: -2px;
-}
 
 /* Header Menu (hamburger or profile pic) */
 .header-menu-wrapper {
@@ -300,11 +285,6 @@ a:hover {
 
   .header-right {
     gap: 12px;
-  }
-
-  /* Hide login link, show hamburger on mobile */
-  .login-link {
-    display: none;
   }
 
   .header-menu-wrapper.mobile-only {

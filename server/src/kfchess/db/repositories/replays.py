@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from kfchess.db.models import GameReplay
+from kfchess.db.models import GameHistory, GameReplay
 from kfchess.game.board import BoardType
 from kfchess.game.replay import Replay
 from kfchess.game.state import ReplayMove, Speed
@@ -98,6 +98,9 @@ class ReplayRepository:
     async def get_by_id(self, game_id: str) -> Replay | None:
         """Get a replay by game ID.
 
+        Checks game_replays first, then falls back to legacy game_history table
+        for replays imported from the original kfchess.
+
         Args:
             game_id: The game ID
 
@@ -109,10 +112,36 @@ class ReplayRepository:
         )
         record = result.scalar_one_or_none()
 
+        if record is not None:
+            return self._record_to_replay(record)
+
+        # Fall back to legacy game_history table
+        return await self._get_legacy_by_id(game_id)
+
+    async def _get_legacy_by_id(self, game_id: str) -> Replay | None:
+        """Get a replay from the legacy game_history table.
+
+        Args:
+            game_id: The game history ID (numeric string)
+
+        Returns:
+            Replay data converted from V1 format, or None if not found
+        """
+        try:
+            history_id = int(game_id)
+        except ValueError:
+            return None
+
+        result = await self.session.execute(
+            select(GameHistory).where(GameHistory.id == history_id)
+        )
+        record = result.scalar_one_or_none()
+
         if record is None:
             return None
 
-        return self._record_to_replay(record)
+        logger.info(f"Loaded legacy replay from game_history: id={game_id}")
+        return Replay.from_dict(record.replay)
 
     async def exists(self, game_id: str) -> bool:
         """Check if a replay exists.

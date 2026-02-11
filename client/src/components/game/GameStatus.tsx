@@ -113,7 +113,7 @@ export function GameStatus() {
             <span className="game-info-value game-info-player">
               <PlayerBadge
                 userId={player.user_id}
-                username={player.name || 'Unknown'}
+                username={player.name}
                 pictureUrl={player.picture_url}
                 size="sm"
               />

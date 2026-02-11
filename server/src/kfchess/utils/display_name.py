@@ -54,6 +54,11 @@ def format_player_id(player_id: str, username_map: dict[int, str] | None = None)
         bot_name = bot_type.capitalize()
         return f"AI ({bot_name})"
 
+    # Legacy AI format from old kfchess (e.g., "b:novice")
+    if player_id.startswith("b:"):
+        bot_type = player_id[2:]
+        return f"AI ({bot_type.capitalize()})"
+
     # Unknown format - return as-is
     return player_id
 
@@ -154,7 +159,7 @@ def _resolve_from_info(
                 name=format_player_id(player_id),
                 picture_url=None,
                 user_id=None,
-                is_bot=player_id.startswith("bot:"),
+                is_bot=player_id.startswith("bot:") or player_id.startswith("b:"),
             )
     return result
 

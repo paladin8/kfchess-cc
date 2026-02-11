@@ -50,6 +50,16 @@ class TestFormatPlayerId:
         result = format_player_id("bot:mcts")
         assert result == "AI (Mcts)"
 
+    def test_format_legacy_bot(self) -> None:
+        """Should format legacy b:novice as 'AI (Novice)'."""
+        result = format_player_id("b:novice")
+        assert result == "AI (Novice)"
+
+    def test_format_legacy_bot_intermediate(self) -> None:
+        """Should format legacy b:intermediate as 'AI (Intermediate)'."""
+        result = format_player_id("b:intermediate")
+        assert result == "AI (Intermediate)"
+
     def test_format_unknown(self) -> None:
         """Should return as-is for unknown format."""
         result = format_player_id("some_unknown_format")
@@ -130,6 +140,11 @@ class TestResolveFromInfo:
         """Should resolve bot player."""
         result = _resolve_from_info({1: "bot:dummy"}, {})
         assert result[1] == PlayerDisplay(name="AI (Dummy)", picture_url=None, user_id=None, is_bot=True)
+
+    def test_legacy_bot_player(self) -> None:
+        """Should resolve legacy b: bot player with is_bot=True."""
+        result = _resolve_from_info({1: "b:novice"}, {})
+        assert result[1] == PlayerDisplay(name="AI (Novice)", picture_url=None, user_id=None, is_bot=True)
 
     def test_mixed_players(self) -> None:
         """Should handle mixed player types."""

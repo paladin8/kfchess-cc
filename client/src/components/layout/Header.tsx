@@ -117,6 +117,9 @@ function Header() {
               <NavLink to="/lobbies" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Lobbies</NavLink>
               <NavLink to="/campaign" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Campaign</NavLink>
               <NavLink to="/watch" className={({ isActive }) => isActive ? 'nav-link-active' : ''}>Watch</NavLink>
+              {!isLoading && !isAuthenticated && (
+                <NavLink to="/login" className={({ isActive }) => isActive ? 'nav-link-active' : ''} onClick={() => track('Click Login')}>Login</NavLink>
+              )}
               <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" className="nav-secondary" onClick={() => track('Click Reddit Link')}>Reddit</a>
               <NavLink to="/about" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>About</NavLink>
               <NavLink to="/privacy" className={({ isActive }) => `nav-secondary ${isActive ? 'nav-link-active' : ''}`}>Privacy</NavLink>
@@ -160,41 +163,38 @@ function Header() {
                 )}
               </div>
             ) : (
-              /* Unauthenticated: Login link on desktop, hamburger on mobile */
-              <>
-                <NavLink to="/login" className={({ isActive }) => `login-link ${isActive ? 'nav-link-active' : ''}`} onClick={() => track('Click Login')}>Login</NavLink>
-                <div className="header-menu-wrapper mobile-only" ref={dropdownRef}>
-                  <button
-                    className="hamburger-button"
-                    onClick={() => setShowDropdown(!showDropdown)}
-                    aria-expanded={showDropdown}
-                    aria-label="Menu"
-                  >
-                    <span className="hamburger-icon">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </span>
-                  </button>
-                  {showDropdown && (
-                    <div className="header-dropdown">
-                      <div className="header-dropdown-option">
-                        <Link to="/login" onClick={() => setShowDropdown(false)}>Login</Link>
-                      </div>
-                      <div className="header-dropdown-divider"></div>
-                      <div className="header-dropdown-option">
-                        <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" onClick={() => { track('Click Reddit Link'); setShowDropdown(false); }}>Reddit</a>
-                      </div>
-                      <div className="header-dropdown-option">
-                        <Link to="/about" onClick={() => setShowDropdown(false)}>About</Link>
-                      </div>
-                      <div className="header-dropdown-option">
-                        <Link to="/privacy" onClick={() => setShowDropdown(false)}>Privacy</Link>
-                      </div>
+              /* Unauthenticated mobile: hamburger with Login + secondary links */
+              <div className="header-menu-wrapper mobile-only" ref={dropdownRef}>
+                <button
+                  className="hamburger-button"
+                  onClick={() => setShowDropdown(!showDropdown)}
+                  aria-expanded={showDropdown}
+                  aria-label="Menu"
+                >
+                  <span className="hamburger-icon">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </button>
+                {showDropdown && (
+                  <div className="header-dropdown">
+                    <div className="header-dropdown-option">
+                      <Link to="/login" onClick={() => setShowDropdown(false)}>Login</Link>
                     </div>
-                  )}
-                </div>
-              </>
+                    <div className="header-dropdown-divider"></div>
+                    <div className="header-dropdown-option">
+                      <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer" onClick={() => { track('Click Reddit Link'); setShowDropdown(false); }}>Reddit</a>
+                    </div>
+                    <div className="header-dropdown-option">
+                      <Link to="/about" onClick={() => setShowDropdown(false)}>About</Link>
+                    </div>
+                    <div className="header-dropdown-option">
+                      <Link to="/privacy" onClick={() => setShowDropdown(false)}>Privacy</Link>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

@@ -139,7 +139,7 @@ if [[ ! -f "$DEPLOY_DIR/server/.env" ]]; then
     cp "$DEPLOY_DIR/server/.env.example" "$DEPLOY_DIR/server/.env"
     # Set production defaults
     sed -i 's/DEV_MODE=true/DEV_MODE=false/' "$DEPLOY_DIR/server/.env"
-    sed -i 's/DEV_USER_ID=1/DEV_USER_ID=/' "$DEPLOY_DIR/server/.env"
+    sed -i 's/DEV_USER_ID=1/DEV_USER_ID=0/' "$DEPLOY_DIR/server/.env"
     sed -i "s|FRONTEND_URL=http://localhost:5173|FRONTEND_URL=https://${DOMAIN}|" "$DEPLOY_DIR/server/.env"
     # Set DATABASE_URL with the correct password (use python to avoid sed issues with special chars)
     python3.12 -c "

@@ -46,7 +46,6 @@ export default function ReplayCard({ replay }: ReplayCardProps) {
               size="sm"
               linkToProfile={false}
             />
-            {replay.winner === parseInt(num) && ' (W)'}
           </span>
         ))}
       </div>
