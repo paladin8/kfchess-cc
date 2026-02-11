@@ -56,6 +56,7 @@ systemctl daemon-reload
 
 log "Regenerating Caddyfile"
 bash "$DEPLOY_DIR/deploy/generate-caddyfile.sh" --install
+systemctl daemon-reload
 systemctl reload caddy
 
 # ─── 7. Rolling restart workers ──────────────────────────────
