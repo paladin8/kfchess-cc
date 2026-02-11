@@ -57,6 +57,7 @@ systemctl reload caddy
 log "Rolling restart of $NUM_WORKERS workers"
 
 HEALTH_TIMEOUT=15  # seconds to wait for health check
+RESTART_BUFFER=5   # seconds to wait between workers for game handoff
 
 for i in $(seq 1 "$NUM_WORKERS"); do
     WORKER="kfchess@worker${i}"
@@ -76,6 +77,13 @@ for i in $(seq 1 "$NUM_WORKERS"); do
         fi
         sleep 1
     done
+
+    # Buffer between workers so the next worker can claim games from the one
+    # that just drained before it also restarts
+    if [[ $i -lt $NUM_WORKERS ]]; then
+        echo "  Waiting ${RESTART_BUFFER}s before next worker..."
+        sleep "$RESTART_BUFFER"
+    fi
 done
 
 # ─── Done ─────────────────────────────────────────────────────
