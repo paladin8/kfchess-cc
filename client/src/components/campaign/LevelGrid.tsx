@@ -69,9 +69,9 @@ function LevelCard({ level, onClick, isStarting }: LevelCardProps) {
     >
       <div className="level-card-header">
         <span className="level-card-number">{levelNumber}</span>
+        <h3 className="level-card-title">{level.title}</h3>
         {level.isCompleted && <span className="level-card-check">&#10003;</span>}
       </div>
-      <h3 className="level-card-title">{level.title}</h3>
       <p className="level-card-description">{level.description}</p>
     </button>
   );

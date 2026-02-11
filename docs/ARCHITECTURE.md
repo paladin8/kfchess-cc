@@ -263,9 +263,10 @@ See `docs/FOUR_PLAYER_DESIGN.md` for board layout and implementation plan.
 - 4-player UI
 - Multi-server support (game routing, crash recovery, drain mode, split-brain protection)
 - ELO rating system with belt progression
+- Game sound/music + volume controls
+- Mobile-responsive UI (dynamic board sizing, touch drag-to-move, collapsible sidebars, landscape support)
 - Comprehensive tests (1250+ backend, 420+ frontend)
 
 ### Next Steps
-1. Game sound/music + volume controls
+1. Production deployment
 2. Analytics + instrumentation
-3. Production deployment

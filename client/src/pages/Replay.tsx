@@ -11,6 +11,7 @@ import { useAuthStore } from '../stores/auth';
 import { ReplayBoard, ReplayControls } from '../components/replay';
 import { AudioControls } from '../components/game';
 import { useAudio } from '../hooks/useAudio';
+import { useSquareSize } from '../hooks/useSquareSize';
 import { formatWinReason } from '../utils/format';
 import { getReplayLikeStatus, likeReplay, unlikeReplay } from '../api/client';
 import PlayerBadge from '../components/PlayerBadge';
@@ -53,6 +54,13 @@ export function Replay() {
 
   // Share link state
   const [copied, setCopied] = useState(false);
+
+  // Dynamic board sizing
+  const boardAreaRef = useRef<HTMLDivElement>(null);
+  const squareSize = useSquareSize(boardType ?? 'standard', boardAreaRef, gameId);
+
+  // Collapsible sidebar state (mobile)
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   // Audio management
   // Use currentTick >= totalTicks for isFinished (not winner, which is set at start from metadata)
@@ -189,63 +197,74 @@ export function Replay() {
   return (
     <div className="replay-page">
       <div className="replay-content">
-        <div className="replay-board-wrapper">
-          <ReplayBoard boardType={boardType} squareSize={64} />
+        <div className="replay-board-area" ref={boardAreaRef}>
+          <div className="replay-board-wrapper">
+            <ReplayBoard boardType={boardType} squareSize={squareSize} />
+          </div>
         </div>
         <div className="replay-sidebar">
-          <div className="replay-info">
-            <h2>Game Replay</h2>
-            <div className="replay-info-row">
-              <span className="replay-info-label">Share:</span>
-              <button className="copy-link-button" onClick={copyReplayLink}>
-                {copied ? 'Copied!' : 'Copy Link'}
-              </button>
+          <button
+            className="replay-sidebar-toggle"
+            onClick={() => setSidebarExpanded((v) => !v)}
+          >
+            Replay Info {sidebarExpanded ? '\u25B2' : '\u25BC'}
+          </button>
+          <div className={`replay-sidebar-details${sidebarExpanded ? ' expanded' : ''}`}>
+            <div className="replay-info">
+              <h2>Game Replay</h2>
+              <div className="replay-info-row">
+                <span className="replay-info-label">Share:</span>
+                <button className="copy-link-button" onClick={copyReplayLink}>
+                  {copied ? 'Copied!' : 'Copy Link'}
+                </button>
+              </div>
+              {campaignLevelId !== null ? (
+                <div className="replay-info-row">
+                  <span className="replay-info-label">Mode:</span>
+                  <span className="replay-info-value">
+                    Campaign Level {campaignLevelId + 1}
+                  </span>
+                </div>
+              ) : speed && (
+                <div className="replay-info-row">
+                  <span className="replay-info-label">Mode:</span>
+                  <span className="replay-info-value">
+                    {speed.charAt(0).toUpperCase() + speed.slice(1)}
+                    {isRanked && ' (Rated)'}
+                  </span>
+                </div>
+              )}
+              {players && (
+                <>
+                  {Object.entries(players).map(([playerNum, player]) => (
+                    <div key={playerNum} className="replay-info-row">
+                      <span className="replay-info-label">Player {playerNum}:</span>
+                      <span className="replay-info-value">
+                        <PlayerBadge
+                          userId={player.user_id}
+                          username={player.name || 'Unknown'}
+                          pictureUrl={player.picture_url}
+                          size="sm"
+                        />
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {winner !== null && (
+                <div className="replay-info-row replay-winner">
+                  <span className="replay-info-label">Winner:</span>
+                  <span className="replay-info-value">Player {winner}</span>
+                </div>
+              )}
+              {winReason && (
+                <div className="replay-info-row">
+                  <span className="replay-info-label">Result:</span>
+                  <span className="replay-info-value">{formatWinReason(winReason)}</span>
+                </div>
+              )}
             </div>
-            {campaignLevelId !== null ? (
-              <div className="replay-info-row">
-                <span className="replay-info-label">Mode:</span>
-                <span className="replay-info-value">
-                  Campaign Level {campaignLevelId + 1}
-                </span>
-              </div>
-            ) : speed && (
-              <div className="replay-info-row">
-                <span className="replay-info-label">Mode:</span>
-                <span className="replay-info-value">
-                  {speed.charAt(0).toUpperCase() + speed.slice(1)}
-                  {isRanked && ' (Rated)'}
-                </span>
-              </div>
-            )}
-            {players && (
-              <>
-                {Object.entries(players).map(([playerNum, player]) => (
-                  <div key={playerNum} className="replay-info-row">
-                    <span className="replay-info-label">Player {playerNum}:</span>
-                    <span className="replay-info-value">
-                      <PlayerBadge
-                        userId={player.user_id}
-                        username={player.name || 'Unknown'}
-                        pictureUrl={player.picture_url}
-                        size="sm"
-                      />
-                    </span>
-                  </div>
-                ))}
-              </>
-            )}
-            {winner !== null && (
-              <div className="replay-info-row replay-winner">
-                <span className="replay-info-label">Winner:</span>
-                <span className="replay-info-value">Player {winner}</span>
-              </div>
-            )}
-            {winReason && (
-              <div className="replay-info-row">
-                <span className="replay-info-label">Result:</span>
-                <span className="replay-info-value">{formatWinReason(winReason)}</span>
-              </div>
-            )}
+
           </div>
 
           <ReplayControls />

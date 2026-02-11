@@ -5,7 +5,7 @@
   align-items: center;
   max-width: 900px;
   margin: 0 auto;
-  padding: 1.5rem 1rem;
+  padding: 1rem;
 }
 
 /* Header */
@@ -15,7 +15,7 @@
 }
 
 .campaign-title {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 700;
   color: var(--color-text);
   margin: 0 0 0.5rem 0;
@@ -73,6 +73,10 @@
 @media (max-width: 600px) {
   .campaign {
     padding: 1rem;
+  }
+
+  .campaign-header {
+    margin-bottom: 1rem;
   }
 
   .campaign-title {

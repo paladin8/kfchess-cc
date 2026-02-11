@@ -439,10 +439,11 @@ class TestReplayRepositoryListTop:
             await db_session.commit()
 
             # List top replays
-            top_replays = await replay_repo.list_top(limit=10)
+            top_replays, total = await replay_repo.list_top(limit=10)
 
             # Should only include replays with likes > 0, ordered by like count
             assert len(top_replays) >= 2
+            assert total >= 2
 
             # Find our test replays in results
             result_ids = [r[0] for r in top_replays]
@@ -470,7 +471,7 @@ class TestReplayRepositoryListTop:
             await replay_repo.save(game_id, create_test_replay())
             await db_session.commit()
 
-            top_replays = await replay_repo.list_top(limit=10)
+            top_replays, _total = await replay_repo.list_top(limit=10)
             result_ids = [r[0] for r in top_replays]
 
             assert game_id not in result_ids

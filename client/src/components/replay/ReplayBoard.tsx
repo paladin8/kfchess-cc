@@ -56,16 +56,23 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
     tickRateHz,
   };
 
-  // Initialize renderer
+  // Track latest square size without forcing renderer re-initialization
+  const latestSquareSizeRef = useRef(squareSize);
+  latestSquareSizeRef.current = squareSize;
+
+  // Initialize renderer (only when boardType changes, NOT squareSize)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    let cancelled = false;
+    const initialSquareSize = latestSquareSizeRef.current;
 
     const renderer = new GameRenderer({
       canvas,
       boardType,
       playerNumber: 1, // View from player 1's perspective
-      squareSize,
+      squareSize: initialSquareSize,
       // No interaction handlers - replay is read-only
       onSquareClick: () => {},
       onPieceClick: () => {},
@@ -74,14 +81,25 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
     renderer
       .init(canvas)
       .then(() => {
+        if (cancelled) {
+          renderer.destroy();
+          return;
+        }
         rendererRef.current = renderer;
+        const latestSquareSize = latestSquareSizeRef.current;
+        if (latestSquareSize !== initialSquareSize) {
+          renderer.resize(latestSquareSize);
+        }
         setIsReady(true);
       })
       .catch((error) => {
-        console.error('Failed to initialize replay renderer:', error);
+        if (!cancelled) {
+          console.error('Failed to initialize replay renderer:', error);
+        }
       });
 
     return () => {
+      cancelled = true;
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -89,7 +107,14 @@ export function ReplayBoard({ boardType, squareSize = 64 }: ReplayBoardProps) {
       rendererRef.current = null;
       setIsReady(false);
     };
-  }, [boardType, squareSize]);
+  }, [boardType]); // squareSize updates use renderer.resize below
+
+  // Resize renderer without destroying/recreating Pixi application
+  useEffect(() => {
+    if (rendererRef.current) {
+      rendererRef.current.resize(squareSize);
+    }
+  }, [squareSize]);
 
   // Render loop with visual tick interpolation
   // Uses refs to read latest state without restarting the animation loop

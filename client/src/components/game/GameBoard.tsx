@@ -195,16 +195,23 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
   const playerNumberRef = useRef(playerNumber);
   playerNumberRef.current = playerNumber;
 
-  // Initialize renderer (only when boardType/squareSize changes, NOT playerNumber)
+  // Track latest square size without forcing renderer re-initialization
+  const latestSquareSizeRef = useRef(squareSize);
+  latestSquareSizeRef.current = squareSize;
+
+  // Initialize renderer (only when boardType changes, NOT squareSize/playerNumber)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    let cancelled = false;
+    const initialSquareSize = latestSquareSizeRef.current;
 
     const renderer = new GameRenderer({
       canvas,
       boardType,
       playerNumber: playerNumberRef.current || 1, // Use ref for initial value
-      squareSize,
+      squareSize: initialSquareSize,
       // Use wrapper functions that call the refs
       onSquareClick: (row, col) => handleSquareClickRef.current(row, col),
       onPieceClick: (pieceId) => handlePieceClickRef.current(pieceId),
@@ -213,14 +220,26 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
     renderer
       .init(canvas)
       .then(() => {
+        if (cancelled) {
+          renderer.destroy();
+          return;
+        }
+
         rendererRef.current = renderer;
+        const latestSquareSize = latestSquareSizeRef.current;
+        if (latestSquareSize !== initialSquareSize) {
+          renderer.resize(latestSquareSize);
+        }
         setIsReady(true);
       })
       .catch((error) => {
-        console.error('Failed to initialize renderer:', error);
+        if (!cancelled) {
+          console.error('Failed to initialize renderer:', error);
+        }
       });
 
     return () => {
+      cancelled = true;
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -228,7 +247,7 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
       rendererRef.current = null;
       setIsReady(false);
     };
-  }, [boardType, squareSize]); // Removed playerNumber - use setPlayerNumber instead
+  }, [boardType]); // squareSize updates use renderer.resize below
 
   // Update player number without recreating renderer
   useEffect(() => {
@@ -236,6 +255,13 @@ export function GameBoard({ boardType, squareSize = 64 }: GameBoardProps) {
       rendererRef.current.setPlayerNumber(playerNumber);
     }
   }, [playerNumber]);
+
+  // Resize renderer without destroying/recreating Pixi application
+  useEffect(() => {
+    if (rendererRef.current) {
+      rendererRef.current.resize(squareSize);
+    }
+  }, [squareSize]);
 
   // Render loop with visual tick interpolation
   // Uses refs to read latest state without restarting the animation loop

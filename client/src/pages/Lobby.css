@@ -17,7 +17,7 @@
 
 .lobby-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 1rem;
 }
 
@@ -159,6 +159,41 @@
 @media (max-width: 500px) {
   .slots-grid {
     grid-template-columns: 1fr;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .setting-item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .setting-item label {
+    white-space: nowrap;
+  }
+
+  .setting-item select {
+    width: 120px;
+    flex: none;
+  }
+
+  .lobby-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .lobby-content {
+    gap: 1rem;
+  }
+
+  .lobby-settings,
+  .player-slots,
+  .share-section {
+    padding: 1rem;
   }
 }
 
@@ -375,7 +410,7 @@
 .lobbies-page {
   max-width: 900px;
   margin: 0 auto;
-  padding: 1rem 2rem 2rem;
+  padding: 1rem;
 }
 
 .lobbies-page h1 {
@@ -397,6 +432,7 @@
 
 .lobbies-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -461,7 +497,7 @@
 
 .lobbies-empty {
   text-align: center;
-  padding: 3rem;
+  padding: 2rem;
   color: var(--color-text-muted);
 }
 
@@ -485,12 +521,13 @@
 .join-code-form {
   display: flex;
   gap: 0.5rem;
-  max-width: 300px;
+  max-width: 250px;
 }
 
 .join-code-form input {
   flex: 1;
-  padding: 0.75rem;
+  min-width: 0;
+  padding: 0.5rem;
   font-size: 1rem;
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -536,4 +573,16 @@
 
 .refresh-btn svg {
   display: block;
+}
+
+@media (max-width: 500px) {
+  .lobbies-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .lobbies-header .btn {
+    align-self: stretch;
+  }
 }

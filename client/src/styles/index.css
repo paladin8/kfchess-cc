@@ -11,6 +11,7 @@
   --color-border: #cccccc;
 
   --font-family: 'Karla', sans-serif;
+  --letter-spacing: -0.3px;
 
   --header-height: 60px;
 }
@@ -32,7 +33,7 @@ body {
 
 body {
   font-family: var(--font-family);
-  letter-spacing: -0.3px;
+  letter-spacing: var(--letter-spacing);
   background-color: var(--color-background);
   color: var(--color-text);
   line-height: 1.5;
@@ -61,10 +62,11 @@ a:hover {
 
 .main-content {
   flex: 1;
-  padding: 2rem;
+  padding: 1rem 2rem 2rem;
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
+  overflow-x: hidden;
 }
 
 /* Header */
@@ -286,6 +288,10 @@ a:hover {
   .header-dropdown-secondary {
     display: block;
   }
+
+  .main-content {
+    padding: 1rem 0.75rem 2rem;
+  }
 }
 
 /* Buttons */
@@ -341,7 +347,7 @@ a:hover {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 2rem;
-  min-width: 400px;
+  width: 400px;
   max-width: 90vw;
 }
 
@@ -450,7 +456,7 @@ a:hover {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 2rem;
+  padding-top: 1rem;
 }
 
 .auth-card {
@@ -696,6 +702,7 @@ a:hover {
 /* Campaign Progress */
 .profile-campaign-belts {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -976,6 +983,13 @@ a:hover {
   gap: 6px;
   vertical-align: middle;
   position: relative;
+  min-width: 0;
+}
+
+.player-badge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-badge-tooltip {
@@ -1010,6 +1024,8 @@ a:hover {
 .player-badge-link {
   text-decoration: none;
   color: inherit;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .player-badge-link:hover {
@@ -1083,4 +1099,11 @@ a:hover {
 
 .profile-avatar-input {
   display: none;
+}
+
+@media (max-width: 500px) {
+  .profile-header-row {
+    flex-direction: column-reverse;
+    align-items: center;
+  }
 }

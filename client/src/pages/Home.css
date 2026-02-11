@@ -28,7 +28,7 @@
 
 .home-banner-video video {
   width: 100%;
-  margin-bottom: -2%;
+  margin-bottom: -9px;
 }
 
 .home-banner-text {
@@ -40,7 +40,7 @@
 }
 
 .home-banner-text-main {
-  font-size: 25px;
+  font-size: 1.75rem;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -144,7 +144,11 @@
   }
 
   .home-banner-video {
-    width: 80%;
+    width: 82%;
+  }
+
+  .home-banner-video video {
+    margin-bottom: -8px;
   }
 
   .home-play-buttons {

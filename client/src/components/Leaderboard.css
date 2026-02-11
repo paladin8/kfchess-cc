@@ -144,11 +144,23 @@
 @media (max-width: 600px) {
   .leaderboard-table th,
   .leaderboard-table td {
-    padding: 0.5rem;
+    padding: 0.4rem 0.35rem;
+  }
+
+  .col-rank {
+    width: 40px;
+  }
+
+  .col-belt {
+    width: 36px;
   }
 
   .col-player {
     min-width: auto;
+  }
+
+  .col-rating {
+    width: 60px;
   }
 
   .col-record {

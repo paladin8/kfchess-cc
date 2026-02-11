@@ -393,7 +393,7 @@ function Profile() {
             <div className="profile-field">
               <label>Campaign</label>
               <div className="profile-campaign-belts">
-                {[1, 2, 3, 4].map((belt) => {
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((belt) => {
                   const beltStart = (belt - 1) * 8;
                   const completedInBelt = Object.keys(campaignProgress.levelsCompleted)
                     .filter((id) => {
@@ -411,7 +411,7 @@ function Profile() {
                         className="belt-color"
                         style={{
                           backgroundColor: BELT_COLORS[belt],
-                          border: belt === 1 ? '1px solid #666' : 'none',
+                          border: belt === 1 || belt === 9 ? '1px solid #666' : 'none',
                         }}
                       />
                       {completedInBelt}/8

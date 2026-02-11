@@ -670,7 +670,7 @@ describe('Lobby Page', () => {
       });
 
       renderWithRouter(<Lobby />);
-      expect(screen.getByRole('button', { name: 'Leave Lobby' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Leave' })).toBeInTheDocument();
     });
   });
 

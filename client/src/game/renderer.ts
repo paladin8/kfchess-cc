@@ -87,6 +87,10 @@ export class GameRenderer {
   private initialized = false;
   private hoveredViewSquare: { row: number; col: number } | null = null;
 
+  // Drag-to-move state (for touch/mobile)
+  private dragStartPiece: string | null = null;
+  private dragStartSquare: { row: number; col: number } | null = null;
+
   constructor(options: RendererOptions) {
     this.boardType = options.boardType;
     this.playerNumber = options.playerNumber ?? 1; // Default to player 1 view
@@ -183,7 +187,10 @@ export class GameRenderer {
   }
 
   /**
-   * Setup click and hover handling for the board
+   * Setup click, hover, and drag handling for the board.
+   * Supports two interaction modes:
+   * - Tap-tap (desktop/mobile): tap piece to select, tap target to move
+   * - Drag (mobile): touch piece, drag to target, release to move
    */
   private setupClickHandling(): void {
     this.app.stage.eventMode = 'static';
@@ -208,6 +215,11 @@ export class GameRenderer {
 
       // Check if we clicked on a piece (using view coordinates for sprite lookup)
       const clickedPiece = this.findPieceAt(viewRow, viewCol);
+
+      // Record drag start state
+      this.dragStartSquare = { row: viewRow, col: viewCol };
+      this.dragStartPiece = clickedPiece;
+
       if (clickedPiece && this.onPieceClick) {
         this.onPieceClick(clickedPiece);
         return;
@@ -219,7 +231,7 @@ export class GameRenderer {
       }
     });
 
-    // Track hover position for ghost piece rendering
+    // Track hover/drag position for ghost piece rendering
     this.app.stage.on('pointermove', (event) => {
       const localPos = event.global;
       const viewCol = Math.floor(localPos.x / this.squareSize);
@@ -235,9 +247,48 @@ export class GameRenderer {
       }
     });
 
-    // Clear hover when pointer leaves the stage
+    // Handle drag release — if we started on a piece and ended on a different square, move there
+    this.app.stage.on('pointerup', (event) => {
+      if (!this.dragStartPiece || !this.dragStartSquare) {
+        this.dragStartPiece = null;
+        this.dragStartSquare = null;
+        return;
+      }
+
+      const localPos = event.global;
+      const viewCol = Math.floor(localPos.x / this.squareSize);
+      const viewRow = Math.floor(localPos.y / this.squareSize);
+
+      const movedSquare =
+        viewRow !== this.dragStartSquare.row || viewCol !== this.dragStartSquare.col;
+
+      if (movedSquare) {
+        const gameCoords = transformToGameCoords(
+          { row: viewRow, col: viewCol },
+          this.playerNumber,
+          this.boardType
+        );
+
+        if (isValidSquare(gameCoords.row, gameCoords.col, this.boardType)) {
+          // Check if there's an enemy piece at the drop location
+          const pieceAtTarget = this.findPieceAt(viewRow, viewCol);
+          if (pieceAtTarget && this.onPieceClick) {
+            this.onPieceClick(pieceAtTarget);
+          } else if (this.onSquareClick) {
+            this.onSquareClick(gameCoords.row, gameCoords.col);
+          }
+        }
+      }
+
+      this.dragStartPiece = null;
+      this.dragStartSquare = null;
+    });
+
+    // Clear hover and drag state when pointer leaves the stage
     this.app.stage.on('pointerleave', () => {
       this.hoveredViewSquare = null;
+      this.dragStartPiece = null;
+      this.dragStartSquare = null;
     });
   }
 
@@ -348,6 +399,21 @@ export class GameRenderer {
   }
 
   /**
+   * Apply consistent sprite size and centering for the current square size.
+   */
+  private applySpriteLayout(sprite: Sprite): void {
+    const SPRITE_FACTOR = 0.90;
+    const targetSize = this.squareSize * SPRITE_FACTOR;
+    const scale = targetSize / Math.max(sprite.texture.width, sprite.texture.height);
+    sprite.scale.set(scale);
+
+    // Use center anchor for centering, with offset to compensate for sprite artwork
+    sprite.anchor.set(0.5, 0.5);
+    sprite.x = this.squareSize / 2 + PIECE_OFFSET_X;
+    sprite.y = this.squareSize / 2 + PIECE_OFFSET_Y;
+  }
+
+  /**
    * Create a sprite for a piece
    * Uses original alignment logic: SPRITE_FACTOR=0.90, with minimal offset
    * Original: cellPadding - shift ≈ 0 (they nearly cancel out)
@@ -359,16 +425,7 @@ export class GameRenderer {
     const texture = getPieceTexture(piece.type, piece.player);
     const sprite = new Sprite(texture);
 
-    // Original alignment: sprite is 90% of cell size
-    const SPRITE_FACTOR = 0.90;
-    const targetSize = this.squareSize * SPRITE_FACTOR;
-    const scale = targetSize / Math.max(texture.width, texture.height);
-    sprite.scale.set(scale);
-
-    // Use center anchor for centering, with offset to compensate for sprite artwork
-    sprite.anchor.set(0.5, 0.5);
-    sprite.x = this.squareSize / 2 + PIECE_OFFSET_X;
-    sprite.y = this.squareSize / 2 + PIECE_OFFSET_Y;
+    this.applySpriteLayout(sprite);
 
     // Apply player tint only for players 3 and 4 (red/blue)
     // Players 1 and 2 use white/black sprites directly without tinting
@@ -393,15 +450,7 @@ export class GameRenderer {
     const texture = getPieceTexture(piece.type, piece.player);
     if (pieceSprite.sprite.texture !== texture) {
       pieceSprite.sprite.texture = texture;
-      const SPRITE_FACTOR = 0.90;
-      const targetSize = this.squareSize * SPRITE_FACTOR;
-      const scale = targetSize / Math.max(texture.width, texture.height);
-      pieceSprite.sprite.scale.set(scale);
-
-      // Use center anchor for centering, with offset to compensate for sprite artwork
-      pieceSprite.sprite.anchor.set(0.5, 0.5);
-      pieceSprite.sprite.x = this.squareSize / 2 + PIECE_OFFSET_X;
-      pieceSprite.sprite.y = this.squareSize / 2 + PIECE_OFFSET_Y;
+      this.applySpriteLayout(pieceSprite.sprite);
     }
     // Apply tinting only for players 3 and 4 (red/blue)
     if (piece.player >= 3) {
@@ -590,6 +639,12 @@ export class GameRenderer {
       this.boardHeight * this.squareSize
     );
     this.renderBoard();
+
+    // Existing piece sprites must be rescaled/recentered for the new square size.
+    for (const pieceSprite of this.pieceSprites.values()) {
+      this.applySpriteLayout(pieceSprite.sprite);
+    }
+
     // Piece positions will be updated on next renderPieces call
   }
 

@@ -70,9 +70,14 @@
 
 /* Responsive */
 @media (max-width: 600px) {
+  .belt-selector {
+    margin-bottom: 1rem;
+  }
+
   .belt-selector-list {
     flex-direction: row;
     justify-content: center;
+    gap: 0.4rem;
   }
 
   .belt-selector-item {

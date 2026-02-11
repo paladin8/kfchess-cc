@@ -45,7 +45,10 @@
 }
 
 .match-player {
+  display: flex;
   color: var(--color-text);
+  max-width: 150px;
+  min-width: 0;
 }
 
 .match-player.winner {

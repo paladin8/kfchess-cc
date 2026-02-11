@@ -6,7 +6,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2rem;
+  padding: 1rem;
   min-height: calc(100vh - 60px);
 }
 
@@ -23,6 +23,14 @@
   display: flex;
   gap: 2rem;
   align-items: flex-start;
+  width: 100%;
+}
+
+.game-board-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
 }
 
 .game-board-wrapper {
@@ -33,6 +41,11 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   background-color: #8ed47d;
   line-height: 0;
+}
+
+/* Prevent browser touch gestures on the board canvas */
+.game-board-container canvas {
+  touch-action: none;
 }
 
 /* Countdown Overlay */
@@ -79,6 +92,16 @@
   gap: 1.5rem;
   width: 280px;
   flex-shrink: 0;
+}
+
+/* Sidebar toggle - hidden on desktop */
+.game-sidebar-toggle {
+  display: none;
+}
+
+/* On desktop, make wrapper transparent to flex gap */
+.game-sidebar-details {
+  display: contents;
 }
 
 /* Game Info */
@@ -438,15 +461,117 @@
   background: var(--color-border);
 }
 
-/* Responsive */
+/* Responsive - all mobile */
 @media (max-width: 768px) {
+  .game-sidebar {
+    gap: 0.75rem;
+  }
+
+  /* Sidebar toggle button - visible on mobile */
+  .game-sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: 0.925rem;
+    font-weight: 500;
+    letter-spacing: var(--letter-spacing);
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .game-sidebar-toggle:hover {
+    background: var(--color-surface);
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Sidebar details - hidden by default on mobile */
+  .game-sidebar-details {
+    display: none;
+  }
+
+  .game-sidebar-details.expanded {
+    display: contents;
+  }
+
+  /* Modals - constrain width and wrap buttons */
+  .game-over-modal {
+    margin: 1rem;
+    padding: 1.5rem;
+    min-width: 0;
+    max-width: calc(100vw - 2rem);
+    box-sizing: border-box;
+  }
+
+  .game-over-actions {
+    flex-wrap: wrap;
+  }
+
+  .resign-confirm-modal {
+    margin: 1rem;
+    padding: 1.5rem;
+    min-width: 0;
+    max-width: calc(100vw - 2rem);
+    box-sizing: border-box;
+  }
+}
+
+/* Portrait mobile - stack board and sidebar vertically */
+@media (max-width: 768px) and (orientation: portrait) {
+  .game-page {
+    padding: 0;
+    margin: 0 -0.75rem;
+    width: calc(100% + 1.5rem);
+    overflow-x: hidden;
+  }
+
   .game-content {
     flex-direction: column;
     align-items: center;
+    width: 100%;
+  }
+
+  .game-board-area {
+    width: 100%;
+  }
+
+  .game-board-wrapper {
+    border-radius: 0;
   }
 
   .game-sidebar {
     width: 100%;
     max-width: 512px;
+    padding: 0.75rem;
+  }
+}
+
+/* Landscape mobile - keep sidebar beside board */
+@media (max-width: 768px) and (orientation: landscape) {
+  .game-page {
+    padding: 0.5rem;
+  }
+
+  .game-content {
+    gap: 0.75rem;
+  }
+
+  .game-sidebar {
+    width: 200px;
+    flex-shrink: 0;
   }
 }

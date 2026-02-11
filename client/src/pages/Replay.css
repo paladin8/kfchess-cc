@@ -34,6 +34,14 @@
   display: flex;
   gap: 2rem;
   align-items: flex-start;
+  width: 100%;
+}
+
+.replay-board-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
 }
 
 .replay-board-wrapper {
@@ -191,15 +199,97 @@
   border-color: var(--color-text-muted);
 }
 
-/* Responsive */
+/* Sidebar toggle - hidden on desktop */
+.replay-sidebar-toggle {
+  display: none;
+}
+
+/* Sidebar details - always visible on desktop */
+.replay-sidebar-details {
+  display: contents;
+}
+
+/* Responsive - all mobile */
 @media (max-width: 768px) {
+  .replay-sidebar {
+    gap: 0.75rem;
+  }
+
+  /* Sidebar toggle button */
+  .replay-sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: 0.925rem;
+    font-weight: 500;
+    letter-spacing: var(--letter-spacing);
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .replay-sidebar-toggle:hover {
+    background: var(--color-surface);
+  }
+
+  /* Sidebar details - collapsed by default on mobile */
+  .replay-sidebar-details {
+    display: none;
+  }
+
+  .replay-sidebar-details.expanded {
+    display: contents;
+  }
+}
+
+/* Portrait mobile - stack vertically */
+@media (max-width: 768px) and (orientation: portrait) {
+  .replay-page {
+    padding: 0;
+    margin: 0 -0.75rem;
+    width: calc(100% + 1.5rem);
+    overflow-x: hidden;
+  }
+
   .replay-content {
     flex-direction: column;
     align-items: center;
+    width: 100%;
+  }
+
+  .replay-board-area {
+    width: 100%;
+  }
+
+  .replay-board-wrapper {
+    border-radius: 0;
   }
 
   .replay-sidebar {
     width: 100%;
-    max-width: 512px;
+    padding: 0.75rem;
+  }
+}
+
+/* Landscape mobile - keep sidebar beside board */
+@media (max-width: 768px) and (orientation: landscape) {
+  .replay-page {
+    padding: 0.5rem;
+  }
+
+  .replay-content {
+    gap: 0.75rem;
+  }
+
+  .replay-sidebar {
+    width: 200px;
+    flex-shrink: 0;
   }
 }

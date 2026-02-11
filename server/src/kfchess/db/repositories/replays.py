@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from kfchess.db.models import GameReplay
 from kfchess.game.board import BoardType
@@ -12,6 +13,9 @@ from kfchess.game.replay import Replay
 from kfchess.game.state import ReplayMove, Speed
 
 logger = logging.getLogger(__name__)
+
+
+MAX_BROWSEABLE = 100
 
 
 class ReplayRepository:
@@ -126,63 +130,83 @@ class ReplayRepository:
 
     async def list_recent(
         self, limit: int = 20, offset: int = 0
-    ) -> list[tuple[str, Replay]]:
-        """List recent replays with their IDs.
+    ) -> tuple[list[tuple[str, Replay]], int]:
+        """List recent replays with their IDs and total count.
+
+        Caps results at MAX_BROWSEABLE (100) total rows. Uses a subquery
+        to avoid scanning the entire table for the count.
 
         Args:
             limit: Maximum number of replays to return
             offset: Number of replays to skip
 
         Returns:
-            List of (game_id, replay) tuples ordered by creation time (newest first)
+            Tuple of (list of (game_id, replay) tuples, total count)
         """
-        result = await self.session.execute(
+        # Subquery: fetch at most MAX_BROWSEABLE recent public replays
+        base = (
             select(GameReplay)
             .where(GameReplay.is_public.is_(True))
             .order_by(GameReplay.created_at.desc())
+            .limit(MAX_BROWSEABLE)
+            .subquery()
+        )
+        capped = aliased(GameReplay, base)
+        total_count = func.count().over().label("total_count")
+
+        result = await self.session.execute(
+            select(capped, total_count)
+            .order_by(capped.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
-        records = result.scalars().all()
+        rows = result.all()
 
-        return [(r.id, self._record_to_replay(r)) for r in records]
-
-    async def count_public(self) -> int:
-        """Count total number of public replays.
-
-        Returns:
-            Total count of public replays
-        """
-        result = await self.session.execute(
-            select(func.count()).select_from(GameReplay).where(GameReplay.is_public.is_(True))
-        )
-        return result.scalar_one()
+        total = rows[0].total_count if rows else 0
+        replays = [(row[0].id, self._record_to_replay(row[0])) for row in rows]
+        return replays, total
 
     async def list_top(
         self, limit: int = 20, offset: int = 0
-    ) -> list[tuple[str, Replay, int]]:
-        """List top replays by like count.
+    ) -> tuple[list[tuple[str, Replay, int]], int]:
+        """List top replays by like count with total count.
 
-        Only returns replays with at least one like.
+        Only returns replays with at least one like. Caps results at
+        MAX_BROWSEABLE (100) total rows.
 
         Args:
             limit: Maximum number of replays to return
             offset: Number of replays to skip
 
         Returns:
-            List of (game_id, replay, like_count) tuples ordered by likes (highest first)
+            Tuple of (list of (game_id, replay, like_count) tuples, total count)
         """
-        result = await self.session.execute(
+        # Subquery: fetch at most MAX_BROWSEABLE top public replays with likes
+        base = (
             select(GameReplay)
             .where(GameReplay.is_public.is_(True))
             .where(GameReplay.like_count > 0)
             .order_by(GameReplay.like_count.desc(), GameReplay.created_at.desc())
+            .limit(MAX_BROWSEABLE)
+            .subquery()
+        )
+        capped = aliased(GameReplay, base)
+        total_count = func.count().over().label("total_count")
+
+        result = await self.session.execute(
+            select(capped, total_count)
+            .order_by(capped.like_count.desc(), capped.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
-        records = result.scalars().all()
+        rows = result.all()
 
-        return [(r.id, self._record_to_replay(r), r.like_count) for r in records]
+        total = rows[0].total_count if rows else 0
+        replays = [
+            (row[0].id, self._record_to_replay(row[0]), row[0].like_count)
+            for row in rows
+        ]
+        return replays, total
 
     async def get_like_count(self, game_id: str) -> int:
         """Get the like count for a replay.

@@ -72,16 +72,14 @@ async def list_replays(
         likes_repo = ReplayLikesRepository(session)
 
         if sort == "top":
-            replays_data = await repository.list_top(limit=limit, offset=offset)
+            replays_data, total = await repository.list_top(limit=limit, offset=offset)
             replays_with_ids = [(gid, replay) for gid, replay, _ in replays_data]
             like_counts = {gid: count for gid, _, count in replays_data}
         else:
-            replays_with_ids = await repository.list_recent(limit=limit, offset=offset)
+            replays_with_ids, total = await repository.list_recent(limit=limit, offset=offset)
             # Get like counts for recent replays in a single batch query
             game_ids = [gid for gid, _ in replays_with_ids]
             like_counts = await repository.get_like_counts_batch(game_ids)
-
-        total = await repository.count_public()
 
         # Get user's liked status for all replays
         replay_ids = [gid for gid, _ in replays_with_ids]

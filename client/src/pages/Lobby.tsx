@@ -469,7 +469,7 @@ export function Lobby() {
           </button>
         </div>
         <button className="btn btn-link" onClick={handleLeave}>
-          Leave Lobby
+          Leave
         </button>
       </header>
 

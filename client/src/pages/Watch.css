@@ -104,12 +104,22 @@
   }
 
   .watch-tabs {
-    overflow-x: auto;
+    flex-wrap: wrap;
+    border-bottom: none;
+    gap: 0;
   }
 
   .tab-button {
-    padding: 0.5rem 1rem;
+    flex: 1 1 40%;
+    padding: 0.5rem 0.5rem;
+    font-size: 0.85rem;
     white-space: nowrap;
+    justify-content: center;
+    border-bottom: 2px solid var(--color-border);
+  }
+
+  .tab-button.active {
+    border-bottom-color: var(--color-primary);
   }
 
 }

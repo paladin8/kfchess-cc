@@ -4,12 +4,27 @@
  * Main game view that contains the board and game UI.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameStore } from '../stores/game';
 import { GameBoard, GameStatus, GameOverModal, AudioControls, ResignButton, DrawOfferButton } from '../components/game';
 import { useAudio } from '../hooks/useAudio';
+import { useSquareSize } from '../hooks/useSquareSize';
 import './Game.css';
+
+function getConnectionColor(connectionState: string): string {
+  switch (connectionState) {
+    case 'connected':
+      return '#4ade80';
+    case 'connecting':
+    case 'reconnecting':
+      return '#fbbf24';
+    case 'disconnected':
+      return '#f87171';
+    default:
+      return '#9ca3af';
+  }
+}
 
 export function Game() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -30,6 +45,13 @@ export function Game() {
   const countdown = useGameStore((s) => s.countdown);
   const captureCount = useGameStore((s) => s.captureCount);
   const playerNumber = useGameStore((s) => s.playerNumber);
+  const boardAreaRef = useRef<HTMLDivElement>(null);
+
+  // Dynamic board sizing
+  const squareSize = useSquareSize(boardType, boardAreaRef);
+
+  // Collapsible sidebar state (mobile)
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   // Audio management
   const {
@@ -137,6 +159,8 @@ export function Game() {
     }
   }, [connectionState, storeGameId, status, doConnect]);
 
+  const statusDotColor = useMemo(() => getConnectionColor(connectionState), [connectionState]);
+
   // Don't render until we have game data
   if (!storeGameId) {
     return (
@@ -149,16 +173,27 @@ export function Game() {
   return (
     <div className="game-page">
       <div className="game-content">
-        <div className="game-board-wrapper">
-          <GameBoard boardType={boardType} squareSize={64} />
-          {countdown !== null && (
-            <div className="game-countdown-overlay">
-              <div className="game-countdown-number">{countdown}</div>
-            </div>
-          )}
+        <div className="game-board-area" ref={boardAreaRef}>
+          <div className="game-board-wrapper">
+            <GameBoard boardType={boardType} squareSize={squareSize} />
+            {countdown !== null && (
+              <div className="game-countdown-overlay">
+                <div className="game-countdown-number">{countdown}</div>
+              </div>
+            )}
+          </div>
         </div>
         <div className="game-sidebar">
-          <GameStatus />
+          <button
+            className="game-sidebar-toggle"
+            onClick={() => setSidebarExpanded((v) => !v)}
+          >
+            <span className="status-dot" style={{ backgroundColor: statusDotColor }} />
+            Game Info {sidebarExpanded ? '\u25B2' : '\u25BC'}
+          </button>
+          <div className={`game-sidebar-details${sidebarExpanded ? ' expanded' : ''}`}>
+            <GameStatus />
+          </div>
           {playerNumber > 0 && (
             <div className="game-action-buttons">
               <DrawOfferButton />
