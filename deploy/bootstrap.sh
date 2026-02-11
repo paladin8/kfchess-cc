@@ -102,7 +102,7 @@ fi
 
 if ! command -v claude &>/dev/null; then
     log "Installing Claude Code"
-    curl -fsSL https://claude.ai/install.sh | sh
+    curl -fsSL https://claude.ai/install.sh | bash
     # Make claude available system-wide
     if [[ -f /root/.claude/local/bin/claude ]]; then
         ln -sf /root/.claude/local/bin/claude /usr/local/bin/claude
