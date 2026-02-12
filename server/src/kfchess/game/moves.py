@@ -1002,23 +1002,23 @@ def _check_castling_standard(
     # Find the rook
     rook = board.get_piece_at(from_row, rook_col)
     if rook is None or rook.type != PieceType.ROOK or rook.player != piece.player:
-        logger.warning(f"Castling rejected: rook not found at ({from_row}, {rook_col}) or wrong type/player. rook={rook}")
+        logger.debug(f"Castling rejected: rook not found at ({from_row}, {rook_col}) or wrong type/player. rook={rook}")
         return None
 
     if rook.moved:
-        logger.warning(f"Castling rejected: rook {rook.id} has moved={rook.moved}")
+        logger.debug(f"Castling rejected: rook {rook.id} has moved={rook.moved}")
         return None
 
     # Check rook is not currently moving
     if _is_piece_moving(rook.id, active_moves):
-        logger.warning(f"Castling rejected: rook {rook.id} is currently moving")
+        logger.debug(f"Castling rejected: rook {rook.id} is currently moving")
         return None
 
     # Check rook is not on cooldown
     if cooldowns is not None:
         for cd in cooldowns:
             if cd.piece_id == rook.id and cd.is_active(current_tick):
-                logger.warning(f"Castling rejected: rook {rook.id} is on cooldown")
+                logger.debug(f"Castling rejected: rook {rook.id} is on cooldown")
                 return None
 
     # Check path is clear between king and rook
@@ -1029,7 +1029,7 @@ def _check_castling_standard(
     for col in range(start_col, end_col):
         blocking_piece = board.get_piece_at(from_row, col)
         if blocking_piece is not None and blocking_piece.id not in moving_piece_ids:
-            logger.warning(f"Castling rejected: path blocked by piece at ({from_row}, {col})")
+            logger.debug(f"Castling rejected: path blocked by piece at ({from_row}, {col})")
             return None
 
     # Check no pieces currently moving INTO the castling path
@@ -1037,7 +1037,7 @@ def _check_castling_standard(
         move_end_row, move_end_col = move.end_position
         # Cast to int for proper comparison
         if int(move_end_row) == from_row and start_col <= int(move_end_col) < end_col:
-            logger.warning(f"Castling rejected: piece {move.piece_id} moving into castling path")
+            logger.debug(f"Castling rejected: piece {move.piece_id} moving into castling path")
             return None
 
     # Check for enemy sliders moving along the same rank (same-line blocking)

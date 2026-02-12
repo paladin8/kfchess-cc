@@ -227,7 +227,7 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
         get()._handleMessage(event);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         const currentState = get();
 
         // Clear ping interval
@@ -239,7 +239,12 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
         if (currentState._ws === ws) {
           set({ _ws: null, _pingInterval: null });
 
-          if (!currentState._intentionalClose) {
+          // Don't reconnect on permanent rejection codes — retrying won't help
+          const permanentCodes = [4001, 4004]; // invalid key, lobby not found
+          if (permanentCodes.includes(event.code)) {
+            clearLobbyCredentials();
+            set({ connectionState: 'disconnected', error: event.reason || 'Lobby unavailable' });
+          } else if (!currentState._intentionalClose) {
             currentState._scheduleReconnect();
           } else {
             set({ connectionState: 'disconnected' });

@@ -21,19 +21,70 @@ from kfchess.ws.lobby_handler import handle_lobby_websocket
 from kfchess.ws.replay_handler import handle_replay_websocket
 
 
+class _HealthCheckFilter(logging.Filter):
+    """Suppress uvicorn access log entries for the /health endpoint."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return "/health" not in message
+
+
+# Mapping from Python log levels to syslog priority values.
+# systemd parses "<N>" prefixes when SyslogLevelPrefix=yes (the default).
+_SYSLOG_PRIORITY = {
+    logging.CRITICAL: 2,  # LOG_CRIT
+    logging.ERROR: 3,  # LOG_ERR
+    logging.WARNING: 4,  # LOG_WARNING
+    logging.INFO: 6,  # LOG_INFO
+    logging.DEBUG: 7,  # LOG_DEBUG
+}
+
+
+class _SystemdFormatter(logging.Formatter):
+    """Formatter that prepends syslog priority prefix for systemd journal."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = super().format(record)
+        priority = _SYSLOG_PRIORITY.get(record.levelno, 6)
+        return f"<{priority}>{message}"
+
+
+def _configure_uvicorn_logging(formatter: logging.Formatter) -> None:
+    """Configure uvicorn loggers to use our formatter and filters.
+
+    Uvicorn's default config sets propagate=False and installs its own
+    handlers with a different format. We replace those handlers with our
+    systemd-aware formatter and add the health-check filter.
+    """
+    health_filter = _HealthCheckFilter()
+
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.setLevel(logging.INFO)
+        # Replace uvicorn's handlers with ours
+        uv_logger.handlers.clear()
+        uv_logger.propagate = True
+
+    # Add health-check filter to the access logger
+    logging.getLogger("uvicorn.access").addFilter(health_filter)
+
+
 def setup_logging() -> None:
     """Configure logging for the application.
 
     Log level is controlled by the LOG_LEVEL env var / setting (default: INFO).
     Third-party libraries are kept at WARNING to reduce noise.
     Set LOG_LEVEL=DEBUG for development or troubleshooting.
+
+    Log lines are prefixed with syslog priority levels (<N>) so that
+    systemd journal (SyslogLevelPrefix=yes) correctly classifies severity.
     """
     settings = get_settings()
     app_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 
     # Create formatter — includes server ID for multi-worker disambiguation
     server_id = settings.effective_server_id
-    formatter = logging.Formatter(
+    formatter = _SystemdFormatter(
         f"%(asctime)s [{server_id}] %(name)s %(levelname)s  %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
@@ -42,8 +93,8 @@ def setup_logging() -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.WARNING)
 
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Console handler — write to stderr (journald convention)
+    console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.DEBUG)
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
@@ -51,9 +102,11 @@ def setup_logging() -> None:
     # Application logger — uses configured level
     logging.getLogger("kfchess").setLevel(app_level)
 
-    # Uvicorn — INFO for startup messages and access logs
-    logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+    # Uvicorn — INFO for startup messages and access logs.
+    # NOTE: uvicorn reconfigures these loggers on startup via dictConfig,
+    # so we also call _configure_uvicorn_logging() in the lifespan handler
+    # to reapply our formatter, filter, and propagation settings.
+    _configure_uvicorn_logging(formatter)
 
     # Quiet known noisy libraries even in DEBUG mode
     logging.getLogger("asyncio").setLevel(logging.WARNING)
@@ -71,9 +124,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
-    # Startup
+    # Startup — reclaim uvicorn loggers now that uvicorn's dictConfig has run
     settings = get_settings()
     server_id = settings.effective_server_id
+    formatter = _SystemdFormatter(
+        f"%(asctime)s [{server_id}] %(name)s %(levelname)s  %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    _configure_uvicorn_logging(formatter)
+
     logger.info(f"Starting Kung Fu Chess server (dev_mode={settings.dev_mode}, server_id={server_id})")
 
     # Clean up stale active game entries from previous runs
