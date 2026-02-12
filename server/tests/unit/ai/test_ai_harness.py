@@ -53,6 +53,7 @@ def run_ai_game(
                 move = GameEngine.validate_move(state, 1, piece_id, to_row, to_col)
                 if move:
                     GameEngine.apply_move(state, move)
+                    state.last_move_tick = state.current_tick
                     p1_moves += 1
 
         # AI 2 moves
@@ -63,6 +64,7 @@ def run_ai_game(
                 move = GameEngine.validate_move(state, 2, piece_id, to_row, to_col)
                 if move:
                     GameEngine.apply_move(state, move)
+                    state.last_move_tick = state.current_tick
                     p2_moves += 1
 
         # Tick

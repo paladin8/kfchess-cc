@@ -558,8 +558,9 @@ class GameService:
                 message="Invalid move",
             )
 
-        # Apply the move
+        # Apply the move (human moves reset the no-move draw timer)
         GameEngine.apply_move(state, move)
+        state.last_move_tick = state.current_tick
 
         return MoveResult(
             success=True,

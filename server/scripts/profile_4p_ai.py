@@ -66,6 +66,7 @@ def run_game(max_ticks: int, level: int, seed: int) -> dict:
                     )
                     if move is not None:
                         GameEngine.apply_move(state, move)
+                        state.last_move_tick = state.current_tick
                         total_moves += 1
 
         # Tick

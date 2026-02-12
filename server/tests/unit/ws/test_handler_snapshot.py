@@ -15,7 +15,7 @@ from kfchess.services.game_service import ManagedGame
 from kfchess.ws.handler import (
     SNAPSHOT_INTERVAL_TICKS,
     _build_snapshot,
-    _delete_snapshot_fire_and_forget,
+    _delete_snapshot_and_routing,
     _save_snapshot_fire_and_forget,
 )
 
@@ -267,13 +267,12 @@ class TestFireAndForget:
             # Should not raise — error is logged and swallowed
 
     @pytest.mark.asyncio
-    async def test_delete_snapshot_fire_and_forget_calls_redis(self) -> None:
-        """Fire-and-forget delete calls Redis."""
+    async def test_delete_snapshot_and_routing_calls_redis(self) -> None:
+        """Delete calls Redis for both snapshot and routing key."""
         mock_redis = AsyncMock()
 
         with patch("kfchess.ws.handler.get_redis", return_value=mock_redis):
-            _delete_snapshot_fire_and_forget("DEL_TEST")
-            await asyncio.sleep(0.05)
+            await _delete_snapshot_and_routing("DEL_TEST")
 
         # Snapshot delete + routing key delete = 2 DELETE calls
         assert mock_redis.delete.call_count == 2
@@ -283,11 +282,10 @@ class TestFireAndForget:
 
     @pytest.mark.asyncio
     async def test_delete_snapshot_error_does_not_propagate(self) -> None:
-        """Redis error in fire-and-forget delete doesn't crash."""
+        """Redis error in delete doesn't crash."""
         mock_redis = AsyncMock()
         mock_redis.delete.side_effect = ConnectionError("Redis down")
 
         with patch("kfchess.ws.handler.get_redis", return_value=mock_redis):
-            _delete_snapshot_fire_and_forget("DEL_ERR1")
-            await asyncio.sleep(0.05)
+            await _delete_snapshot_and_routing("DEL_ERR1")
             # Should not raise

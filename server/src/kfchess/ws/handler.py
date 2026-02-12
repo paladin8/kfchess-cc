@@ -113,19 +113,14 @@ def _save_snapshot_fire_and_forget(snapshot: GameSnapshot) -> None:
     task.add_done_callback(_snapshot_tasks.discard)
 
 
-def _delete_snapshot_fire_and_forget(game_id: str) -> None:
-    """Schedule snapshot and routing key deletion as a fire-and-forget task."""
-    async def _delete() -> None:
-        try:
-            r = await get_redis()
-            await delete_snapshot(r, game_id)
-            await delete_game_routing(r, game_id)
-        except Exception:
-            logger.exception(f"Failed to delete snapshot for game {game_id}")
-
-    task = asyncio.create_task(_delete())
-    _snapshot_tasks.add(task)
-    task.add_done_callback(_snapshot_tasks.discard)
+async def _delete_snapshot_and_routing(game_id: str) -> None:
+    """Delete Redis snapshot and routing key for a finished game."""
+    try:
+        r = await get_redis()
+        await delete_snapshot(r, game_id)
+        await delete_game_routing(r, game_id)
+    except Exception:
+        logger.exception(f"Failed to delete snapshot/routing for game {game_id}")
 
 
 async def _check_routing_ownership(game_id: str) -> bool:
@@ -1154,7 +1149,7 @@ async def _run_game_loop(game_id: str) -> None:
                 logger.info(f"Game {game_id} finished (external), winner: {state.winner}")
 
                 await _save_replay(game_id, service)
-                _delete_snapshot_fire_and_forget(game_id)
+                await _delete_snapshot_and_routing(game_id)
 
                 # Update campaign progress if this is a campaign game
                 await _handle_campaign_completion(game_id, state.winner)
@@ -1313,7 +1308,7 @@ async def _run_game_loop(game_id: str) -> None:
 
                 # Save replay to database
                 await _save_replay(game_id, service)
-                _delete_snapshot_fire_and_forget(game_id)
+                await _delete_snapshot_and_routing(game_id)
 
                 # Update campaign progress if this is a campaign game
                 await _handle_campaign_completion(game_id, state.winner)

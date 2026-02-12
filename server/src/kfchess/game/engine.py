@@ -302,7 +302,6 @@ class GameEngine:
         events: list[GameEvent] = []
 
         state.active_moves.append(move)
-        state.last_move_tick = state.current_tick
 
         # Record for replay
         piece = state.board.get_piece_by_id(move.piece_id)
@@ -581,10 +580,12 @@ class GameEngine:
         ticks_since_move = state.current_tick - state.last_move_tick
         ticks_since_capture = state.current_tick - state.last_capture_tick
 
-        # Draw if no moves and no captures for extended periods
+        # Draw if no moves OR no captures for extended periods.
+        # Each condition triggers independently — e.g. AI keeps moving
+        # but no captures happen, the capture timeout still fires.
         if (
             ticks_since_move >= config.draw_no_move_ticks
-            and ticks_since_capture >= config.draw_no_capture_ticks
+            or ticks_since_capture >= config.draw_no_capture_ticks
         ):
             return 0, WinReason.DRAW
 
