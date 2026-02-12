@@ -527,7 +527,7 @@ async def handle_websocket(
             logger.exception(f"Failed to check routing for game {game_id}")
 
         if state is None:
-            logger.warning(f"WebSocket rejected: game {game_id} not found")
+            logger.info(f"WebSocket rejected: game {game_id} not found")
             await websocket.close(code=4004, reason="Game not found")
             return
 

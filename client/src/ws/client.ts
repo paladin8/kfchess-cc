@@ -17,7 +17,8 @@ const RECONNECT_DELAY_MS = 1000; // 1 second initial delay
 const MAX_RECONNECT_DELAY_MS = 30000; // 30 seconds max delay
 const MAX_RECONNECT_ATTEMPTS = 10;
 
-// WebSocket close codes for multi-server routing
+// WebSocket close codes
+const WS_CLOSE_GAME_NOT_FOUND = 4004;
 const WS_CLOSE_SERVER_SHUTDOWN = 4301;
 const WS_CLOSE_REDIRECT = 4302;
 
@@ -223,6 +224,12 @@ export class GameWebSocketClient {
     this.ws = null;
 
     if (this.intentionalClose) {
+      this.setConnectionState('disconnected');
+      return;
+    }
+
+    if (event.code === WS_CLOSE_GAME_NOT_FOUND) {
+      // Game doesn't exist — no point retrying
       this.setConnectionState('disconnected');
       return;
     }
