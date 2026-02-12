@@ -251,6 +251,30 @@ systemctl stop kfchess@worker3
 systemctl disable kfchess@worker3
 ```
 
+### Cleaning up stale/orphaned games
+
+The cleanup script removes stale `active_games` DB rows and orphaned Redis snapshots (snapshots with no matching DB row, which can cause zombie games on restart).
+
+Dry run is the default — it shows what would be removed without deleting anything:
+
+```bash
+cd /var/www/kfchess/server
+
+# Preview: games older than 30 minutes (default)
+sudo -u kfchess uv run python scripts/cleanup_active_games.py
+
+# Preview: all active games
+sudo -u kfchess uv run python scripts/cleanup_active_games.py --all
+
+# Preview: games older than 5 minutes
+sudo -u kfchess uv run python scripts/cleanup_active_games.py --minutes 5
+
+# Actually delete (add --commit)
+sudo -u kfchess uv run python scripts/cleanup_active_games.py --all --commit
+```
+
+This cleans up both the PostgreSQL `active_games` table and the corresponding Redis keys (snapshots + routing), preventing zombie games from being restored on the next deploy.
+
 ### Database access
 
 ```bash

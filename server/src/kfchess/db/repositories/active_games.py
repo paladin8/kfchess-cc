@@ -29,13 +29,14 @@ class ActiveGameRepository:
         server_id: str,
         lobby_code: str | None = None,
         campaign_level_id: int | None = None,
+        started_at: datetime | None = None,
     ) -> None:
         """Register an active game (upsert).
 
         Uses INSERT ... ON CONFLICT UPDATE so that restored games
         overwrite stale rows left by a crashed server.
         """
-        values = {
+        values: dict = {
             "game_id": game_id,
             "game_type": game_type,
             "speed": speed,
@@ -46,6 +47,8 @@ class ActiveGameRepository:
             "campaign_level_id": campaign_level_id,
             "server_id": server_id,
         }
+        if started_at is not None:
+            values["started_at"] = started_at
         stmt = pg_insert(ActiveGame).values(**values)
         stmt = stmt.on_conflict_do_update(
             index_elements=["game_id"],

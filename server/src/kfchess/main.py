@@ -105,8 +105,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         from kfchess.redis.client import get_redis
         from kfchess.redis.heartbeat import is_server_alive, start_heartbeat
-        from kfchess.redis.routing import claim_game_routing, register_game_routing
-        from kfchess.redis.snapshot_store import list_snapshot_game_ids, load_snapshot
+        from kfchess.redis.routing import (
+            claim_game_routing,
+            delete_game_routing,
+            register_game_routing,
+        )
+        from kfchess.redis.snapshot_store import (
+            delete_snapshot,
+            list_snapshot_game_ids,
+            load_snapshot,
+        )
         from kfchess.services.game_registry import register_restored_game
         from kfchess.services.game_service import get_game_service
 
@@ -160,6 +168,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         ai_player_nums=set(managed.ai_players.keys()),
                         campaign_level_id=snapshot.campaign_level_id,
                     )
+            else:
+                # Restore failed (finished game, corrupt snapshot, etc.)
+                # Clean up Redis artifacts so they don't come back next restart
+                logger.info(f"Cleaning up unrestorable snapshot for game {gid}")
+                await delete_snapshot(r, gid)
+                await delete_game_routing(r, gid)
         if restored:
             logger.info(f"Restored {restored} games from Redis snapshots")
 

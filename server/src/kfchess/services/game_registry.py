@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ async def _register_game(
     players: list[dict],
     lobby_code: str | None = None,
     campaign_level_id: int | None = None,
+    started_at: datetime | None = None,
 ) -> None:
     """Register a game in the database (runs in background)."""
     try:
@@ -50,6 +52,7 @@ async def _register_game(
                 server_id=server_id,
                 lobby_code=lobby_code,
                 campaign_level_id=campaign_level_id,
+                started_at=started_at,
             )
             await session.commit()
     except Exception:
@@ -76,6 +79,7 @@ def register_game_fire_and_forget(
     players: list[dict],
     lobby_code: str | None = None,
     campaign_level_id: int | None = None,
+    started_at: datetime | None = None,
 ) -> None:
     """Schedule game registration as a fire-and-forget task."""
     task = asyncio.create_task(
@@ -88,6 +92,7 @@ def register_game_fire_and_forget(
             players=players,
             lobby_code=lobby_code,
             campaign_level_id=campaign_level_id,
+            started_at=started_at,
         )
     )
     _background_tasks.add(task)
@@ -132,6 +137,7 @@ def register_restored_game(
         board_type=state.board.board_type.value,
         players=players_info,
         campaign_level_id=campaign_level_id,
+        started_at=state.started_at,
     )
 
 
