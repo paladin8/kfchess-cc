@@ -1,0 +1,209 @@
+
+ RUN  v3.2.4 /home/jeffr/code/kfchess-cc/client
+      Coverage enabled with v8
+
+stdout | tests/ws/client.test.ts > GameWebSocketClient - routing close codes > normal close > schedules reconnect with backoff on normal close
+Reconnecting in 1647ms (attempt 1)
+
+stdout | tests/ws/client.test.ts > GameWebSocketClient - routing close codes > 4301 - server shutdown > resets reconnect attempts on 4301
+Reconnecting in 1477ms (attempt 1)
+
+stdout | tests/ws/client.test.ts > GameWebSocketClient - routing close codes > 4302 - redirect > clears server hint after use (one-shot)
+Reconnecting in 1548ms (attempt 1)
+
+stderr | tests/stores/lobby.test.ts > Message Handlers > invalid message > handles malformed JSON gracefully
+Failed to parse lobby message: SyntaxError: Unexpected token 'o', "not json" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at Object._handleMessage [90m(/home/jeffr/code/kfchess-cc/client/[39msrc/stores/lobby.ts:324:19[90m)[39m
+    at [90m/home/jeffr/code/kfchess-cc/client/[39mtests/stores/lobby.test.ts:498:32
+    at [90mfile:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:95:5)[39m
+
+ ✓ tests/game/moves.test.ts (77 tests) 17ms
+ ✓ tests/ws/client.test.ts (12 tests) 22ms
+ ✓ tests/game/constants.test.ts (62 tests) 14ms
+ ✓ tests/stores/game.test.ts (19 tests) 8ms
+ ✓ tests/stores/lobby.test.ts (36 tests) 21ms
+ ✓ tests/stores/campaign.test.ts (18 tests) 212ms
+ ✓ tests/components/PlayerBadge.test.tsx (9 tests) 84ms
+stderr | tests/components/Campaign.test.tsx > Campaign Page > authentication > does not redirect when authenticated
+An update to Campaign inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Campaign inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ tests/components/Home.test.tsx (2 tests) 37ms
+stderr | tests/components/Campaign.test.tsx > Campaign Page > content display > renders page header
+An update to Campaign inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Campaign inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | tests/components/Campaign.test.tsx > Campaign Page > content display > shows loading state while fetching
+An update to Campaign inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Campaign inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | tests/stores/replay.test.ts > useReplayStore > _handleMessage > invalid message > handles parse errors gracefully
+Failed to parse replay message: SyntaxError: Unexpected token 'o', "not valid json" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at Object._handleMessage [90m(/home/jeffr/code/kfchess-cc/client/[39msrc/stores/replay.ts:181:28[90m)[39m
+    at MockWebSocket.ws.onmessage [90m(/home/jeffr/code/kfchess-cc/client/[39msrc/stores/replay.ts:124:37[90m)[39m
+    at [90m/home/jeffr/code/kfchess-cc/client/[39mtests/stores/replay.test.ts:440:14
+    at [90mfile:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///home/jeffr/code/kfchess-cc/client/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+
+ ✓ tests/components/DrawOfferButton.test.tsx (9 tests) 84ms
+ ✓ tests/components/ResignButton.test.tsx (8 tests) 92ms
+ ✓ tests/components/Campaign.test.tsx (5 tests) 69ms
+ ✓ tests/stores/replay.test.ts (33 tests) 17ms
+ ✓ tests/components/GameOverModal.test.tsx (27 tests) 173ms
+ ✓ tests/game/interpolation.test.ts (29 tests) 4ms
+ ✓ tests/utils/ratings.test.ts (38 tests) 5ms
+ ✓ tests/components/Lobbies.test.tsx (26 tests) 336ms
+ ✓ tests/components/Lobby.test.tsx (33 tests) 369ms
+
+ Test Files  17 passed (17)
+      Tests  443 passed (443)
+   Start at  19:58:48
+   Duration  1.95s (transform 1.40s, setup 1.38s, collect 4.39s, tests 1.57s, environment 9.19s, prepare 1.36s)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   32.73 |    83.77 |   44.58 |   32.73 |                   
+ src               |   15.84 |    33.33 |   28.57 |   15.84 |                   
+  App.tsx          |       0 |        0 |       0 |       0 | 1-50              
+  analytics.ts     |   28.94 |       50 |      25 |   28.94 | ...41,48-49,52-54 
+  config.ts        |     100 |       50 |     100 |     100 | 18                
+  main.tsx         |       0 |        0 |       0 |       0 | 1-15              
+ src/api           |     6.4 |      100 |       0 |     6.4 |                   
+  client.ts        |    5.97 |      100 |       0 |    5.97 | ...24-126,129-683 
+  index.ts         |     100 |      100 |     100 |     100 |                   
+  types.ts         |       0 |        0 |       0 |       0 |                   
+ src/components    |      31 |    71.42 |      60 |      31 |                   
+  AuthProvider.tsx |       0 |        0 |       0 |       0 | 1-24              
+  BeltIcon.tsx     |    90.9 |       50 |     100 |    90.9 | 16-17             
+  Leaderboard.tsx  |       0 |      100 |     100 |       0 | 7-119             
+  PlayerBadge.tsx  |   98.07 |    88.88 |     100 |   98.07 | 55                
+  ReplayCard.tsx   |       0 |        0 |       0 |       0 | 1-64              
+ ...nents/campaign |   61.32 |    76.47 |      50 |   61.32 |                   
+  BeltSelector.tsx |   92.45 |       80 |      50 |   92.45 | 28-31             
+  LevelGrid.tsx    |   27.45 |       50 |      50 |   27.45 | 20-23,35-78       
+  index.ts         |     100 |      100 |     100 |     100 |                   
+ ...omponents/game |   29.12 |    83.17 |      80 |   29.12 |                   
+  ...oControls.tsx |       0 |      100 |     100 |       0 | 7-49              
+  ...ferButton.tsx |     100 |    96.66 |     100 |     100 | 34                
+  GameBoard.tsx    |       0 |      100 |     100 |       0 | 31-426            
+  ...OverModal.tsx |   67.91 |    72.58 |      60 |   67.91 | ...15-221,224-226 
+  GameStatus.tsx   |       0 |      100 |     100 |       0 | 7-151             
+  ResignButton.tsx |     100 |      100 |     100 |     100 |                   
+  index.ts         |       0 |      100 |     100 |       0 | 5-10              
+ ...ponents/layout |       0 |        0 |       0 |       0 |                   
+  Header.tsx       |       0 |        0 |       0 |       0 | 1-206             
+  Layout.tsx       |       0 |        0 |       0 |       0 | 1-15              
+ ...ponents/replay |       0 |      100 |     100 |       0 |                   
+  ReplayBoard.tsx  |       0 |      100 |     100 |       0 | 8-244             
+  ...yControls.tsx |       0 |      100 |     100 |       0 | 7-253             
+  index.ts         |       0 |      100 |     100 |       0 | 5-6               
+ src/game          |   56.64 |    92.01 |   77.77 |   56.64 |                   
+  constants.ts     |   97.95 |    98.21 |      90 |   97.95 | 43-44,252         
+  index.ts         |     100 |      100 |     100 |     100 |                   
+  interpolation.ts |     100 |      100 |     100 |     100 |                   
+  moves.ts         |   84.41 |    91.07 |   94.44 |   84.41 | ...90,547-624,671 
+  renderer.ts      |    1.78 |        0 |       0 |    1.78 | 67-662            
+  sprites.ts       |   49.18 |      100 |       0 |   49.18 | ...13-114,120-121 
+ src/hooks         |       0 |      100 |     100 |       0 |                   
+  useAudio.ts      |       0 |      100 |     100 |       0 | 8-211             
+  useSquareSize.ts |       0 |      100 |     100 |       0 | 9-71              
+ src/pages         |   24.88 |    77.77 |   25.39 |   24.88 |                   
+  About.tsx        |       0 |        0 |       0 |       0 | 1-33              
+  Campaign.tsx     |   88.04 |    80.64 |     100 |   88.04 | 48-50,56-63,113   
+  ...tPassword.tsx |       0 |        0 |       0 |       0 | 1-81              
+  Game.tsx         |       0 |      100 |     100 |       0 | 7-241             
+  ...eCallback.tsx |       0 |        0 |       0 |       0 | 1-126             
+  Home.tsx         |   36.82 |    41.66 |       5 |   36.82 | ...09-249,254-292 
+  Lobbies.tsx      |   81.77 |     82.5 |   58.33 |   81.77 | ...71-175,234-236 
+  Lobby.tsx        |    82.5 |    84.29 |   22.22 |    82.5 | ...24-431,442-447 
+  Login.tsx        |       0 |        0 |       0 |       0 | 1-144             
+  Privacy.tsx      |       0 |        0 |       0 |       0 | 1-107             
+  Profile.tsx      |       0 |        0 |       0 |       0 | 1-510             
+  Register.tsx     |       0 |        0 |       0 |       0 | 1-190             
+  Replay.tsx       |       0 |      100 |     100 |       0 | 7-301             
+  ...tPassword.tsx |       0 |        0 |       0 |       0 | 1-160             
+  Verify.tsx       |       0 |        0 |       0 |       0 | 1-136             
+  Watch.tsx        |       0 |      100 |     100 |       0 | 7-355             
+ src/stores        |   50.31 |    84.61 |   48.03 |   50.31 |                   
+  auth.ts          |    9.14 |      100 |       0 |    9.14 | ...17-234,239-243 
+  campaign.ts      |      98 |    95.45 |   58.33 |      98 | 125-126           
+  game.ts          |   25.81 |      100 |   20.68 |   25.81 | ...92-594,597-605 
+  lobby.ts         |    55.3 |    73.68 |      50 |    55.3 | ...27-631,644-652 
+  replay.ts        |     100 |    91.89 |     100 |     100 | 283,314,323       
+ src/utils         |   67.54 |    97.22 |     100 |   67.54 |                   
+  displayName.ts   |     100 |      100 |     100 |     100 |                   
+  format.ts        |       0 |      100 |     100 |       0 | 5-64              
+  ratings.ts       |   97.05 |    96.55 |     100 |   97.05 | 38-39             
+ src/ws            |   58.57 |    68.57 |   56.52 |   58.57 |                   
+  client.ts        |   59.13 |    69.69 |   57.14 |   59.13 | ...96-298,304-305 
+  index.ts         |       0 |        0 |       0 |       0 | 1-2               
+  types.ts         |       0 |        0 |       0 |       0 |                   
+-------------------|---------|----------|---------|---------|-------------------
