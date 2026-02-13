@@ -16,6 +16,7 @@ from kfchess.drain import is_draining
 from kfchess.redis.routing import register_routing
 from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
+from kfchess.ws.game_loop import start_game_loop_if_needed
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,9 @@ async def start_level(
         campaign_level_id=level.level_id,
     )
     await register_routing(game_id)
+
+    # Start game loop immediately so draw timers run even if no WS connects
+    await start_game_loop_if_needed(game_id)
 
     return StartGameResponse(
         game_id=game_id,

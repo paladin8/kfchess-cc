@@ -21,10 +21,7 @@ from kfchess.game.state import Speed
 from kfchess.redis.client import get_redis
 from kfchess.redis.heartbeat import is_server_alive
 from kfchess.redis.routing import get_game_server, register_routing
-from kfchess.services.game_registry import (
-    deregister_game_fire_and_forget,
-    register_game_fire_and_forget,
-)
+from kfchess.services.game_registry import deregister_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
 from kfchess.settings import get_settings
 from kfchess.utils.display_name import resolve_player_info, resolve_player_info_batch
@@ -147,22 +144,8 @@ async def create_game(request: CreateGameRequest) -> CreateGameResponse:
         )
         logger.info(f"Game created: game_id={game_id}, player_number={player_number}")
 
-        # Register in active games registry
-        managed = service.get_managed_game(game_id)
-        if managed:
-            players_info = []
-            for pnum, pid in managed.state.players.items():
-                is_ai = pnum in managed.ai_players
-                players_info.append({"slot": pnum, "player_id": pid, "is_ai": is_ai})
-            register_game_fire_and_forget(
-                game_id=game_id,
-                game_type="quickplay",
-                speed=request.speed,
-                player_count=len(managed.state.players),
-                board_type=request.board_type,
-                players=players_info,
-            )
-            await register_routing(game_id)
+        # Register routing key only (active_games deferred until game starts)
+        await register_routing(game_id)
     except Exception as err:
         logger.exception(f"Failed to create game: {err}")
         raise HTTPException(status_code=500, detail=f"Failed to create game: {err}") from err

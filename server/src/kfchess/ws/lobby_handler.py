@@ -23,6 +23,7 @@ from kfchess.redis.lobby_store import RedisLobbyManager, _pubsub_channel
 from kfchess.redis.routing import register_routing
 from kfchess.services.game_registry import register_game_fire_and_forget
 from kfchess.services.game_service import get_game_service
+from kfchess.ws.game_loop import start_game_loop_if_needed
 
 logger = logging.getLogger(__name__)
 
@@ -551,6 +552,9 @@ async def _create_game_from_lobby(
         lobby_code=code,
     )
     await register_routing(game_id_created)
+
+    # Start game loop immediately so draw timers run even if no WS connects
+    await start_game_loop_if_needed(game_id_created)
 
     # Publish game_starting via pub/sub with ALL player keys
     # The relay task will filter to send only the relevant key to each player

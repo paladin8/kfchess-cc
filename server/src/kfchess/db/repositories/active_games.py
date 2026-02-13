@@ -48,7 +48,9 @@ class ActiveGameRepository:
             "server_id": server_id,
         }
         if started_at is not None:
-            values["started_at"] = started_at
+            # DB column is TIMESTAMP WITHOUT TIME ZONE; strip tzinfo to
+            # avoid asyncpg "can't subtract offset-naive and offset-aware" error
+            values["started_at"] = started_at.replace(tzinfo=None)
         stmt = pg_insert(ActiveGame).values(**values)
         stmt = stmt.on_conflict_do_update(
             index_elements=["game_id"],

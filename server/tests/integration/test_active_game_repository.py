@@ -121,6 +121,37 @@ class TestRegister:
             await db_session.commit()
 
     @pytest.mark.asyncio
+    async def test_register_with_timezone_aware_started_at(self, db_session: AsyncSession):
+        """Restored games pass a tz-aware started_at from the snapshot.
+
+        The DB column is TIMESTAMP WITHOUT TIME ZONE, so the repository must
+        strip tzinfo to avoid asyncpg's "can't subtract offset-naive and
+        offset-aware datetimes" error.
+        """
+        game_id = generate_test_id()
+        tz_aware_dt = datetime(2026, 2, 11, 20, 59, 50, 151296, tzinfo=UTC)
+        try:
+            repo = ActiveGameRepository(db_session)
+            await repo.register(
+                game_id=game_id,
+                game_type="restored",
+                speed="standard",
+                player_count=2,
+                board_type="standard",
+                players=_make_players(),
+                server_id="test-server",
+                started_at=tz_aware_dt,
+            )
+            await db_session.commit()
+
+            games = await repo.list_active()
+            game = next(g for g in games if g.game_id == game_id)
+            assert game.started_at == tz_aware_dt.replace(tzinfo=None)
+        finally:
+            await repo.deregister(game_id)
+            await db_session.commit()
+
+    @pytest.mark.asyncio
     async def test_register_preserves_player_json(self, db_session: AsyncSession):
         """Verify that player data round-trips through JSON correctly."""
         game_id = generate_test_id()

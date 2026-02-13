@@ -88,7 +88,7 @@ class TestCrashRecovery:
                 return_value=MagicMock(effective_server_id="my-server"),
             ),
             patch("kfchess.ws.handler.connection_manager") as mock_cm,
-            patch("kfchess.ws.handler._start_game_loop_if_needed", new_callable=AsyncMock),
+            patch("kfchess.ws.handler.start_game_loop_if_needed", new_callable=AsyncMock),
             patch("kfchess.ws.handler.register_restored_game"),
         ):
             mock_cm.connect = AsyncMock()

@@ -30,10 +30,19 @@ from kfchess.redis.routing import (
     register_game_routing,
 )
 from kfchess.redis.snapshot_store import delete_snapshot, load_snapshot, save_snapshot
-from kfchess.services.game_registry import deregister_game, register_restored_game
+from kfchess.services.game_registry import (
+    deregister_game,
+    register_game_fire_and_forget,
+    register_restored_game,
+)
 from kfchess.services.game_service import ManagedGame, get_game_service
 from kfchess.services.rating_service import RatingService
 from kfchess.settings import get_settings
+from kfchess.ws.game_loop import (
+    cleanup_game_loop_lock,
+    register_game_loop_factory,
+    start_game_loop_if_needed,
+)
 from kfchess.ws.lobby_handler import notify_game_ended
 from kfchess.ws.protocol import (
     CampaignLevelInfo,
@@ -59,9 +68,6 @@ from kfchess.ws.protocol import (
 COUNTDOWN_SECONDS = 3
 
 logger = logging.getLogger(__name__)
-
-# Lock for game loop startup to prevent race conditions
-_game_loop_locks: dict[str, asyncio.Lock] = {}
 
 # Track games currently in countdown phase (moves rejected during countdown)
 _games_in_countdown: set[str] = set()
@@ -326,34 +332,6 @@ class ConnectionManager:
 connection_manager = ConnectionManager()
 
 
-def _get_game_loop_lock(game_id: str) -> asyncio.Lock:
-    """Get or create a lock for game loop startup."""
-    if game_id not in _game_loop_locks:
-        _game_loop_locks[game_id] = asyncio.Lock()
-    return _game_loop_locks[game_id]
-
-
-async def _start_game_loop_if_needed(game_id: str) -> None:
-    """Start the game loop if not already running.
-
-    Uses a lock to prevent race conditions when multiple connections
-    try to start the loop simultaneously.
-    """
-    service = get_game_service()
-    lock = _get_game_loop_lock(game_id)
-
-    async with lock:
-        managed_game = service.get_managed_game(game_id)
-        if managed_game is None:
-            return
-
-        if not managed_game.state.is_playing:
-            return
-
-        if managed_game.loop_task is None or managed_game.loop_task.done():
-            managed_game.loop_task = asyncio.create_task(_run_game_loop(game_id))
-
-
 async def _send_initial_state(websocket: WebSocket, game_id: str, service: Any) -> None:
     """Send the current game state to a newly connected client."""
     state = service.get_game(game_id)
@@ -572,7 +550,7 @@ async def handle_websocket(
     await _send_initial_state(websocket, game_id, service)
 
     # Start game loop if game is playing
-    await _start_game_loop_if_needed(game_id)
+    await start_game_loop_if_needed(game_id)
 
     try:
         while True:
@@ -720,8 +698,24 @@ async def _handle_ready(
             GameStartedMessage(tick=0).model_dump(),
         )
 
+        # Register in active games now that the game is actually playing
+        managed_game = service.get_managed_game(game_id)
+        if managed_game is not None:
+            players_info = []
+            for pnum, pid in managed_game.state.players.items():
+                is_ai = pnum in managed_game.ai_players
+                players_info.append({"slot": pnum, "player_id": pid, "is_ai": is_ai})
+            register_game_fire_and_forget(
+                game_id=game_id,
+                game_type="quickplay",
+                speed=managed_game.state.speed.value,
+                player_count=len(managed_game.state.players),
+                board_type=managed_game.state.board.board_type.value,
+                players=players_info,
+            )
+
         # Start the game loop (uses lock to prevent race conditions)
-        await _start_game_loop_if_needed(game_id)
+        await start_game_loop_if_needed(game_id)
 
 
 async def _handle_resign(
@@ -1334,8 +1328,7 @@ async def _run_game_loop(game_id: str) -> None:
     finally:
         # Clean up
         _games_in_countdown.discard(game_id)
-        if game_id in _game_loop_locks:
-            del _game_loop_locks[game_id]
+        cleanup_game_loop_lock(game_id)
         # Only deregister if the game is actually done. The loop may have
         # stopped due to no connections — the game is still alive in memory
         # and the loop will restart when someone reconnects.
@@ -1343,3 +1336,7 @@ async def _run_game_loop(game_id: str) -> None:
         if managed is None or managed.state.status == GameStatus.FINISHED:
             await deregister_game(game_id)
         logger.info(f"Game loop ended for game {game_id}")
+
+
+# Register _run_game_loop so the shared game_loop module can create tasks
+register_game_loop_factory(_run_game_loop)

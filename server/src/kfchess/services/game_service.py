@@ -336,7 +336,7 @@ class GameService:
 
         Reconstructs a ManagedGame from snapshot data including AI instances.
         The game loop is NOT started here — it starts when a player reconnects
-        via _start_game_loop_if_needed().
+        via start_game_loop_if_needed().
 
         Args:
             snapshot: The game snapshot to restore from
