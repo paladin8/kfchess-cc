@@ -15,7 +15,9 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -41,28 +43,69 @@ async def _scan_redis_snapshot_ids(r: aioredis.Redis) -> list[str]:
     return game_ids
 
 
+async def _load_snapshot_time(r: aioredis.Redis, game_id: str) -> float:
+    """Load a snapshot's timestamp from Redis without full deserialization.
+
+    Returns 0.0 if snapshot doesn't exist or can't be parsed.
+    """
+    data = await r.get(f"game:{game_id}:snapshot")
+    if data is None:
+        return 0.0
+    try:
+        return json.loads(data).get("snapshot_time", 0.0)
+    except (json.JSONDecodeError, AttributeError):
+        return 0.0
+
+
 async def cleanup(minutes: int | None, dry_run: bool) -> None:
-    """Remove stale active games from DB and Redis."""
+    """Remove stale active games from DB and Redis.
+
+    Uses Redis snapshot_time as the primary staleness signal (not the DB
+    started_at, which can be reset by server restarts). Also cleans up
+    DB rows for games whose snapshots are stale, and orphaned snapshots
+    with no DB row.
+    """
     settings = get_settings()
     r = aioredis.from_url(settings.redis_url, decode_responses=True)
 
     try:
         async with async_session_factory() as session:
-            # Find games to clean up from DB
+            now = time.time()
+            cutoff_seconds = minutes * 60 if minutes is not None else 0
+
+            # Scan all Redis snapshots and check actual snapshot_time
+            all_snapshot_ids = await _scan_redis_snapshot_ids(r)
+            stale_snapshot_ids: list[tuple[str, float]] = []  # (game_id, age_seconds)
+            for gid in all_snapshot_ids:
+                snap_time = await _load_snapshot_time(r, gid)
+                if minutes is None:
+                    # --all: every snapshot is stale
+                    stale_snapshot_ids.append((gid, now - snap_time if snap_time > 0 else 0))
+                elif snap_time > 0 and (now - snap_time) > cutoff_seconds:
+                    stale_snapshot_ids.append((gid, now - snap_time))
+                elif snap_time == 0:
+                    # Can't determine age (legacy snapshot) — treat as stale
+                    stale_snapshot_ids.append((gid, 0))
+            stale_game_ids = {gid for gid, _ in stale_snapshot_ids}
+
+            # Find DB rows to clean up: rows matching the age filter OR
+            # rows whose Redis snapshot is stale
             query = select(ActiveGame).order_by(ActiveGame.started_at)
             if minutes is not None:
-                cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=minutes)
-                query = query.where(ActiveGame.started_at < cutoff)
+                db_cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=minutes)
+                query = query.where(
+                    (ActiveGame.started_at < db_cutoff) | ActiveGame.game_id.in_(stale_game_ids)
+                )
 
             result = await session.execute(query)
             games = list(result.scalars().all())
             db_game_ids = {g.game_id for g in games}
 
-            # Also find orphaned Redis snapshots (no DB row)
-            all_snapshot_ids = await _scan_redis_snapshot_ids(r)
-            all_db_result = await session.execute(select(ActiveGame.game_id))
-            all_db_ids = {row[0] for row in all_db_result.all()}
-            orphaned_ids = [gid for gid in all_snapshot_ids if gid not in all_db_ids]
+            # Orphaned snapshots: stale snapshots with no DB row
+            orphaned_ids = [gid for gid in stale_game_ids if gid not in db_game_ids]
+
+            # Combine everything to clean from Redis
+            all_ids_to_clean = db_game_ids | stale_game_ids
 
             if not games and not orphaned_ids:
                 print("No active games or orphaned snapshots to clean up.")
@@ -91,15 +134,14 @@ async def cleanup(minutes: int | None, dry_run: bool) -> None:
 
             # Delete from database
             if games:
-                game_ids = [g.game_id for g in games]
+                ids_to_delete = [g.game_id for g in games]
                 await session.execute(
-                    delete(ActiveGame).where(ActiveGame.game_id.in_(game_ids))
+                    delete(ActiveGame).where(ActiveGame.game_id.in_(ids_to_delete))
                 )
                 await session.commit()
-                print(f"\nDeleted {len(game_ids)} row(s) from active_games table.")
+                print(f"\nDeleted {len(ids_to_delete)} row(s) from active_games table.")
 
-            # Delete Redis keys for DB games + orphaned snapshots
-            all_ids_to_clean = list(db_game_ids | set(orphaned_ids))
+            # Delete Redis keys for all identified stale games
             redis_deleted = 0
             for gid in all_ids_to_clean:
                 keys = [f"game:{gid}:snapshot", f"game:{gid}:server"]
