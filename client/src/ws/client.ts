@@ -16,6 +16,7 @@ const PING_INTERVAL_MS = 30000; // 30 seconds
 const RECONNECT_DELAY_MS = 1000; // 1 second initial delay
 const MAX_RECONNECT_DELAY_MS = 30000; // 30 seconds max delay
 const MAX_RECONNECT_ATTEMPTS = 10;
+const CONNECTION_TIMEOUT_MS = 10000; // 10 seconds to establish connection
 
 // WebSocket close codes
 const WS_CLOSE_GAME_NOT_FOUND = 4004;
@@ -28,6 +29,7 @@ export class GameWebSocketClient {
   private connectionState: ConnectionState = 'disconnected';
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private connectionTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private intentionalClose = false;
   private hasConnectedBefore = false;
@@ -45,6 +47,17 @@ export class GameWebSocketClient {
       return; // Already connected
     }
 
+    // Clean up any existing non-OPEN WebSocket (e.g., stuck in CONNECTING)
+    if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.close();
+      this.ws = null;
+    }
+
+    this.clearConnectionTimeout();
     this.intentionalClose = false;
     this.setConnectionState('connecting');
 
@@ -70,6 +83,14 @@ export class GameWebSocketClient {
       this.ws.onmessage = this.handleMessage.bind(this);
       this.ws.onclose = this.handleClose.bind(this);
       this.ws.onerror = this.handleError.bind(this);
+
+      // Timeout if connection doesn't establish (e.g., TCP connects but upgrade hangs)
+      this.connectionTimeout = setTimeout(() => {
+        if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+          console.warn('WebSocket connection timeout');
+          this.ws.close();
+        }
+      }, CONNECTION_TIMEOUT_MS);
     } catch (error) {
       console.error('Failed to create WebSocket:', error);
       this.scheduleReconnect();
@@ -83,8 +104,15 @@ export class GameWebSocketClient {
     this.intentionalClose = true;
     this.stopPing();
     this.clearReconnectTimeout();
+    this.clearConnectionTimeout();
 
     if (this.ws) {
+      // Clear handlers before closing to prevent stale async onclose events
+      // from updating shared store state after a new client is created
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
       this.ws.close();
       this.ws = null;
     }
@@ -161,6 +189,7 @@ export class GameWebSocketClient {
   }
 
   private handleOpen(): void {
+    this.clearConnectionTimeout();
     const isReconnect = this.hasConnectedBefore;
     this.hasConnectedBefore = true;
     this.reconnectAttempts = 0;
@@ -220,6 +249,7 @@ export class GameWebSocketClient {
   }
 
   private handleClose(event: CloseEvent): void {
+    this.clearConnectionTimeout();
     this.stopPing();
     this.ws = null;
 
@@ -302,6 +332,13 @@ export class GameWebSocketClient {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+    }
+  }
+
+  private clearConnectionTimeout(): void {
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
     }
   }
 }

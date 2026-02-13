@@ -8,12 +8,13 @@ import type { WebSocketClientOptions } from '../../src/ws/types';
 
 // Mock WebSocket class
 class MockWebSocket {
+  static CONNECTING = 0;
   static OPEN = 1;
   static CLOSED = 3;
   static instances: MockWebSocket[] = [];
 
   url: string;
-  readyState = MockWebSocket.OPEN;
+  readyState = MockWebSocket.CONNECTING;
   onopen: ((ev: Event) => void) | null = null;
   onmessage: ((ev: MessageEvent) => void) | null = null;
   onclose: ((ev: CloseEvent) => void) | null = null;
@@ -247,6 +248,185 @@ describe('GameWebSocketClient - routing close codes', () => {
       ws.simulateOpen();
 
       client.disconnect();
+
+      expect(client.getConnectionState()).toBe('disconnected');
+      expect(MockWebSocket.instances.length).toBe(1);
+    });
+
+    it('clears event handlers on disconnect to prevent stale callbacks', () => {
+      const onConnectionChange = vi.fn();
+      const client = new GameWebSocketClient({
+        ...options,
+        onConnectionChange,
+      });
+      client.connect();
+
+      const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
+
+      // Reset mock to track calls after disconnect
+      onConnectionChange.mockClear();
+
+      client.disconnect();
+
+      // disconnect() itself fires onConnectionChange('disconnected')
+      expect(onConnectionChange).toHaveBeenCalledWith('disconnected');
+      onConnectionChange.mockClear();
+
+      // Handlers should be cleared — stale close event should NOT update state
+      expect(ws.onopen).toBeNull();
+      expect(ws.onmessage).toBeNull();
+      expect(ws.onclose).toBeNull();
+      expect(ws.onerror).toBeNull();
+
+      // Simulating a stale close event should be a no-op
+      ws.simulateClose(1006);
+      expect(onConnectionChange).not.toHaveBeenCalled();
+    });
+
+    it('stale close event does not corrupt new client state', () => {
+      const onConnectionChange = vi.fn();
+      const optionsWithCallback = {
+        ...options,
+        onConnectionChange,
+      };
+      const client = new GameWebSocketClient(optionsWithCallback);
+      client.connect();
+
+      const ws1 = MockWebSocket.instances[0];
+      ws1.simulateOpen();
+
+      // Disconnect old client
+      client.disconnect();
+      onConnectionChange.mockClear();
+
+      // Simulate stale close event from old WebSocket (arrives async)
+      // Handlers were cleared so this should be a no-op
+      ws1.simulateClose(1006);
+      expect(onConnectionChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('connection timeout', () => {
+    it('closes WebSocket if connection not established within timeout', () => {
+      const client = new GameWebSocketClient(options);
+      client.connect();
+
+      const ws = MockWebSocket.instances[0];
+      // Don't call simulateOpen — connection hangs
+      expect(ws.readyState).toBe(MockWebSocket.CONNECTING);
+
+      // Advance past the 10s connection timeout
+      vi.advanceTimersByTime(10000);
+
+      // Should have called close() on the hanging WebSocket
+      expect(ws.close).toHaveBeenCalled();
+    });
+
+    it('does not close WebSocket if connection succeeds before timeout', () => {
+      const client = new GameWebSocketClient(options);
+      client.connect();
+
+      const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
+
+      // Advance past the timeout
+      vi.advanceTimersByTime(10000);
+
+      // close() should NOT have been called (only the close mock from potential other calls)
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(client.getConnectionState()).toBe('connected');
+    });
+
+    it('triggers reconnect after connection timeout', () => {
+      const client = new GameWebSocketClient(options);
+      client.connect();
+
+      const ws = MockWebSocket.instances[0];
+      // Connection hangs — don't call simulateOpen
+
+      // Advance past timeout
+      vi.advanceTimersByTime(10000);
+      expect(ws.close).toHaveBeenCalled();
+
+      // Simulate browser firing close event after ws.close()
+      ws.simulateClose(1006);
+      expect(client.getConnectionState()).toBe('reconnecting');
+
+      // Advance past reconnect delay to trigger reconnection
+      vi.advanceTimersByTime(5000);
+      expect(MockWebSocket.instances.length).toBe(2);
+    });
+
+    it('clears connection timeout on disconnect', () => {
+      const client = new GameWebSocketClient(options);
+      client.connect();
+
+      const ws = MockWebSocket.instances[0];
+      // Don't open — connection hanging
+
+      // Disconnect before timeout fires
+      client.disconnect();
+      // disconnect() calls ws.close() once (via the cleanup in connect() is not applicable here,
+      // but the explicit close in disconnect() is)
+      expect(ws.close).toHaveBeenCalledTimes(1);
+
+      // Advance past timeout — timeout should have been cleared
+      ws.close.mockClear();
+      vi.advanceTimersByTime(10000);
+      expect(ws.close).not.toHaveBeenCalled();
+    });
+
+    it('stale timeout does not close a new WebSocket after quick reconnect', () => {
+      const client = new GameWebSocketClient(options);
+      client.connect(); // t=0, WS1 created, 10s timeout starts
+
+      const ws1 = MockWebSocket.instances[0];
+      // WS1 closes quickly (e.g., server rejects before upgrade)
+      // handleClose clears WS1's 10s timeout
+      ws1.simulateClose(1006);
+      expect(client.getConnectionState()).toBe('reconnecting');
+
+      // Reconnect fires at ~t=2s, creating WS2 with its own 10s timeout
+      vi.advanceTimersByTime(5000); // t=5s
+      expect(MockWebSocket.instances.length).toBe(2);
+      const ws2 = MockWebSocket.instances[1];
+      expect(ws2.readyState).toBe(MockWebSocket.CONNECTING);
+
+      // Advance to t=10s — past when WS1's timeout WOULD have fired,
+      // but before WS2's own timeout (which started at ~t=2s, fires at ~t=12s)
+      vi.advanceTimersByTime(5000); // t=10s
+      expect(ws2.close).not.toHaveBeenCalled();
+    });
+
+    it('cleans up CONNECTING WebSocket when connect() is called again', () => {
+      const client = new GameWebSocketClient(options);
+      client.connect();
+
+      const ws1 = MockWebSocket.instances[0];
+      expect(ws1.readyState).toBe(MockWebSocket.CONNECTING);
+
+      // Simulate 4302 redirect: handleClose sets ws=null, then calls connect()
+      ws1.simulateClose(4302, 'worker2');
+
+      // A new WebSocket should be created
+      expect(MockWebSocket.instances.length).toBe(2);
+      const ws2 = MockWebSocket.instances[1];
+
+      // Old WebSocket's handlers should have been cleared by handleClose flow
+      // (handleClose sets this.ws = null, so connect() sees no existing ws)
+      expect(ws2.url).toContain('server=worker2');
+    });
+  });
+
+  describe('4004 - game not found', () => {
+    it('does not reconnect on game not found', () => {
+      const client = new GameWebSocketClient(options);
+      client.connect();
+
+      const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
+      ws.simulateClose(4004);
 
       expect(client.getConnectionState()).toBe('disconnected');
       expect(MockWebSocket.instances.length).toBe(1);
