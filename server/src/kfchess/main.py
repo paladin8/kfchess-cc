@@ -4,6 +4,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from types import FrameType
@@ -176,6 +177,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         from kfchess.services.game_registry import register_restored_game
         from kfchess.services.game_service import get_game_service
+        from kfchess.ws.game_loop import start_game_loop_if_needed
 
         r = await get_redis()
         await start_heartbeat(r, server_id)
@@ -193,6 +195,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             snapshot = await load_snapshot(r, gid)
             if snapshot is None:
                 continue
+            # Skip snapshots older than 10 minutes — they're definitely stale.
+            # Active games save snapshots every ~1 second, so any snapshot this
+            # old means the game was abandoned or the server died long ago.
+            MAX_RESTORE_AGE_SECONDS = 600
+            if snapshot.snapshot_time > 0:
+                age = time.time() - snapshot.snapshot_time
+                if age > MAX_RESTORE_AGE_SECONDS:
+                    logger.info(f"Skipping stale snapshot for game {gid} (age={age:.0f}s)")
+                    await delete_snapshot(r, gid)
+                    await delete_game_routing(r, gid)
+                    continue
             # Skip games owned by a different server that is still alive.
             # If the snapshot belongs to US (same server_id after restart),
             # always restore it — our heartbeat is alive because we just
@@ -227,6 +240,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         ai_player_nums=set(managed.ai_players.keys()),
                         campaign_level_id=snapshot.campaign_level_id,
                     )
+                    # Start game loop so draw timers run and the game
+                    # resolves naturally instead of staying stale forever.
+                    if managed.state.is_playing:
+                        await start_game_loop_if_needed(gid)
             else:
                 # Restore failed (finished game, corrupt snapshot, etc.)
                 # Clean up Redis artifacts so they don't come back next restart
