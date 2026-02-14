@@ -12,7 +12,7 @@ export interface UserRatingStats {
 export interface User {
   id: number;
   username: string;
-  email: string;
+  email: string | null;
   pictureUrl: string | null;
   ratings: Record<string, UserRatingStats>;
   isVerified: boolean;
@@ -62,6 +62,7 @@ interface AuthState {
   register: (email: string, password: string, username?: string) => Promise<boolean>;
   logout: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  loginWithLichess: () => Promise<void>;
   clearError: () => void;
   setUser: (user: User | null) => void;
 }
@@ -223,6 +224,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       window.location.href = authUrl;
     } catch (error) {
       let message = 'Failed to start Google login';
+      if (error instanceof api.ApiClientError && error.status === 429) {
+        message = 'Too many login attempts. Please wait a moment and try again.';
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+      set({ isLoading: false, error: message });
+      throw error;
+    }
+  },
+
+  loginWithLichess: async () => {
+    // Guard against concurrent requests
+    if (get().isLoading) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      const authUrl = await api.getLichessAuthUrl();
+      // Redirect to Lichess OAuth
+      window.location.href = authUrl;
+    } catch (error) {
+      let message = 'Failed to start Lichess login';
       if (error instanceof api.ApiClientError && error.status === 429) {
         message = 'Too many login attempts. Please wait a moment and try again.';
       } else if (error instanceof Error) {

@@ -64,7 +64,6 @@ export function useSquareSize(
       window.removeEventListener('resize', scheduleUpdate);
     };
     // refReady triggers re-run when the ref target mounts after loading states
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calc, boardAreaRef, refReady]);
 
   return squareSize;

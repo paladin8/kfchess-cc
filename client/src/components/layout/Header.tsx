@@ -73,7 +73,7 @@ function Header() {
     }
   };
 
-  const showVerificationBanner = isAuthenticated && user && !user.isVerified;
+  const showVerificationBanner = isAuthenticated && user && !user.isVerified && user.email;
 
   const getButtonText = () => {
     if (sendingVerification) return 'Sending...';

@@ -202,7 +202,7 @@ export interface ApiRatingStats {
 // User data from server (matches UserRead schema)
 export interface ApiUser {
   id: number;
-  email: string;
+  email: string | null;
   username: string;
   picture_url: string | null;
   google_id: string | null;

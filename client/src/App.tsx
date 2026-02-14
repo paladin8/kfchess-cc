@@ -8,6 +8,7 @@ import { Watch } from './pages/Watch';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import GoogleCallback from './pages/GoogleCallback';
+import LichessCallback from './pages/LichessCallback';
 import Verify from './pages/Verify';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -31,6 +32,7 @@ function App() {
           <Route path="login" element={<Login />} />
           <Route path="register" element={<Register />} />
           <Route path="auth/google/callback" element={<GoogleCallback />} />
+          <Route path="auth/lichess/callback" element={<LichessCallback />} />
           <Route path="verify" element={<Verify />} />
           <Route path="forgot-password" element={<ForgotPassword />} />
           <Route path="reset-password" element={<ResetPassword />} />

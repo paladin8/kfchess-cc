@@ -15,6 +15,7 @@ class UserRead(schemas.BaseUser[int]):
     Extends FastAPI-Users base schema with application-specific fields.
     """
 
+    email: str | None = None  # Override: nullable for OAuth-only users (e.g., Lichess)
     username: str
     picture_url: str | None = None
     google_id: str | None = None

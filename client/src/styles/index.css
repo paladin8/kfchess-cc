@@ -458,6 +458,25 @@ a:hover {
   flex-shrink: 0;
 }
 
+.btn-lichess {
+  background-color: #fff;
+  color: #333;
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.btn-lichess:hover {
+  background-color: #f5f5f5;
+}
+
+.lichess-icon {
+  flex-shrink: 0;
+}
+
 /* Auth Pages */
 .auth-page {
   display: flex;

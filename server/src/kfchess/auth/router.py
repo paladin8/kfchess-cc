@@ -10,6 +10,7 @@ from httpx_oauth.clients.google import GoogleOAuth2
 from kfchess.api.users import router as users_router
 from kfchess.auth.backend import auth_backend
 from kfchess.auth.dependencies import fastapi_users
+from kfchess.auth.lichess import get_lichess_router
 from kfchess.auth.rate_limit import (
     forgot_password_rate_limit,
     login_rate_limit,
@@ -84,6 +85,15 @@ def get_auth_router() -> APIRouter:
                 is_verified_by_default=True,  # Google verifies email addresses
             ),
             prefix="/auth/google",
+            tags=["auth"],
+            dependencies=[Depends(oauth_rate_limit)],
+        )
+
+    # Lichess OAuth routes (conditional on configuration)
+    if settings.lichess_oauth_enabled:
+        router.include_router(
+            get_lichess_router(settings),
+            prefix="/auth/lichess",
             tags=["auth"],
             dependencies=[Depends(oauth_rate_limit)],
         )

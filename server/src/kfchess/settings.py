@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
+    # Lichess OAuth (PKCE, no client secret needed)
+    lichess_client_id: str = "kfchess.com"
+
     # Email (Resend)
     resend_api_key: str = ""
     email_from: str = "noreply@kfchess.com"
@@ -72,6 +75,11 @@ class Settings(BaseSettings):
     def google_oauth_enabled(self) -> bool:
         """Check if Google OAuth is configured."""
         return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def lichess_oauth_enabled(self) -> bool:
+        """Check if Lichess OAuth is configured."""
+        return bool(self.lichess_client_id)
 
     @property
     def s3_enabled(self) -> bool:

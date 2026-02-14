@@ -22,8 +22,9 @@ function About() {
 
         <p>
           If you have feedback, please stop by our{' '}
-          <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer">reddit</a> or reach out to{' '}
-          <a href="mailto:contact@kfchess.com">contact@kfchess.com</a>.
+          <a href="https://www.reddit.com/r/kfchess/" target="_blank" rel="noopener noreferrer">reddit</a>, reach out to{' '}
+          <a href="mailto:contact@kfchess.com">contact@kfchess.com</a>, or check out the {' '}
+          <a href="https://github.com/paladin8/kfchess-cc" target="_blank" rel="noopener noreferrer">code on GitHub</a>.
         </p>
       </div>
     </div>

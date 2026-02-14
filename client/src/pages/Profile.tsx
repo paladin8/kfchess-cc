@@ -314,10 +314,12 @@ function Profile() {
         {isOwnProfile && currentUser ? (
           <div className="profile-header-row">
             <div className="profile-header-info">
-              <div className="profile-field">
-                <label>Email</label>
-                <div className="profile-value">{currentUser.email}</div>
-              </div>
+              {currentUser.email && (
+                <div className="profile-field">
+                  <label>Email</label>
+                  <div className="profile-value">{currentUser.email}</div>
+                </div>
+              )}
               <div className="profile-field">
                 <label htmlFor="username">Username</label>
                 {isEditing ? (

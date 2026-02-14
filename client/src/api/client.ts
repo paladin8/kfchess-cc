@@ -483,6 +483,16 @@ export async function getGoogleAuthUrl(): Promise<string> {
 }
 
 /**
+ * Get Lichess OAuth authorization URL
+ */
+export async function getLichessAuthUrl(): Promise<string> {
+  const response = await request<{ authorization_url: string }>('/auth/lichess/authorize', {
+    credentials: 'include',
+  });
+  return response.authorization_url;
+}
+
+/**
  * Request a new verification email
  * Always returns success (202) for security - doesn't reveal if email exists
  */

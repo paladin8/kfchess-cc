@@ -254,7 +254,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         try:
             username = await self._generate_unique_username()
             new_user = User(
-                email=account_email,
+                email=account_email or None,
                 username=username,
                 hashed_password=self.password_helper.hash(self.password_helper.generate()),
                 is_active=True,
