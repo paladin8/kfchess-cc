@@ -124,6 +124,10 @@ SPEED_CONFIGS: dict[Speed, SpeedConfig] = {
     ),
 }
 
+# Campaign-specific draw timing
+CAMPAIGN_DRAW_NO_MOVE_SECONDS: float = 120.0  # 2 minutes
+CAMPAIGN_DRAW_NO_MOVE_TICKS: int = int(CAMPAIGN_DRAW_NO_MOVE_SECONDS * TICK_RATE_HZ)
+
 
 @dataclass
 class ReplayMove:
@@ -182,7 +186,7 @@ class GameState:
         finished_at: When the game finished
         winner: Winner (0=draw, 1-4=player number, None=ongoing)
         win_reason: Reason for game end (WinReason enum)
-        last_move_tick: Tick of the last move made
+        last_move_tick: Tick of the last human move (AI moves don't reset this)
         last_capture_tick: Tick of the last capture
         replay_moves: Recorded moves for replay
         ready_players: Set of player numbers who are ready
@@ -204,6 +208,7 @@ class GameState:
     last_capture_tick: int = 0
     replay_moves: list[ReplayMove] = field(default_factory=list)
     ready_players: set[int] = field(default_factory=set)
+    is_campaign: bool = False
 
     @property
     def config(self) -> SpeedConfig:
@@ -274,6 +279,7 @@ class GameState:
                 for rm in self.replay_moves
             ],
             ready_players=set(self.ready_players),
+            is_campaign=self.is_campaign,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -357,6 +363,7 @@ class GameState:
             "last_capture_tick": self.last_capture_tick,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "is_campaign": self.is_campaign,
         }
 
     @classmethod
@@ -402,4 +409,5 @@ class GameState:
             last_capture_tick=data.get("last_capture_tick", 0),
             replay_moves=[ReplayMove.from_dict(rm) for rm in data.get("replay_moves", [])],
             ready_players=set(data.get("ready_players", [])),
+            is_campaign=data.get("is_campaign", False),
         )

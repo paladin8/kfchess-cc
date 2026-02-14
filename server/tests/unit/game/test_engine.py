@@ -5,7 +5,13 @@ from kfchess.game.board import Board, BoardType
 from kfchess.game.engine import GameEngine, GameEventType
 from kfchess.game.moves import Cooldown, Move
 from kfchess.game.pieces import Piece, PieceType
-from kfchess.game.state import SPEED_CONFIGS, GameStatus, Speed, WinReason
+from kfchess.game.state import (
+    CAMPAIGN_DRAW_NO_MOVE_TICKS,
+    SPEED_CONFIGS,
+    GameStatus,
+    Speed,
+    WinReason,
+)
 
 
 class TestCreateGame:
@@ -971,6 +977,96 @@ class TestAllBotsRemaining:
             players={1: "bot:dummy", 2: "bot:dummy"},
             board=board,
         )
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner is None
+        assert win_reason is None
+
+
+class TestCampaignDraw:
+    """Tests for campaign-specific draw conditions."""
+
+    def _create_campaign_state(self):
+        """Create a campaign game state with both kings alive."""
+        state = GameEngine.create_game(
+            speed=Speed.STANDARD,
+            players={1: "u:1", 2: "bot:campaign"},
+        )
+        state, _ = GameEngine.set_player_ready(state, 1)
+        state, _ = GameEngine.set_player_ready(state, 2)
+        state.is_campaign = True
+        return state
+
+    def test_campaign_draw_on_no_move_timeout(self):
+        """Campaign games draw when no moves for 2 minutes."""
+        state = self._create_campaign_state()
+        state.current_tick = CAMPAIGN_DRAW_NO_MOVE_TICKS
+        state.last_move_tick = 0
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner == 0
+        assert win_reason == WinReason.DRAW
+
+    def test_campaign_no_draw_before_no_move_timeout(self):
+        """Campaign games do not draw before the no-move timeout."""
+        state = self._create_campaign_state()
+        state.current_tick = CAMPAIGN_DRAW_NO_MOVE_TICKS - 1
+        state.last_move_tick = 0
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner is None
+        assert win_reason is None
+
+    def test_campaign_no_draw_on_capture_timeout(self):
+        """Campaign games ignore the no-capture timeout."""
+        config = SPEED_CONFIGS[Speed.STANDARD]
+        state = self._create_campaign_state()
+        # Exceed the normal capture timeout but keep moves recent
+        state.current_tick = config.min_draw_ticks + config.draw_no_capture_ticks + 100
+        state.last_move_tick = state.current_tick  # just moved
+        state.last_capture_tick = 0  # no captures ever
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner is None
+        assert win_reason is None
+
+    def test_campaign_skips_min_draw_ticks(self):
+        """Campaign games can draw before the normal minimum game time."""
+        config = SPEED_CONFIGS[Speed.STANDARD]
+        state = self._create_campaign_state()
+        # Set current_tick below min_draw_ticks but above campaign timeout
+        state.current_tick = CAMPAIGN_DRAW_NO_MOVE_TICKS
+        state.last_move_tick = 0
+        assert state.current_tick < config.min_draw_ticks
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner == 0
+        assert win_reason == WinReason.DRAW
+
+    def test_campaign_king_capture_still_works(self):
+        """Campaign games still end on king capture."""
+        state = self._create_campaign_state()
+        state.board.get_king(2).captured = True
+
+        winner, win_reason = GameEngine.check_winner(state)
+        assert winner == 1
+        assert win_reason == WinReason.KING_CAPTURED
+
+    def test_non_campaign_uses_normal_draw(self):
+        """Non-campaign games still use normal draw conditions."""
+        config = SPEED_CONFIGS[Speed.STANDARD]
+        state = GameEngine.create_game(
+            speed=Speed.STANDARD,
+            players={1: "u:1", 2: "u:2"},
+        )
+        state, _ = GameEngine.set_player_ready(state, 1)
+        state, _ = GameEngine.set_player_ready(state, 2)
+        assert state.is_campaign is False
+
+        # Below min_draw_ticks: no draw even with no moves
+        state.current_tick = config.min_draw_ticks - 1
+        state.last_move_tick = 0
+        state.last_capture_tick = 0
 
         winner, win_reason = GameEngine.check_winner(state)
         assert winner is None

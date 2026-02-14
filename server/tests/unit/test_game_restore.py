@@ -30,6 +30,9 @@ def _create_test_snapshot(
     GameEngine.set_player_ready(state, 1)
     GameEngine.set_player_ready(state, 2)
 
+    if campaign:
+        state.is_campaign = True
+
     # Run a few ticks
     for _ in range(10):
         GameEngine.tick(state)
@@ -127,6 +130,28 @@ class TestRestoreGame:
         assert managed.campaign_level_id == 5
         assert managed.campaign_user_id == 42
         assert managed.initial_board_str == "custom_board"
+
+    def test_restore_campaign_is_campaign_flag(self) -> None:
+        """is_campaign flag on GameState survives snapshot restore."""
+        service = GameService()
+        snapshot = _create_test_snapshot(campaign=True)
+
+        service.restore_game(snapshot)
+
+        state = service.get_game("RESTORE1")
+        assert state is not None
+        assert state.is_campaign is True
+
+    def test_restore_non_campaign_is_campaign_false(self) -> None:
+        """Non-campaign games have is_campaign=False after restore."""
+        service = GameService()
+        snapshot = _create_test_snapshot(campaign=False)
+
+        service.restore_game(snapshot)
+
+        state = service.get_game("RESTORE1")
+        assert state is not None
+        assert state.is_campaign is False
 
     def test_restore_draw_offers(self) -> None:
         """Draw offers are restored."""

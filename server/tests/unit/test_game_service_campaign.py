@@ -170,6 +170,22 @@ class TestCreateCampaignGame:
         assert len(player_1_pieces) == 16
 
 
+    def test_create_campaign_game_sets_is_campaign(self) -> None:
+        """Test that campaign games have is_campaign=True on the state."""
+        service = GameService()
+        level = get_level(0)
+        assert level is not None
+
+        game_id, _, _ = service.create_campaign_game(
+            level=level,
+            user_id=123,
+        )
+
+        state = service.get_game(game_id)
+        assert state is not None
+        assert state.is_campaign is True
+
+
 class TestManagedGameCampaignFields:
     """Tests for ManagedGame campaign-related fields."""
 
@@ -186,6 +202,7 @@ class TestManagedGameCampaignFields:
         assert managed is not None
         assert managed.campaign_level_id is None
         assert managed.campaign_user_id is None
+        assert managed.state.is_campaign is False
 
     def test_lobby_game_has_no_campaign_fields(self) -> None:
         """Test that lobby games have None for campaign fields."""

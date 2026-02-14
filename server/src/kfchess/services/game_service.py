@@ -303,6 +303,7 @@ class GameService:
             board=board,
             game_id=game_id,
         )
+        state.is_campaign = True
 
         # Auto-start the game (mark all players ready)
         for player_num in players.keys():
@@ -720,7 +721,9 @@ class GameService:
         if state.status != GameStatus.PLAYING:
             return state, [], False, 0, 0
 
-        # Process AI moves (shuffled to avoid move-order bias)
+        # Process AI moves (shuffled to avoid move-order bias).
+        # AI moves intentionally don't update last_move_tick — that
+        # timer only tracks human activity for AFK draw detection.
         ai_start = time.monotonic_ns()
         ai_items = list(managed_game.ai_players.items())
         random.shuffle(ai_items)

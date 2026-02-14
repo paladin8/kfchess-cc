@@ -31,6 +31,7 @@ from kfchess.game.moves import (
 )
 from kfchess.game.pieces import Piece, PieceType
 from kfchess.game.state import (
+    CAMPAIGN_DRAW_NO_MOVE_TICKS,
     GameState,
     GameStatus,
     ReplayMove,
@@ -573,6 +574,18 @@ class GameEngine:
                 return random.choice(players_with_king), WinReason.KING_CAPTURED
 
         # Multiple players still have their kings - check draw conditions
+
+        # Campaign games: only draw on no-move timeout (no min game time,
+        # no capture timeout). This prevents the AI from forcing a draw
+        # via the capture timeout in puzzle-like campaign levels.
+        # Note: last_move_tick only tracks human moves, so this is
+        # effectively an AFK timer — AI moves don't prevent the draw.
+        if state.is_campaign:
+            ticks_since_move = state.current_tick - state.last_move_tick
+            if ticks_since_move >= CAMPAIGN_DRAW_NO_MOVE_TICKS:
+                return 0, WinReason.DRAW
+            return None, None
+
         # Only check after minimum game length
         if state.current_tick < config.min_draw_ticks:
             return None, None
@@ -580,9 +593,11 @@ class GameEngine:
         ticks_since_move = state.current_tick - state.last_move_tick
         ticks_since_capture = state.current_tick - state.last_capture_tick
 
-        # Draw if no moves OR no captures for extended periods.
-        # Each condition triggers independently — e.g. AI keeps moving
-        # but no captures happen, the capture timeout still fires.
+        # Draw if no human moves OR no captures for extended periods.
+        # last_move_tick only tracks human moves (AFK detection), while
+        # last_capture_tick tracks all captures. Each condition triggers
+        # independently — e.g. AI keeps moving but no captures happen,
+        # the capture timeout still fires.
         if (
             ticks_since_move >= config.draw_no_move_ticks
             or ticks_since_capture >= config.draw_no_capture_ticks

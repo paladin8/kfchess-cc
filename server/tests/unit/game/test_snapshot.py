@@ -483,9 +483,39 @@ class TestGameStateSnapshotSerialization:
             "players", "current_tick", "status", "winner", "win_reason",
             "ready_players", "pieces", "active_moves", "cooldowns",
             "replay_moves", "last_move_tick", "last_capture_tick",
-            "started_at", "finished_at",
+            "started_at", "finished_at", "is_campaign",
         }
         assert set(data.keys()) == expected_keys
+
+    def test_is_campaign_false_by_default(self):
+        state = self._create_initial_game()
+        data = state.to_snapshot_dict()
+        restored = GameState.from_snapshot_dict(data)
+        assert restored.is_campaign is False
+
+    def test_is_campaign_round_trip(self):
+        state = self._create_initial_game()
+        state.is_campaign = True
+        data = state.to_snapshot_dict()
+        assert data["is_campaign"] is True
+
+        restored = GameState.from_snapshot_dict(data)
+        assert restored.is_campaign is True
+
+    def test_is_campaign_missing_defaults_false(self):
+        """Snapshots from before is_campaign was added should default to False."""
+        state = self._create_initial_game()
+        data = state.to_snapshot_dict()
+        del data["is_campaign"]
+
+        restored = GameState.from_snapshot_dict(data)
+        assert restored.is_campaign is False
+
+    def test_is_campaign_preserved_in_copy(self):
+        state = self._create_initial_game()
+        state.is_campaign = True
+        copied = state.copy()
+        assert copied.is_campaign is True
 
 
 # ---------------------------------------------------------------------------
