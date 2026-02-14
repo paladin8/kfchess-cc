@@ -227,7 +227,7 @@ class TestRestoreGame:
         service.restore_game(snapshot)
 
         # Tick the restored game
-        state, events, finished = service.tick("RESTORE1")
+        state, events, finished, _, _ = service.tick("RESTORE1")
         assert state is not None
         assert state.current_tick == 11  # Was at 10, now 11
 

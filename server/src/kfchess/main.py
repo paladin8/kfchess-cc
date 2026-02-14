@@ -161,6 +161,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.exception("Failed to start active-game cleanup loop")
 
+    # Start periodic stats logging
+    try:
+        from kfchess.services.stats import start_stats_loop
+
+        await start_stats_loop()
+    except Exception:
+        logger.exception("Failed to start stats loop")
+
     # Connect to Redis, start heartbeat, and restore games from snapshots
     try:
         from kfchess.redis.client import get_redis
@@ -345,7 +353,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from kfchess.redis.client import close_redis
         from kfchess.redis.heartbeat import stop_heartbeat
         from kfchess.services.game_registry import stop_cleanup_loop
+        from kfchess.services.stats import stop_stats_loop
 
+        await stop_stats_loop()
         await stop_cleanup_loop()
         await stop_heartbeat()  # Idempotent — no-op if already stopped during drain
         await close_redis()

@@ -9,6 +9,7 @@ import asyncio
 import logging
 import random
 import secrets
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -696,25 +697,31 @@ class GameService:
 
         return True, game_started
 
-    def tick(self, game_id: str) -> tuple[GameState | None, list[GameEvent], bool]:
+    def tick(
+        self, game_id: str
+    ) -> tuple[GameState | None, list[GameEvent], bool, int, int]:
         """Advance the game by one tick.
 
         Args:
             game_id: The game ID
 
         Returns:
-            Tuple of (updated state, events, game_finished) or (None, [], False) if game not found
+            Tuple of (updated state, events, game_finished, ai_ns, engine_ns).
+            ai_ns and engine_ns are wall-clock nanoseconds spent in AI and
+            engine processing respectively.
+            Returns (None, [], False, 0, 0) if game not found.
         """
         managed_game = self.games.get(game_id)
         if managed_game is None:
-            return None, [], False
+            return None, [], False, 0, 0
 
         state = managed_game.state
 
         if state.status != GameStatus.PLAYING:
-            return state, [], False
+            return state, [], False, 0, 0
 
         # Process AI moves (shuffled to avoid move-order bias)
+        ai_start = time.monotonic_ns()
         ai_items = list(managed_game.ai_players.items())
         random.shuffle(ai_items)
         for player_num, ai in ai_items:
@@ -725,16 +732,19 @@ class GameService:
                     move = GameEngine.validate_move(state, player_num, piece_id, to_row, to_col)
                     if move is not None:
                         GameEngine.apply_move(state, move)
+        ai_ns = time.monotonic_ns() - ai_start
 
         # Advance game state
+        engine_start = time.monotonic_ns()
         _, events = GameEngine.tick(state)
+        engine_ns = time.monotonic_ns() - engine_start
 
         # Check if game just finished
         game_finished = any(
             e.type in (GameEventType.GAME_OVER, GameEventType.DRAW) for e in events
         )
 
-        return state, events, game_finished
+        return state, events, game_finished, ai_ns, engine_ns
 
     def get_replay(self, game_id: str) -> Replay | None:
         """Get the replay data for a finished game.

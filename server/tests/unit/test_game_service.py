@@ -276,7 +276,7 @@ class TestGameService:
         initial_tick = state.current_tick
 
         # Tick
-        updated_state, events, game_finished = service.tick(game_id)
+        updated_state, events, game_finished, _, _ = service.tick(game_id)
         assert updated_state is not None
         assert updated_state.current_tick == initial_tick + 1
         assert not game_finished
@@ -284,7 +284,7 @@ class TestGameService:
     def test_tick_nonexistent_game(self) -> None:
         """Test ticking a nonexistent game."""
         service = GameService()
-        state, events, game_finished = service.tick("nonexistent")
+        state, events, game_finished, _, _ = service.tick("nonexistent")
         assert state is None
         assert events == []
         assert not game_finished

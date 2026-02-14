@@ -165,12 +165,12 @@ class TestLichessSettings:
         settings = Settings(lichess_client_id="")
         assert settings.lichess_oauth_enabled is False
 
-    def test_lichess_oauth_disabled_by_default(self):
-        """Test lichess_oauth_enabled is False by default."""
+    def test_lichess_oauth_enabled_by_default(self):
+        """Test lichess_oauth_enabled is True by default (client ID has a default)."""
         from kfchess.settings import Settings
 
         settings = Settings()
-        assert settings.lichess_oauth_enabled is False
+        assert settings.lichess_oauth_enabled is True
 
 
 class TestLichessOAuthCallbackNullEmail:

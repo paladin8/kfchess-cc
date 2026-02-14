@@ -191,7 +191,7 @@ class TestStartupRestorePipeline:
         service = GameService()
         await _run_restore_pipeline(redis, service)
 
-        state, events, finished = service.tick("FUNC0001")
+        state, events, finished, _, _ = service.tick("FUNC0001")
         assert state is not None
         assert state.current_tick == 11  # Was at 10
 

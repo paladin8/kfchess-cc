@@ -37,6 +37,7 @@ from kfchess.services.game_registry import (
 )
 from kfchess.services.game_service import ManagedGame, get_game_service
 from kfchess.services.rating_service import RatingService
+from kfchess.services.stats import record_tick
 from kfchess.settings import get_settings
 from kfchess.ws.game_loop import (
     cleanup_game_loop_lock,
@@ -1085,7 +1086,7 @@ async def _run_game_loop(game_id: str) -> None:
 
         # === Main game loop ===
         while True:
-            tick_start_time = time.monotonic()
+            tick_start_ns = time.monotonic_ns()
 
             # Get game state
             managed_game = service.get_managed_game(game_id)
@@ -1160,7 +1161,7 @@ async def _run_game_loop(game_id: str) -> None:
                 break
 
             # Advance the game state
-            state, events, game_finished = service.tick(game_id)
+            state, events, game_finished, ai_ns, engine_ns = service.tick(game_id)
             if state is None:
                 break
 
@@ -1254,7 +1255,7 @@ async def _run_game_loop(game_id: str) -> None:
                     )
 
                 # Calculate time_since_tick right before sending (captures actual elapsed time)
-                elapsed_in_tick = (time.monotonic() - tick_start_time) * 1000  # Convert to ms
+                elapsed_in_tick = (time.monotonic_ns() - tick_start_ns) / 1_000_000  # Convert to ms
                 time_since_tick = min(elapsed_in_tick, tick_interval_ms)
 
                 # Broadcast state update
@@ -1317,8 +1318,10 @@ async def _run_game_loop(game_id: str) -> None:
 
                 break
 
-            # Sleep for remainder of tick interval
-            elapsed = time.monotonic() - tick_start_time
+            # Record stats and sleep for remainder of tick interval
+            compute_ns = time.monotonic_ns() - tick_start_ns
+            record_tick(game_id, compute_ns, ai_ns, engine_ns)
+            elapsed = compute_ns / 1_000_000_000
             if elapsed < tick_interval:
                 await asyncio.sleep(tick_interval - elapsed)
 
