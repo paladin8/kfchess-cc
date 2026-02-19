@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     email_from: str = "noreply@kfchess.com"
     send_emails: bool = False  # Must be explicitly enabled to send real emails
 
+    # Inbound email forwarding
+    resend_webhook_secret: str = ""  # whsec_xxx from Resend dashboard
+    email_forward_to: str = ""  # Destination email for forwarded inbound emails
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
 
@@ -90,6 +94,11 @@ class Settings(BaseSettings):
     def resend_enabled(self) -> bool:
         """Check if Resend email service is configured."""
         return bool(self.resend_api_key)
+
+    @property
+    def inbound_email_enabled(self) -> bool:
+        """Check if inbound email webhook forwarding is configured."""
+        return bool(self.resend_webhook_secret and self.email_forward_to and self.resend_api_key)
 
 
 @lru_cache
