@@ -26,8 +26,22 @@ class _HealthCheckFilter(logging.Filter):
     """Suppress uvicorn access log entries for the /health endpoint."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        return "/health" not in record.getMessage()
+
+
+class _WebSocketRejectFilter(logging.Filter):
+    """Suppress noisy uvicorn.error messages for rejected WebSocket connections."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
-        return "/health" not in message
+        # "WebSocket /ws/lobby/XXX?player_key=... 403"
+        if "WebSocket" in message and "403" in message:
+            return False
+        if "connection rejected" in message:
+            return False
+        if "connection closed" in message:
+            return False
+        return True
 
 
 # Mapping from Python log levels to syslog priority values.
@@ -58,6 +72,7 @@ def _configure_uvicorn_logging(formatter: logging.Formatter) -> None:
     systemd-aware formatter and add the health-check filter.
     """
     health_filter = _HealthCheckFilter()
+    ws_reject_filter = _WebSocketRejectFilter()
 
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         uv_logger = logging.getLogger(name)
@@ -66,8 +81,10 @@ def _configure_uvicorn_logging(formatter: logging.Formatter) -> None:
         uv_logger.handlers.clear()
         uv_logger.propagate = True
 
-    # Add health-check filter to the access logger
+    # Suppress health check access logs
     logging.getLogger("uvicorn.access").addFilter(health_filter)
+    # Suppress "connection rejected" / "connection closed" for rejected WebSockets
+    logging.getLogger("uvicorn.error").addFilter(ws_reject_filter)
 
 
 def setup_logging() -> None:
