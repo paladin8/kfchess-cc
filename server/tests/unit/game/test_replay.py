@@ -343,6 +343,39 @@ class TestReplayEngine:
         assert int(pawn.row) == 4
         assert int(pawn.col) == 4
 
+    def test_get_state_at_tick_stops_if_game_finishes_early(self):
+        """ReplayEngine should not spin if target tick is beyond terminal state."""
+        # Malformed custom board: only player 1 king exists, so game finishes on first tick.
+        board_str = """
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+0000000000000000
+00000000K1000000
+"""
+        replay = Replay(
+            version=2,
+            speed=Speed.STANDARD,
+            board_type=BoardType.STANDARD,
+            players={1: "player1", 2: "player2"},
+            moves=[],
+            total_ticks=100,
+            winner=None,
+            win_reason=None,
+            created_at=None,
+            initial_board_str=board_str,
+        )
+
+        engine = ReplayEngine(replay)
+        state = engine.get_state_at_tick(50)
+
+        assert state.status == GameStatus.FINISHED
+        assert state.current_tick == 1
+        assert state.winner == 1
+
     def test_moves_indexed_by_tick(self):
         """Test that moves are properly indexed by tick."""
         replay = Replay(

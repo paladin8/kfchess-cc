@@ -253,6 +253,17 @@ class ReplayEngine:
 
         # Simulate all ticks up to target
         while state.current_tick < target_tick:
+            # Defensive guard: malformed replay metadata can request ticks beyond
+            # a terminal game state. If we keep calling GameEngine.tick() after
+            # FINISHED, current_tick no longer advances and this loop would spin.
+            if state.status != GameStatus.PLAYING:
+                logger.warning(
+                    "Replay state reached terminal status before target tick: "
+                    f"current_tick={state.current_tick}, target_tick={target_tick}, "
+                    f"status={state.status.value}"
+                )
+                break
+
             # Apply any moves at this tick
             for replay_move in self._moves_by_tick.get(state.current_tick, []):
                 move = GameEngine.validate_move(
@@ -273,7 +284,15 @@ class ReplayEngine:
                     )
 
             # Advance tick
+            prev_tick = state.current_tick
             GameEngine.tick(state)
+            if state.current_tick <= prev_tick:
+                logger.warning(
+                    "Replay state tick did not advance during playback: "
+                    f"current_tick={state.current_tick}, target_tick={target_tick}, "
+                    f"status={state.status.value}"
+                )
+                break
 
         return state
 
