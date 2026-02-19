@@ -99,7 +99,7 @@ async def handle_lobby_websocket(
     and runs two concurrent tasks — a relay (pub/sub → WS) and a message
     handler (WS → manager calls → pub/sub events).
     """
-    logger.info(f"Lobby WebSocket connection attempt: code={code}")
+    logger.debug(f"Lobby WebSocket connection attempt: code={code}")
 
     manager = get_lobby_manager()
 
@@ -109,14 +109,14 @@ async def handle_lobby_websocket(
     # 2. Validate player key
     slot = await manager.validate_player_key(code, player_key)
     if slot is None:
-        logger.info(f"Lobby WebSocket rejected: invalid player key for lobby {code}")
+        logger.debug(f"Lobby WebSocket rejected: invalid player key for lobby {code}")
         await websocket.close(code=4001, reason="Invalid player key")
         return
 
     # 3. Get lobby and check reconnection
     lobby = await manager.get_lobby(code)
     if lobby is None:
-        logger.info(f"Lobby WebSocket rejected: lobby {code} not found")
+        logger.debug(f"Lobby WebSocket rejected: lobby {code} not found")
         await websocket.close(code=4004, reason="Lobby not found")
         return
 
