@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kfchess.api.webhooks import _build_forward_html, resend_inbound_webhook
+from kfchess.api.webhooks import (
+    _build_body_html,
+    _build_forward_from,
+    resend_inbound_webhook,
+)
 
 
 def _make_request(
@@ -227,11 +231,12 @@ class TestResendWebhookEmailForwarding:
 
         email_params = mock_send.call_args[0][0]
         assert email_params["to"] == "admin@example.com"
-        assert email_params["from"] == "noreply@kfchess.com"
+        assert email_params["from"] == "sender@example.com via kfchess <noreply@kfchess.com>"
+        assert email_params["reply_to"] == "sender@example.com"
 
     @pytest.mark.asyncio
-    async def test_subject_prefixed_with_forwarded(self) -> None:
-        """Forwarded email subject is prefixed with [Forwarded]."""
+    async def test_uses_original_subject(self) -> None:
+        """Forwarded email uses the original subject without prefix."""
         settings = _make_settings()
         payload = _email_received_payload()
         request = _make_request(payload)
@@ -251,11 +256,11 @@ class TestResendWebhookEmailForwarding:
                         await resend_inbound_webhook(request)
 
         email_params = mock_send.call_args[0][0]
-        assert email_params["subject"] == "[Forwarded] Hello there"
+        assert email_params["subject"] == "Hello there"
 
     @pytest.mark.asyncio
-    async def test_forward_includes_html_body(self) -> None:
-        """Forwarded email includes HTML body from original."""
+    async def test_forward_passes_through_html_body(self) -> None:
+        """Forwarded email passes through original HTML body directly."""
         settings = _make_settings()
         payload = _email_received_payload()
         request = _make_request(payload)
@@ -277,9 +282,7 @@ class TestResendWebhookEmailForwarding:
                         await resend_inbound_webhook(request)
 
         html = mock_send.call_args[0][0]["html"]
-        assert "<b>Important</b>" in html
-        # Should prefer HTML over text
-        assert "<pre>" not in html
+        assert html == "<b>Important</b>"
 
     @pytest.mark.asyncio
     async def test_forward_falls_back_to_text_body(self) -> None:
@@ -305,11 +308,11 @@ class TestResendWebhookEmailForwarding:
                         await resend_inbound_webhook(request)
 
         html = mock_send.call_args[0][0]["html"]
-        assert "<pre>Plain text email</pre>" in html
+        assert html == "<pre>Plain text email</pre>"
 
     @pytest.mark.asyncio
-    async def test_forward_includes_sender_metadata(self) -> None:
-        """Forwarded email includes From and To from original."""
+    async def test_forward_shows_original_sender_in_from(self) -> None:
+        """Forwarded email from field shows original sender."""
         settings = _make_settings()
         payload = _email_received_payload()
         request = _make_request(payload)
@@ -330,8 +333,9 @@ class TestResendWebhookEmailForwarding:
                     ) as mock_send:
                         await resend_inbound_webhook(request)
 
-        html = mock_send.call_args[0][0]["html"]
-        assert "alice@example.com" in html
+        email_params = mock_send.call_args[0][0]
+        assert email_params["from"] == "alice@example.com via kfchess <noreply@kfchess.com>"
+        assert email_params["reply_to"] == "alice@example.com"
 
     @pytest.mark.asyncio
     async def test_returns_error_when_send_fails(self) -> None:
@@ -359,99 +363,40 @@ class TestResendWebhookEmailForwarding:
         assert "send" in result["reason"]
 
 
-class TestBuildForwardHtml:
-    """Tests for _build_forward_html helper."""
+class TestBuildForwardFrom:
+    """Tests for _build_forward_from helper."""
 
-    def test_includes_sender(self) -> None:
-        """HTML includes sender in the forwarded header."""
-        html = _build_forward_html(
-            sender="alice@example.com",
-            subject="Hi",
-            to_addresses=["inbox@kfchess.com"],
-            html_body="<p>body</p>",
-            text_body="body",
-        )
-        assert "alice@example.com" in html
+    def test_includes_sender_in_display_name(self) -> None:
+        """Display name shows the original sender address."""
+        result = _build_forward_from("alice@example.com", "noreply@kfchess.com")
+        assert result == "alice@example.com via kfchess <noreply@kfchess.com>"
 
-    def test_includes_subject(self) -> None:
-        """HTML includes subject in the forwarded header."""
-        html = _build_forward_html(
-            sender="a@b.com",
-            subject="Important Message",
-            to_addresses=[],
-            html_body="<p>body</p>",
-            text_body="",
-        )
-        assert "Important Message" in html
+    def test_strips_display_name_from_email_from(self) -> None:
+        """Strips existing display name formatting from email_from."""
+        result = _build_forward_from("alice@example.com", "KF Chess <noreply@kfchess.com>")
+        assert result == "alice@example.com via kfchess <noreply@kfchess.com>"
+
+    def test_handles_plain_email_from(self) -> None:
+        """Works with a plain email address for email_from."""
+        result = _build_forward_from("bob@test.com", "admin@kfchess.com")
+        assert result == "bob@test.com via kfchess <admin@kfchess.com>"
+
+
+class TestBuildBodyHtml:
+    """Tests for _build_body_html helper."""
 
     def test_uses_html_body_when_present(self) -> None:
-        """Uses HTML body content when available."""
-        html = _build_forward_html(
-            sender="a@b.com",
-            subject="Hi",
-            to_addresses=[],
-            html_body="<strong>formatted</strong>",
-            text_body="plain",
-        )
-        assert "<strong>formatted</strong>" in html
-        assert "<pre>" not in html
+        """Returns HTML body directly when available."""
+        result = _build_body_html("<strong>formatted</strong>", "plain")
+        assert result == "<strong>formatted</strong>"
 
     def test_wraps_text_in_pre_when_no_html(self) -> None:
         """Wraps plain text in <pre> tags when no HTML body."""
-        html = _build_forward_html(
-            sender="a@b.com",
-            subject="Hi",
-            to_addresses=[],
-            html_body="",
-            text_body="plain text here",
-        )
-        assert "<pre>plain text here</pre>" in html
-
-    def test_handles_empty_to_addresses(self) -> None:
-        """Handles empty to_addresses list."""
-        html = _build_forward_html(
-            sender="a@b.com",
-            subject="Hi",
-            to_addresses=[],
-            html_body="<p>body</p>",
-            text_body="",
-        )
-        assert "N/A" in html
-
-    def test_joins_multiple_to_addresses(self) -> None:
-        """Joins multiple to addresses with commas."""
-        html = _build_forward_html(
-            sender="a@b.com",
-            subject="Hi",
-            to_addresses=["one@test.com", "two@test.com"],
-            html_body="<p>body</p>",
-            text_body="",
-        )
-        assert "one@test.com, two@test.com" in html
-
-    def test_escapes_html_in_metadata(self) -> None:
-        """Metadata fields are HTML-escaped to prevent injection."""
-        html = _build_forward_html(
-            sender="<script>alert('xss')</script>",
-            subject="<img onerror=alert(1)>",
-            to_addresses=["<b>bold</b>@test.com"],
-            html_body="<p>body</p>",
-            text_body="",
-        )
-        assert "<script>" not in html
-        assert "&lt;script&gt;" in html
-        assert "<img onerror" not in html
-        assert "&lt;img onerror" in html
-        assert "<b>bold</b>" not in html
+        result = _build_body_html("", "plain text here")
+        assert result == "<pre>plain text here</pre>"
 
     def test_escapes_html_in_text_fallback(self) -> None:
         """Text body fallback is HTML-escaped inside <pre> tags."""
-        html = _build_forward_html(
-            sender="a@b.com",
-            subject="Hi",
-            to_addresses=[],
-            html_body="",
-            text_body="<script>alert('xss')</script>",
-        )
-        assert "<script>" not in html
-        assert "&lt;script&gt;" in html
+        result = _build_body_html("", "<script>alert('xss')</script>")
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result

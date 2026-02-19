@@ -34,33 +34,24 @@ def _get_received_email_sync(api_key: str, email_id: str) -> dict[str, Any]:
     return dict(resend.Emails.Receiving.get(email_id))
 
 
-def _build_forward_html(
-    sender: str,
-    subject: str,
-    to_addresses: list[str],
-    html_body: str,
-    text_body: str,
-) -> str:
-    """Build HTML for the forwarded email with original metadata header."""
-    # html_body is already HTML and rendered as-is; text_body needs escaping
-    body_content = html_body if html_body else f"<pre>{html_lib.escape(text_body)}</pre>"
-    to_display = ", ".join(to_addresses) if to_addresses else "N/A"
+def _build_forward_from(sender: str, email_from: str) -> str:
+    """Build a 'from' address that shows the original sender.
 
-    # Escape metadata fields to prevent HTML injection
-    sender_escaped = html_lib.escape(sender)
-    subject_escaped = html_lib.escape(subject)
-    to_escaped = html_lib.escape(to_display)
+    Since Resend requires using a verified domain, we put the original
+    sender's address in the display name so it's visible in email clients.
+    """
+    # Strip any existing display name formatting from email_from
+    # e.g. "Name <addr>" -> just use addr
+    if "<" in email_from:
+        email_from = email_from.split("<")[1].rstrip(">").strip()
+    return f"{sender} via kfchess <{email_from}>"
 
-    return (
-        '<div style="border-bottom: 1px solid #ccc; padding-bottom: 10px; '
-        'margin-bottom: 10px;">'
-        "<p><strong>Forwarded inbound email</strong></p>"
-        f"<p><strong>From:</strong> {sender_escaped}</p>"
-        f"<p><strong>To:</strong> {to_escaped}</p>"
-        f"<p><strong>Subject:</strong> {subject_escaped}</p>"
-        "</div>"
-        f"<div>{body_content}</div>"
-    )
+
+def _build_body_html(html_body: str, text_body: str) -> str:
+    """Build HTML body from the original email content."""
+    if html_body:
+        return html_body
+    return f"<pre>{html_lib.escape(text_body)}</pre>"
 
 
 @router.post("/resend", dependencies=[Depends(webhook_rate_limit)])
@@ -125,26 +116,21 @@ async def resend_inbound_webhook(request: Request) -> dict[str, str]:
 
     sender = email_content.get("from", data.get("from", "unknown"))
     subject = email_content.get("subject", data.get("subject", "(no subject)"))
-    to_addresses = email_content.get("to", data.get("to", []))
     html_body = email_content.get("html") or ""
     text_body = email_content.get("text") or ""
 
     # Build and send forwarded email
-    forward_html = _build_forward_html(
-        sender=sender,
-        subject=subject,
-        to_addresses=to_addresses,
-        html_body=html_body,
-        text_body=text_body,
-    )
+    forward_from = _build_forward_from(sender, settings.email_from)
+    body_html = _build_body_html(html_body, text_body)
 
     try:
         await _send_email_async(
             {
-                "from": settings.email_from,
+                "from": forward_from,
                 "to": settings.email_forward_to,
-                "subject": f"[Forwarded] {subject}",
-                "html": forward_html,
+                "reply_to": sender,
+                "subject": subject,
+                "html": body_html,
             }
         )
         logger.info("Forwarded inbound email from %s (subject: %s)", sender, subject)
