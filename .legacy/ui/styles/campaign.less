@@ -1,0 +1,257 @@
+@import 'colors.less';
+
+.campaign {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .campaign-wrapper {
+        width: 80%;
+        min-width: 600px;
+        max-width: 800px;
+
+        .campaign-title {
+            width: 100%;
+
+            text-align: center;
+            font-size: 25px;
+            font-weight: 700;
+        }
+
+        .campaign-belts {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+            margin-top: 120px;
+
+            width: 100%;
+
+            .campaign-belts-row {
+                display: flex;
+
+                .campaign-belt {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+
+                    padding: 10px;
+
+                    height: 40px;
+
+                    &.campaign-belt-completed, &.campaign-belt-next {
+                        cursor: pointer;
+                    }
+
+                    &.campaign-belt-unavailable, &.campaign-belt-locked {
+
+                        img {
+                            opacity: 0.5;
+                        }
+                    }
+
+                    img {
+                        height: 100%;
+                        width: auto;
+                    }
+                }
+            }
+        }
+
+        .campaign-levels-wrapper {
+            position: relative;
+            display: flex;
+
+            .campaign-levels {
+                display: none;
+                flex-direction: column;
+                align-items: center;
+
+                margin-top: -50px;
+
+                width: 100%;
+
+                &.campaign-levels-active {
+                    display: flex;
+                }
+
+                &.levels-transition-enter {
+                    transform: translateX(150%);
+
+                    &.levels-transition-enter-active {
+                        transform: translateX(0%);
+                        transition: 1000ms ease-out;
+                    }
+                }
+
+                &.levels-transition-exit {
+                    position: absolute;
+                    display: flex;
+                    transform: translateX(0%);
+
+                    &.levels-transition-exit-active {
+                        transform: translateX(-150%);
+                        transition: 1000ms ease-in;
+                    }
+                }
+
+                .campaign-levels-row {
+                    display: flex;
+                    align-items: flex-end;
+
+                    height: 150px;
+
+                    .campaign-level {
+                        height: 14px;
+                        width: 14px;
+
+                        border-radius: 50%;
+                        border: solid 5px @path-color;
+
+                        &.level-selectable {
+                            margin-bottom: -5px;
+
+                            cursor: pointer;
+                        }
+
+                        &.level-complete {
+                            background-color: @path-color;
+                        }
+                    }
+
+                    .campaign-path {
+                        margin: 0px 10px 8px 10px;
+
+                        width: 175px;
+
+                        border-bottom: dashed 5px @path-color;
+
+                        &.path-complete {
+                            border-bottom-style: solid;
+                        }
+
+                        &.path-end {
+                            width: 140px;
+                        }
+                    }
+
+                    .campaign-head {
+                        margin-right: 10px;
+                        margin-bottom: 8px;
+
+                        height: 145px;
+                        width: 60px;
+
+                        &.campaign-head-path {
+                            border: dashed 5px @path-color;
+                            border-top-left-radius: 75px;
+                            border-bottom-left-radius: 75px;
+                            border-right: 0px;
+
+                            &.path-complete {
+                                border-style: solid;
+                            }
+                        }
+                    }
+
+                    .campaign-tail {
+                        margin-left: 10px;
+                        margin-bottom: 8px;
+
+                        height: 145px;
+                        width: 60px;
+
+                        &.campaign-tail-path {
+                            border: dashed 5px @path-color;
+                            border-top-right-radius: 75px;
+                            border-bottom-right-radius: 75px;
+                            border-left: 0px;
+
+                            &.path-complete {
+                                border-style: solid;
+                            }
+                        }
+                    }
+
+                    .campaign-end {
+                        margin-bottom: -35px;
+                        margin-right: 45px;
+                        margin-left: 10px;
+
+                        width: 80px;
+
+                        img {
+                            height: auto;
+                            width: 100%;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+.campaign-no-user-modal {
+    display: flex;
+
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+
+    padding: 10px;
+
+    color: @font-black;
+    background-color: @beige;
+
+    box-shadow: 0 2px 4px @box-shadow-white;
+    border-radius: 12px;
+
+    font-size: 15px;
+
+    &:focus {
+        outline: none;
+    }
+
+
+    .campaign-no-user-modal-content {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+
+        padding: 40px;
+
+        width: 100%;
+
+        .campaign-no-user-title {
+            font-weight: 700;
+            line-height: 20px;
+
+            &.campaign-no-user-title-last {
+                padding-bottom: 20px;
+            }
+        }
+
+        a {
+            color: @dull-blue;
+
+            font-weight: 700;
+        }
+
+        .campaign-cancel-button {
+            position: absolute;
+            bottom: 5px;
+            left: 10px;
+
+            color: @font-light-grey;
+
+            font-size: 13px;
+
+            cursor: pointer;
+        }
+    }
+}

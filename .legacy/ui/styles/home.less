@@ -1,0 +1,125 @@
+@import 'colors.less';
+
+.home {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .home-banner {
+        display: flex;
+        justify-content: space-around;
+
+        width: 100%;
+
+        .home-banner-inner {
+            display: flex;
+            justify-content: center;
+
+            .home-banner-video {
+                display: block;
+                overflow: hidden;
+
+                width: 45%;
+                min-width: 250px;
+                max-width: 480px;
+
+                video {
+                    width: 100%;
+
+                    margin-bottom: -1.4%;
+                }
+
+                img {
+                    width: 100%;
+                }
+            }
+
+            .home-banner-text {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+
+                min-width: 250px;
+
+                margin-left: 40px;
+
+                .home-banner-text-main {
+                    font-size: 25px;
+                    font-weight: 700;
+                }
+
+                .home-banner-text-sub {
+                    margin-top: 10px;
+
+                    color: @font-light-grey;
+
+                    font-size: 15px;
+                }
+            }
+        }
+    }
+
+
+    .home-play-buttons {
+        display: flex;
+        justify-content: space-around;
+
+        width: 80%;
+        min-width: 600px;
+
+        margin-top: 55px;
+
+        .home-play-button-wrapper {
+            width: 180px;
+
+            .home-play-button {
+                .light-green-button;
+
+                width: 100%;
+                height: 53px;
+
+                font-size: 20px;
+
+                &:hover  {
+                    cursor: pointer;
+                }
+            }
+
+            .home-play-subtitle {
+                display: flex;
+                justify-content: center;
+
+                margin-top: 10px;
+
+                font-size: 13px;
+
+                color: @font-light-grey;
+            }
+
+            .home-play-option-wrapper {
+                display: flex;
+                justify-content: space-around;
+
+                margin-top: 10px;
+
+                color: @font-light-grey;
+
+                font-size: 13px;
+
+                .home-play-option {
+                    cursor: pointer;
+
+                    &:hover {
+                        color: @font-black;
+                    }
+
+                    &.selected, &.selected:hover {
+                        color: @font-black;
+
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,452 @@
+@import 'colors.less';
+
+.game {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .game-content {
+        display: flex;
+        justify-content: space-around;
+
+        .game-meta {
+            display: flex;
+            flex-direction: column;
+
+            width: 200px;
+            min-width: 200px;
+
+            padding-bottom: 40px;
+
+            font-size: 15px;
+
+            .game-meta-section {
+                margin-bottom: 20px;
+
+                &.game-ready-section {
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: flex-start;
+                    align-items: center;
+
+                    height: 70px;
+
+                    margin-bottom: 40px;
+
+                    .game-ready-button {
+                        .light-green-button;
+
+                        width: 100%;
+                        height: 40px;
+
+                        font-size: 15px;
+
+                        &:hover {
+                            cursor: default;
+                        }
+
+                        &.clickable:hover {
+                            cursor: pointer;
+                        }
+                    }
+
+                    .game-cancel-button {
+                        margin-top: 10px;
+
+                        color: @font-light-grey;
+
+                        font-size: 13px;
+
+                        cursor: pointer;
+                    }
+                }
+
+                &.game-level-section {
+                    margin-bottom: 40px;
+
+                    .game-level-num {
+                        color: @font-light-grey;
+
+                        margin-bottom: 15px;
+                    }
+
+                    .game-level-title {
+                        font-weight: 700;
+
+                        margin-bottom: 40px;
+                    }
+
+                    .game-level-description {
+                        width: 100%;
+
+                        color: @font-light-grey;
+                    }
+                }
+
+                .game-friend-link {
+                    display: flex;
+
+                    cursor: pointer;
+
+                    .game-friend-link-text {
+                        margin-right: 10px;
+
+                        a {
+                            font-weight: 700;
+                        }
+                    }
+
+                    .game-friend-link-icon {
+                        color: #5b91c6;
+                    }
+                }
+
+                &.game-meta-players {
+                    margin-top: 40px;
+
+                    table {
+                        border-spacing: 0px;
+                    }
+
+                    .game-meta-player {
+
+                        td {
+                            padding-bottom: 10px;
+                        }
+
+                        .game-meta-player-color {
+                            padding-right: 10px;
+                        }
+
+                        .user-display {
+                            max-width: 150px;
+                        }
+                    }
+                }
+
+                &.game-time {
+                    padding: 5px;
+
+                    font-size: 18px;
+                    font-weight: 700;
+                }
+            }
+
+            .game-audio-controls {
+                display: flex;
+                flex-grow: 1;
+                flex-direction: column;
+                justify-content: flex-end;
+
+                margin-bottom: 40px;
+
+                table {
+                    border-spacing: 0px;
+                }
+
+                .game-audio-control {
+
+                    td {
+                        padding-bottom: 10px;
+                    }
+
+                    .game-audio-control-label {
+                        padding-right: 10px;
+                    }
+                }
+            }
+        }
+    }
+
+    .game-portrait-warning {
+        margin-top: 40px;
+
+        color: red;
+
+        font-size: 25px;
+        font-weight: 700;
+
+        text-align: center;
+    }
+}
+
+.ReactModalPortal > div {
+    opacity: 0;
+}
+
+.ReactModalPortal .ReactModal__Overlay {
+    background: rgba(0, 0, 0, 50%);
+
+    &--after-open {
+        opacity: 1;
+    }
+
+    &--before-close {
+        transition: opacity 200ms ease-in-out;
+        opacity: 0;
+    }
+}
+
+.game-modal {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    min-width: 450px;
+
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+
+    padding: 10px;
+
+    color: @font-black;
+    background-color: @beige;
+
+    box-shadow: 0 2px 4px @box-shadow-white;
+    border-radius: 12px;
+
+    font-size: 15px;
+
+    &:focus {
+        outline: none;
+    }
+
+    .game-ready {
+        position: relative;
+
+        display: flex;
+        flex-direction: column;
+        justify-content: space-evenly;
+        align-items: center;
+
+        padding-bottom: 30px;
+
+        width: 100%;
+        height: 100%;
+
+        .game-ready-text {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+            margin: 40px 0px;
+
+            .game-ready-text-speed {
+                display: flex;
+                align-items: center;
+
+                margin-bottom: 15px;
+
+                color: @font-light-grey;
+            }
+
+            .game-ready-text-players {
+                display: flex;
+                align-items: center;
+
+                .game-ready-text-vs-player {
+                    display: flex;
+                    align-items: center;
+
+                    padding: 5px;
+
+                    .game-ready-text-vs {
+                        margin-right: 10px;
+                    }
+
+                    .user-display {
+                        max-width: 200px;
+                    }
+                }
+            }
+        }
+
+        .game-level {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+            margin-top: 40px;
+            margin-bottom: 20px;
+
+            .game-level-title {
+                margin-bottom: 15px;
+
+                font-weight: 700;
+            }
+
+            .game-level-description {
+                width: 300px;
+
+                color: @font-light-grey;
+
+                text-align: center;
+            }
+        }
+
+        .game-friend-link {
+            display: flex;
+
+            margin: 20px 0px;
+
+            cursor: pointer;
+
+            .game-friend-link-text {
+
+                a {
+                    font-weight: 700;
+                }
+            }
+
+            .game-friend-link-icon {
+                margin-left: 10px;
+
+                color: @dull-blue;
+            }
+        }
+
+        .game-invite {
+            display: flex;
+
+            margin: 20px 0px;
+
+            input {
+                width: 250px;
+
+                font-size: 15px;
+                font-family: 'Karla', sans-serif;
+            }
+
+            .game-invite-submit {
+                margin-left: 10px;
+                margin-top: 5px;
+
+                cursor: pointer;
+            }
+        }
+
+        .game-difficulty-wrapper {
+            display: flex;
+            justify-content: space-around;
+
+            margin: 20px 0px;
+
+            color: @font-light-grey;
+
+            font-size: 15px;
+
+            .game-difficulty-option {
+                margin-left: 20px;
+
+                cursor: pointer;
+
+                &.selected {
+                    color: @font-black;
+
+                    font-weight: 700;
+                }
+
+                &:first-child {
+                    margin-left: 0px;
+                }
+            }
+        }
+
+        .game-ready-button {
+            .light-green-button;
+
+            width: 200px;
+            height: 40px;
+
+            margin: 20px 0px;
+
+            font-size: 15px;
+
+            &:hover {
+                cursor: default;
+            }
+
+            &.clickable:hover {
+                cursor: pointer;
+            }
+        }
+    }
+
+    .game-finished {
+        position: relative;
+
+        display: flex;
+        flex-direction: column;
+        justify-content: space-evenly;
+        align-items: center;
+
+        padding-bottom: 30px;
+
+        width: 100%;
+        height: 100%;
+
+        .game-finished-text {
+            margin: 40px 0px 20px 0px;
+        }
+
+        .game-finished-rating {
+            margin: 20px 0px;
+        }
+
+        .game-finished-new-belt {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+            margin: 20px 0px;
+
+            img {
+                margin-bottom: 20px;
+
+                max-height: 200px;
+            }
+
+            .game-finished-new-belt-text {
+                font-weight: 700;
+            }
+        }
+
+        .game-finished-buttons {
+            display: flex;
+            justify-content: space-between;
+
+            margin: 20px 0px;
+
+            .game-finished-button-again {
+                .light-green-button;
+
+                width: 120px;
+                height: 40px;
+
+                font-size: 15px;
+
+                cursor: pointer;
+
+                &:not(:first-child) {
+                    margin-left: 20px;
+                }
+            }
+        }
+    }
+
+    .game-cancel-button {
+        position: absolute;
+        bottom: 5px;
+        left: 10px;
+
+        color: @font-light-grey;
+
+        font-size: 13px;
+
+        cursor: pointer;
+    }
+}

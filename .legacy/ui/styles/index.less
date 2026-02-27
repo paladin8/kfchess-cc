@@ -1,0 +1,42 @@
+@import 'about.less';
+@import 'alert.less';
+@import 'colors.less';
+@import 'campaign.less';
+@import 'game.less';
+@import 'header.less';
+@import 'home.less';
+@import 'hover.less';
+@import 'live.less';
+@import 'privacy-policy.less';
+@import 'profile.less';
+@import 'speed.less';
+@import 'spinner.less';
+@import 'user.less';
+@import 'users.less';
+
+body {
+    width: calc(100vw - 60px);
+    max-width: 960px;
+
+    margin: 0px auto;
+    padding: 30px;
+
+    color: @font-black;
+    background-color: @beige;
+
+    font-family: 'Karla', sans-serif;
+}
+
+a {
+    color: blue;
+
+    text-decoration: none;
+
+    &:visited {
+        color: blue;
+    }
+}
+
+.tippy-popper {
+    pointer-events: auto;
+}

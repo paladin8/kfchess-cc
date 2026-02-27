@@ -1,0 +1,57 @@
+@import 'colors.less';
+
+.alert {
+    display: flex;
+    justify-content: center;
+
+    position: absolute;
+
+    width: calc(100vw - 60px);
+    max-width: 960px;
+
+    top: 95px;
+
+    z-index: 10;
+
+    .alert-message {
+        padding: 5px 10px;
+
+        background-color: @white;
+
+        font-size: 15px;
+        font-weight: 700;
+
+        border: 1px solid @faint-border-grey;
+        border-radius: 3px;
+
+        .fa-exclamation-circle {
+            margin-right: 7px;
+        }
+    }
+
+    .alert-message {
+        opacity: 0;
+
+        &.alert-message-showing {
+            opacity: 1;
+        }
+
+        &.alert-transition-enter {
+            opacity: 0;
+
+            &.alert-transition-enter-active {
+                opacity: 1;
+                transition: opacity 500ms;
+            }
+        }
+
+        &.alert-transition-exit {
+            opacity: 1;
+
+            &.alert-transition-exit-active {
+                opacity: 0;
+                transition: opacity 500ms;
+            }
+        }
+    }
+}

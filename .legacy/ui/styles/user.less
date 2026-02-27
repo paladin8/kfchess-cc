@@ -1,0 +1,51 @@
+@import 'colors.less';
+
+.user-display {
+    display: flex;
+
+    min-width: 0px;
+
+    white-space: nowrap;
+
+    .user-display-user-wrapper {
+        display: flex;
+        align-items: center;
+
+        max-width: 100%;
+
+        color: @font-black;
+
+        cursor: pointer;
+
+        &:hover {
+
+            .user-display-username {
+                color: @dull-blue;
+            }
+        }
+
+        .user-display-profile-pic {
+            width: 30px;
+            height: 30px;
+
+            img {
+                width: 28px;
+                height: 28px;
+            }
+        }
+
+        .user-display-username {
+            margin-left: 5px;
+
+            font-weight: 700;
+
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+    }
+
+    .user-display-text {
+        text-overflow: ellipsis;
+        overflow: hidden;
+    }
+}

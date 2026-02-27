@@ -1,0 +1,40 @@
+@white: #ffffff;
+@red: #ff0000;
+@beige: #fcfcf4;
+@light-green: #7bcc70;
+@dull-blue: #5b91c6;
+@white-hover: hsl(0, 0, 97%);
+@light-green-hover: #87d07d;
+
+@font-white: #ffffff;
+@font-light-grey: hsl(0, 0, 45%);
+@font-black: hsl(0, 0, 0);
+
+@box-shadow-white: hsla(0, 0, 0, 20%);
+@text-shadow-white: hsla(0, 0, 0, 50%);
+
+@modal-background: @beige;
+@dark-transparent-background: rgba(0, 0, 0, 50%);
+
+@faint-border-grey: hsl(0, 0, 80%);
+
+@path-color: @light-green;
+
+.light-green-button {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    color: @font-white;
+    background-color: @light-green;
+
+    box-shadow: 0 2px 4px @box-shadow-white;
+    border-radius: 12px;
+    border-color: @light-green;
+
+    text-shadow: 0 1px 1px @text-shadow-white;
+
+    &:hover {
+        background-color: @light-green-hover;
+    }
+}

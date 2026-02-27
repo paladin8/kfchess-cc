@@ -1,0 +1,56 @@
+@import 'colors.less';
+
+@spinner-color: @font-black;
+
+.spinner {
+    font-size: 10px;
+    margin: 50px auto;
+    text-indent: -9999em;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+
+    background: @beige;
+    background: linear-gradient(to right, @spinner-color 10%, @beige 42%);
+
+    position: relative;
+
+    animation: spin 1.4s infinite linear;
+    transform: translateZ(0);
+}
+
+.spinner:before {
+    width: 50%;
+    height: 50%;
+    background: @spinner-color;
+    border-radius: 100% 0 0 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    content: '';
+}
+
+.spinner:after {
+    background: @beige;
+    width: 75%;
+    height: 75%;
+    border-radius: 50%;
+    content: '';
+    margin: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+}
+
+@keyframes spin {
+
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}

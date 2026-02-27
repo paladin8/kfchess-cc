@@ -1,0 +1,241 @@
+@import 'colors.less';
+
+.online-users {
+    position: absolute;
+    z-index: 5;
+
+    .online-users-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        position: fixed;
+        right: 35px;
+        bottom: 20px;
+
+        width: 50px;
+        height: 50px;
+
+        color: @font-black;
+        background-color: @white;
+
+        box-shadow: 0 2px 4px @box-shadow-white;
+        border-radius: 12px;
+
+        cursor: pointer;
+
+        &:hover {
+            background-color: @white-hover;
+        }
+
+        .online-users-icon-wrapper {
+            width: 50px;
+            height: 50px;
+
+            .online-users-icon {
+                display: none;
+
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+
+                font-size: 25px;
+
+                &.online-users-icon-showing {
+                    display: block;
+                }
+
+                &.users-transition-enter {
+                    opacity: 0;
+
+                    &.users-transition-enter-active {
+                        opacity: 1;
+                        transition: 500ms ease-in;
+                    }
+                }
+
+                &.users-transition-exit {
+                    display: block;
+
+                    opacity: 1;
+
+                    &.users-transition-exit-active {
+                        opacity: 0;
+                        transition: 500ms ease-out;
+                    }
+                }
+
+                &.times-transition-enter {
+                    opacity: 0;
+                    transform: translate(-50%, -50%) rotate(-45deg);
+
+                    &.times-transition-enter-active {
+                        opacity: 1;
+                        transform: translate(-50%, -50%) rotate(0deg);
+                        animation: rotatein 500ms ease-in;
+                    }
+                }
+
+                &.times-transition-exit {
+                    display: block;
+
+                    opacity: 1;
+                    transform: translate(-50%, -50%) rotate(0deg);
+
+                    &.times-transition-exit-active {
+                        opacity: 0;
+                        transform: translate(-50%, -50%) rotate(-45deg);
+                        animation: rotateout 500ms ease-out;
+                    }
+                }
+            }
+        }
+
+        .online-users-badge {
+            position: absolute;
+            top: -9px;
+            right: -9px;
+
+            margin: 0;
+            padding: 5px;
+
+            min-width: 15px;
+
+            color: @white;
+            background-color: @dull-blue;
+
+            border-radius: 12.5px;
+
+            font-size: 13px;
+            text-align: center;
+        }
+    }
+
+    .online-users-tray {
+        display: flex;
+        flex-direction: column;
+
+        position: fixed;
+        right: 35px;
+        bottom: 80px;
+
+        width: 300px;
+        height: 0px;
+        overflow: hidden;
+
+        background-color: @white;
+
+        box-shadow: 0 2px 4px @box-shadow-white;
+        border-radius: 12px;
+
+        &.online-users-tray-showing {
+            height: calc(100vh - 150px);
+            overflow: scroll;
+        }
+
+        &.tray-transition-enter {
+            height: 0px;
+
+            &.tray-transition-enter-active {
+                height: calc(100vh - 150px);
+                transition: 500ms ease-out;
+            }
+        }
+
+        &.tray-transition-exit {
+            height: calc(100vh - 150px);
+
+            &.tray-transition-exit-active {
+                height: 0px;
+                transition: 500ms ease-in;
+            }
+        }
+
+        .online-users-inner {
+            padding: 20px;
+
+            font-size: 15px;
+
+            .online-users-title {
+                margin-bottom: 20px;
+
+                color: @font-light-grey;
+            }
+
+            .online-users-table {
+                width: 100%;
+
+                .online-users-row {
+
+                    td {
+                        padding: 2px 0px;
+                    }
+
+                    .online-users-username {
+                        max-width: 220px;
+                    }
+
+                    .online-users-action {
+                        width: 20px;
+
+                        color: @dull-blue;
+
+                        font-size: 20px;
+
+                        cursor: pointer;
+
+                        a {
+                            color: @dull-blue;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+.online-users-challenge-menu {
+
+    .online-users-challenge-menu-title {
+        margin-bottom: 10px;
+
+        font-weight: 700;
+    }
+
+    .online-users-challenge-menu-item {
+        margin-bottom: 5px;
+
+        cursor: pointer;
+
+        &:hover {
+            color: @dull-blue;
+        }
+    }
+}
+
+@keyframes rotatein {
+
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) rotate(-45deg);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translate(-50%, -50%) rotate(0deg);
+    }
+}
+
+@keyframes rotateout {
+
+    0% {
+        opacity: 1;
+        transform: translate(-50%, -50%) rotate(0deg);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) rotate(-45deg);
+    }
+}

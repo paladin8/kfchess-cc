@@ -1,0 +1,80 @@
+.live {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .live-content {
+        display: flex;
+        justify-content: space-between;
+
+        width: 80%;
+        min-width: 600px;
+        max-width: 800px;
+
+        font-size: 15px;
+
+        .live-games {
+            width: 100%;
+
+            .live-games-title {
+                width: 100%;
+
+                margin-bottom: 20px;
+
+                text-align: center;
+                font-size: 25px;
+                font-weight: 700;
+            }
+
+            .live-games-table {
+                width: 100%;
+
+                .live-games-row {
+                    width: 100%;
+                    height: 40px;
+
+                    margin-bottom: 10px;
+
+                    td {
+                        padding: 5px 10px;
+                    }
+
+                    .live-games-players {
+                        display: flex;
+                        align-items: center;
+
+                        max-width: 500px;
+                        height: 30px;
+
+                        .live-games-players-vs-player {
+                            display: flex;
+                            align-items: center;
+
+                            min-width: 0px;
+
+                            padding: 5px;
+
+                            .live-games-players-vs {
+                                margin-right: 10px;
+                            }
+                        }
+                    }
+
+                    .live-games-watch {
+                        font-size: 20px;
+
+                        a {
+                            color: @dull-blue;
+                        }
+                    }
+                }
+            }
+
+            .live-games-empty {
+                color: @font-light-grey;
+
+                text-align: center;
+            }
+        }
+    }
+}
