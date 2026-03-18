@@ -23,16 +23,6 @@ dependencies = [
     "email-validator>=2.0.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.25.0",
-    "pytest-cov>=6.0.0",
-    "httpx>=0.28.0",
-    "ruff>=0.8.0",
-    "mypy>=1.14.0",
-    "fakeredis>=2.26.0",
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -87,5 +77,11 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "ruff>=0.8.0",
+    "mypy>=1.14.0",
     "fakeredis[lua]>=2.33.0",
 ]

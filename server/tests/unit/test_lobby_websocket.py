@@ -4,8 +4,10 @@ These tests use fakeredis to provide a Redis backend for the
 RedisLobbyManager, and Starlette's sync TestClient for WebSocket testing.
 """
 
+import contextlib
 import json
 from collections.abc import Generator
+from concurrent.futures import CancelledError
 from unittest.mock import patch
 
 import pytest
@@ -29,6 +31,24 @@ _fake_server = FakeServer()
 async def _fake_get_redis() -> FakeRedis:
     """Return a fakeredis client backed by the shared FakeServer."""
     return FakeRedis(server=_fake_server, decode_responses=True, version=(7,))
+
+
+@contextlib.contextmanager
+def ws_connect(client: TestClient, url: str):
+    """Connect to a WebSocket, suppressing CancelledError on close.
+
+    Starlette's sync TestClient can race between sending the WebSocket
+    close frame and cancelling the ASGI handler's CancelScope. When the
+    handler is still shutting down (e.g. pub/sub cleanup) at the moment
+    the scope is cancelled, CancelledError escapes from the handler and
+    causes the Future to be cancelled. This is harmless — the handler
+    has already processed the disconnect — so we suppress it.
+    """
+    try:
+        with client.websocket_connect(url) as ws:
+            yield ws
+    except CancelledError:
+        pass
 
 
 @pytest.fixture
@@ -151,13 +171,13 @@ class TestLobbyWebSocketEndpoint:
     def test_websocket_connect_invalid_key(self, client: TestClient) -> None:
         """Test connecting with an invalid player key."""
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/ws/lobby/NOTFOUND?player_key=invalid"):
+            with ws_connect(client,"/ws/lobby/NOTFOUND?player_key=invalid"):
                 pass
 
     def test_websocket_connect_missing_key(self, client: TestClient) -> None:
         """Test connecting without a player key (should fail)."""
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/ws/lobby/NOTFOUND"):
+            with ws_connect(client,"/ws/lobby/NOTFOUND"):
                 pass
 
     def test_websocket_connect_valid_lobby(self, client: TestClient) -> None:
@@ -170,7 +190,7 @@ class TestLobbyWebSocketEndpoint:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             response = websocket.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "lobby_state"
@@ -187,7 +207,7 @@ class TestLobbyWebSocketEndpoint:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "ping"}))
@@ -206,7 +226,7 @@ class TestLobbyWebSocketEndpoint:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text("not valid json")
@@ -226,7 +246,7 @@ class TestLobbyWebSocketEndpoint:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "unknown_type"}))
@@ -250,7 +270,7 @@ class TestLobbyReadyState:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
@@ -271,7 +291,7 @@ class TestLobbyReadyState:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
@@ -299,7 +319,7 @@ class TestLobbyHostActions:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(
@@ -331,7 +351,7 @@ class TestLobbyHostActions:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "add_ai", "aiType": "bot:dummy"}))
@@ -356,7 +376,7 @@ class TestLobbyHostActions:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "remove_ai", "slot": 2}))
@@ -384,7 +404,7 @@ class TestLobbyGameStart:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             # Host auto-readied on start_game
@@ -410,7 +430,7 @@ class TestLobbyGameStart:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
@@ -442,7 +462,7 @@ class TestLobbyNonHostErrors:
         data = response.json()
         player2_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player2_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player2_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(
@@ -470,7 +490,7 @@ class TestLobbyNonHostErrors:
         data = response.json()
         player2_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player2_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player2_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "start_game"}))
@@ -496,7 +516,7 @@ class TestLobbyKick:
 
         client.post(f"/api/lobbies/{code}/join", json={})
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "kick", "slot": 2}))
@@ -517,7 +537,7 @@ class TestLobbyKick:
         code = data["code"]
         host_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "kick", "slot": 1}))
@@ -544,7 +564,7 @@ class TestLobbyReturnToLobby:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             # Start game
@@ -595,12 +615,12 @@ class TestPlayerJoinedBroadcast:
         player2_key = player2_data["playerKey"]
         player2_slot = player2_data["slot"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
             response = host_ws.receive_text()
             msg = json.loads(response)
             assert msg["type"] == "lobby_state"
 
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_ws.receive_text()  # lobby_state
@@ -630,7 +650,7 @@ class TestFindLobbyByGame:
         code = data["code"]
         player_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={player_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={player_key}") as websocket:
             websocket.receive_text()  # lobby_state
             websocket.send_text(json.dumps({"type": "ready", "ready": True}))
             websocket.receive_text()  # player_ready
@@ -682,10 +702,10 @@ class TestMultipleHumanPlayers:
         player2_data = response.json()
         player2_key = player2_data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
             host_ws.receive_text()  # lobby_state
 
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_ws.receive_text()  # lobby_state
@@ -734,7 +754,7 @@ class TestChangeAiType:
         code = data["code"]
         host_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(
@@ -760,7 +780,7 @@ class TestChangeAiType:
         code = data["code"]
         host_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "change_ai_type", "aiType": "bot:expert"}))
@@ -788,10 +808,10 @@ class TestLeaveViaWebSocket:
         player2_data = response.json()
         player2_key = player2_data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
             host_ws.receive_text()  # lobby_state
 
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_ws.receive_text()  # lobby_state
@@ -825,7 +845,7 @@ class TestLeaveViaWebSocket:
         code = data["code"]
         host_key = data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as websocket:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as websocket:
             websocket.receive_text()  # lobby_state
 
             websocket.send_text(json.dumps({"type": "leave"}))
@@ -853,10 +873,10 @@ class TestDisconnectFlow:
         player2_data = response.json()
         player2_key = player2_data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
             host_ws.receive_text()  # lobby_state
 
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_ws.receive_text()  # lobby_state
@@ -887,11 +907,11 @@ class TestReconnectFlow:
         player2_data = response.json()
         player2_key = player2_data["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
             host_ws.receive_text()  # lobby_state
 
             # Player 2 connects then disconnects
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_ws.receive_text()  # lobby_state
@@ -901,7 +921,7 @@ class TestReconnectFlow:
             host_ws.receive_text()  # player_disconnected
 
             # Player 2 reconnects
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_lobby_state = json.loads(p2_ws.receive_text())
@@ -925,11 +945,11 @@ class TestReconnectFlow:
         response = client.post(f"/api/lobbies/{code}/join", json={})
         player2_key = response.json()["playerKey"]
 
-        with client.websocket_connect(f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
+        with ws_connect(client,f"/ws/lobby/{code}?player_key={host_key}") as host_ws:
             host_ws.receive_text()  # lobby_state
 
             # Player 2 connects then disconnects
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_ws.receive_text()  # lobby_state
@@ -938,7 +958,7 @@ class TestReconnectFlow:
             host_ws.receive_text()  # player_disconnected
 
             # Player 2 reconnects
-            with client.websocket_connect(
+            with ws_connect(client,
                 f"/ws/lobby/{code}?player_key={player2_key}"
             ) as p2_ws:
                 p2_ws.receive_text()  # lobby_state

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Generator
+from concurrent.futures import CancelledError
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -149,21 +150,24 @@ class TestLobbyRoutingRegistration:
         with patch(
             "kfchess.ws.lobby_handler.register_routing", new_callable=AsyncMock
         ) as mock_register:
-            with client.websocket_connect(
-                f"/ws/lobby/{code}?player_key={player_key}"
-            ) as websocket:
-                # Skip initial state
-                websocket.receive_text()
+            try:
+                with client.websocket_connect(
+                    f"/ws/lobby/{code}?player_key={player_key}"
+                ) as websocket:
+                    # Skip initial state
+                    websocket.receive_text()
 
-                # Set ready
-                websocket.send_text(json.dumps({"type": "ready", "ready": True}))
-                websocket.receive_text()  # Skip player_ready broadcast
+                    # Set ready
+                    websocket.send_text(json.dumps({"type": "ready", "ready": True}))
+                    websocket.receive_text()  # Skip player_ready broadcast
 
-                # Start game
-                websocket.send_text(json.dumps({"type": "start_game"}))
+                    # Start game
+                    websocket.send_text(json.dumps({"type": "start_game"}))
 
-                # Receive game_starting
-                msg = json.loads(websocket.receive_text())
-                assert msg["type"] == "game_starting"
+                    # Receive game_starting
+                    msg = json.loads(websocket.receive_text())
+                    assert msg["type"] == "game_starting"
+            except CancelledError:
+                pass
 
             mock_register.assert_awaited_once()

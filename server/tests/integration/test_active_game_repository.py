@@ -13,7 +13,7 @@ Run with: uv run pytest tests/integration/test_active_game_repository.py -v
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kfchess.db.models import ActiveGame
@@ -144,8 +144,12 @@ class TestRegister:
             )
             await db_session.commit()
 
-            games = await repo.list_active()
-            game = next(g for g in games if g.game_id == game_id)
+            # Query directly by game_id to avoid list_active()'s limit=50
+            # excluding old started_at values
+            result = await db_session.execute(
+                select(ActiveGame).where(ActiveGame.game_id == game_id)
+            )
+            game = result.scalar_one()
             assert game.started_at == tz_aware_dt.replace(tzinfo=None)
         finally:
             await repo.deregister(game_id)
@@ -252,6 +256,9 @@ class TestListActive:
         ids = [generate_test_id() for _ in range(3)]
         repo = ActiveGameRepository(db_session)
         try:
+            # Use future timestamps so these games always appear in the
+            # top 50 results of list_active() (ordered by started_at DESC)
+            base = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
             for i, gid in enumerate(ids):
                 await repo.register(
                     game_id=gid,
@@ -267,7 +274,7 @@ class TestListActive:
                 await db_session.execute(
                     update(ActiveGame)
                     .where(ActiveGame.game_id == gid)
-                    .values(started_at=datetime(2026, 1, 1, 0, 0, i))
+                    .values(started_at=base + timedelta(minutes=i))
                 )
             await db_session.commit()
 
