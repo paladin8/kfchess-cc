@@ -1,7 +1,7 @@
 ---
 name: deploy
 description: Run the full deploy pipeline (pre-checks → SSH deploy → sanity check)
-user_invocable: true
+user-invocable: true
 ---
 
 Run the end-to-end deploy script:
