@@ -8,7 +8,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SSH_KEY="$HOME/.ssh/LightsailDefaultKey-us-west-2.pem"
 SSH_HOST="ubuntu@35.167.158.216"
-REMOTE_DEPLOY="sudo bash /var/www/kfchess/deploy/deploy.sh"
+REMOTE_DEPLOY_DIR="/var/www/kfchess"
 SITE_URL="https://kfchess.com"
 
 # ─── Helpers ──────────────────────────────────────────────────
@@ -50,18 +50,42 @@ echo "Running frontend typecheck..."
 
 echo "Pre-deploy checks passed."
 
-# ─── Phase 2: Deploy ─────────────────────────────────────────
+# ─── Phase 2: Build frontend locally ─────────────────────────
 
-log "Phase 2: Deploy via SSH"
+log "Phase 2: Build frontend"
 
-ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$SSH_HOST" "$REMOTE_DEPLOY" \
+echo "Building frontend bundle..."
+(cd "$REPO_DIR/client" && npm run build) || die "Frontend build failed."
+
+# ─── Phase 3: Upload frontend bundle ─────────────────────────
+
+log "Phase 3: Upload frontend bundle"
+
+# Upload to temp dir (ubuntu user can't write to kfchess-owned dist/)
+# then move into place with correct ownership
+rsync -az --delete -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
+    "$REPO_DIR/client/dist/" "$SSH_HOST:/tmp/kfchess-dist/" \
+    || die "Frontend upload failed."
+
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$SSH_HOST" \
+    "sudo rsync -a --delete /tmp/kfchess-dist/ $REMOTE_DEPLOY_DIR/client/dist/ && sudo chown -R kfchess:kfchess $REMOTE_DEPLOY_DIR/client/dist/ && rm -rf /tmp/kfchess-dist" \
+    || die "Frontend install failed."
+
+echo "Frontend bundle uploaded."
+
+# ─── Phase 4: Deploy backend ─────────────────────────────────
+
+log "Phase 4: Deploy via SSH (--skip-frontend)"
+
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$SSH_HOST" \
+    "sudo bash $REMOTE_DEPLOY_DIR/deploy/deploy.sh --skip-frontend" \
     || die "Remote deploy failed."
 
 echo "Deploy completed."
 
-# ─── Phase 3: Sanity check ───────────────────────────────────
+# ─── Phase 5: Sanity check ───────────────────────────────────
 
-log "Phase 3: Sanity check ($SITE_URL)"
+log "Phase 5: Sanity check ($SITE_URL)"
 
 # Brief pause for workers to fully start
 sleep 3

@@ -2,10 +2,14 @@
 # Deploy the latest code to production.
 # Run as root or with sudo: sudo bash deploy.sh
 #
+# Options:
+#   --skip-frontend   Skip npm ci + npm run build (use when frontend
+#                     bundle was pre-built and uploaded by e2e-deploy.sh)
+#
 # Steps:
 #   1. Pull latest code
-#   2. Install backend/frontend dependencies
-#   3. Build frontend
+#   2. Install backend dependencies (+ frontend unless --skip-frontend)
+#   3. Build frontend (unless --skip-frontend)
 #   4. Run database migrations
 #   5. Regenerate Caddyfile and reload Caddy
 #   6. Rolling restart workers with health checks
@@ -13,6 +17,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/config.sh"
+
+# ─── Parse flags ──────────────────────────────────────────────
+
+SKIP_FRONTEND=false
+for arg in "$@"; do
+    case "$arg" in
+        --skip-frontend) SKIP_FRONTEND=true ;;
+        *) echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
 
 # ─── Helpers ──────────────────────────────────────────────────
 
@@ -33,13 +47,21 @@ sudo -u kfchess git -C "$DEPLOY_DIR" reset --hard "origin/$BRANCH"
 log "Installing backend dependencies"
 sudo -u kfchess bash -c "cd $DEPLOY_DIR/server && uv sync --frozen"
 
-log "Installing frontend dependencies"
-sudo -u kfchess bash -c "cd $DEPLOY_DIR/client && npm ci"
+if [[ "$SKIP_FRONTEND" == "false" ]]; then
+    log "Installing frontend dependencies"
+    sudo -u kfchess bash -c "cd $DEPLOY_DIR/client && npm ci"
+else
+    log "Skipping frontend dependencies (--skip-frontend)"
+fi
 
 # ─── 3. Build frontend ───────────────────────────────────────
 
-log "Building frontend"
-sudo -u kfchess bash -c "cd $DEPLOY_DIR/client && npm run build"
+if [[ "$SKIP_FRONTEND" == "false" ]]; then
+    log "Building frontend"
+    sudo -u kfchess bash -c "cd $DEPLOY_DIR/client && npm run build"
+else
+    log "Skipping frontend build (--skip-frontend)"
+fi
 
 # ─── 4. Database migrations ──────────────────────────────────
 
