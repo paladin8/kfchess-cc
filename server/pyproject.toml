@@ -77,7 +77,7 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.0",
+    "pytest>=9.0.3",
     "pytest-asyncio>=0.25.0",
     "pytest-cov>=6.0.0",
     "httpx>=0.28.0",
